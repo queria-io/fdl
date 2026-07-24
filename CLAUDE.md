@@ -32,7 +32,10 @@ python-semantic-release がコミットメッセージからバージョンを�
 
 Releases are handled by python-semantic-release via GitHub Actions (manual workflow_dispatch). Do not manually edit the version in pyproject.toml or modify CHANGELOG.md.
 
-## Project structure
+## DuckLake gotchas
 
-- `src/fdl/` — main package (cli.py, config.py, ducklake.py, pull.py, push.py, etc.)
-- `docs/` — Zensical documentation source
+- Invoke DuckLake maintenance functions with a plain `CALL`. Wrapping the real
+  invocation in a `SELECT` (e.g. `SELECT count(*) FROM ducklake_expire_snapshots(...)`)
+  runs it in a read-only transaction: the filesystem deletes still happen but the
+  catalog metadata changes are rolled back, leaving the catalog inconsistent.
+  Use the `SELECT ... dry_run => true` form only for counting.
