@@ -96,7 +96,7 @@ class S3Store:
             try:
                 import boto3
             except ImportError as exc:
-                raise StoreError("S3 needs boto3: pip install 'fdl[s3]'") from exc
+                raise StoreError("S3 needs boto3: pip install 'fdl-cli[s3]'") from exc
 
             client = boto3.client("s3")
         self.client = client

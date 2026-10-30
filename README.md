@@ -1,7 +1,7 @@
 # fdl
 
-[![PyPI](https://img.shields.io/pypi/v/fdl)](https://pypi.org/project/fdl/)
-[![Python 3.10+](https://img.shields.io/badge/python-3.10%2B-blue)](https://pypi.org/project/fdl/)
+[![PyPI](https://img.shields.io/pypi/v/fdl-cli)](https://pypi.org/project/fdl-cli/)
+[![Python 3.10+](https://img.shields.io/badge/python-3.10%2B-blue)](https://pypi.org/project/fdl-cli/)
 [![License: MIT](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
 
 Versions of a [DuckLake](https://ducklake.select/) catalog on object storage, kept the way Git keeps commits.
@@ -24,11 +24,13 @@ The format is in [docs/spec.md](docs/spec.md).
 ## Quick start
 
 ```bash
-pip install 'fdl[s3]'
+pip install 'fdl-cli[s3]'
 
 fdl init s3://my-bucket/towns/
 fdl checkout s3://my-bucket/towns/ work/lake.sqlite
 ```
+
+The package is `fdl-cli` on PyPI. It installs the `fdl` command and the `fdl` Python package (`import fdl`).
 
 Write to the working catalog with DuckDB, attached the way `checkout` prints:
 

@@ -8,5 +8,5 @@ Each version is a frozen catalog with a record of its parent, author and message
 - [Command line](cli.md): `fdl init`, `checkout`, `commit`, `log`, `url`, `expire`
 
 ```bash
-pip install 'fdl[s3]'
+pip install 'fdl-cli[s3]'
 ```
