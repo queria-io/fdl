@@ -1,5 +1,5 @@
 [project]
-name = "frozen-ducklake"
+name = "fdl"
 version = "0.11.0"
 description = "Versions of a DuckLake catalog on object storage, kept the way Git keeps commits"
 readme = "README.md"

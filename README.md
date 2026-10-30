@@ -1,7 +1,7 @@
 # fdl
 
-[![PyPI](https://img.shields.io/pypi/v/frozen-ducklake)](https://pypi.org/project/frozen-ducklake/)
-[![Python 3.10+](https://img.shields.io/badge/python-3.10%2B-blue)](https://pypi.org/project/frozen-ducklake/)
+[![PyPI](https://img.shields.io/pypi/v/fdl)](https://pypi.org/project/fdl/)
+[![Python 3.10+](https://img.shields.io/badge/python-3.10%2B-blue)](https://pypi.org/project/fdl/)
 [![License: MIT](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
 
 Versions of a [DuckLake](https://ducklake.select/) catalog on object storage, kept the way Git keeps commits.
@@ -24,7 +24,7 @@ The format is in [docs/spec.md](docs/spec.md).
 ## Quick start
 
 ```bash
-pip install 'frozen-ducklake[s3]'
+pip install 'fdl[s3]'
 
 fdl init s3://my-bucket/towns/
 fdl checkout s3://my-bucket/towns/ work/lake.sqlite
@@ -89,7 +89,7 @@ for version in repo.log(store):
 
 ## Earlier releases
 
-Releases up to 0.11 were a different tool for managing a single frozen catalog. Their code is at the [`legacy`](https://github.com/queria-io/fdl/tree/legacy) branch.
+Releases up to 0.11 were a different tool for managing a single frozen catalog, published as `frozen-ducklake`. Their code is at the [`legacy`](https://github.com/queria-io/fdl/tree/legacy) branch.
 
 ## License
 

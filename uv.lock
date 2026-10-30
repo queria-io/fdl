@@ -380,7 +380,7 @@ wheels = [
 ]
 
 [[package]]
-name = "frozen-ducklake"
+name = "fdl"
 version = "0.11.0"
 source = { editable = "." }
 dependencies = [
