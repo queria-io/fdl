@@ -380,8 +380,8 @@ wheels = [
 ]
 
 [[package]]
-name = "fdl"
-version = "0.11.0"
+name = "fdl-cli"
+version = "0.12.0"
 source = { editable = "." }
 dependencies = [
     { name = "duckdb" },
