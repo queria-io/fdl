@@ -93,7 +93,10 @@ class S3Store:
 
     def __init__(self, bucket: str, prefix: str = "", *, client=None) -> None:
         if client is None:
-            import boto3
+            try:
+                import boto3
+            except ImportError as exc:
+                raise StoreError("S3 needs boto3: pip install 'frozen-ducklake[s3]'") from exc
 
             client = boto3.client("s3")
         self.client = client

@@ -4,13 +4,17 @@ version = "0.11.0"
 description = "Versions of a DuckLake catalog on object storage, kept the way Git keeps commits"
 readme = "README.md"
 license = "MIT"
-requires-python = ">=3.13"
+requires-python = ">=3.10"
 authors = [{ name = "flo8s" }]
 dependencies = [
-    "boto3>=1.36",
-    "duckdb>=1.5.2,<1.6",
+    "duckdb>=1.5.2,<2.0",
     "typer>=0.15",
 ]
+
+[project.optional-dependencies]
+# S3 and S3-compatible stores (R2 and others). A folder needs nothing extra,
+# and tools that bring their own store do not pull boto3 in.
+s3 = ["boto3>=1.36"]
 
 [project.urls]
 Homepage = "https://fdl.flo8s.com/"

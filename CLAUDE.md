@@ -11,7 +11,7 @@ uv run zensical serve
 
 ## Code style
 
-- Python 3.13+ — use modern syntax (`X | Y` unions, etc.)
+- Python 3.10+ — `X | Y` unions are fine; nothing newer (no `typing.Self`, `except*`, `datetime.UTC`)
 - Write all code comments and docstrings in English
 - Commit messages in English
 

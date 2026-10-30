@@ -2,7 +2,7 @@
 
 ## Prerequisites
 
-- Python 3.13 or later
+- Python 3.10 or later
 - [uv](https://docs.astral.sh/uv/) for dependency management
 
 ## Getting started
@@ -61,5 +61,5 @@ Documentation deploys automatically on push to main when files under `docs/` or 
 
 ## Code style
 
-- Python 3.13+ — use modern syntax (`X | Y` for unions, etc.)
+- Python 3.10+ — `X | Y` unions are fine; nothing newer
 - All code comments, docstrings, and commit messages in English
