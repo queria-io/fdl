@@ -1,13 +1,13 @@
 [project]
 name = "frozen-ducklake"
 version = "0.11.0"
-description = "Frozen DuckLake CLI"
+description = "Versions of a DuckLake catalog on object storage, kept the way Git keeps commits"
 readme = "README.md"
 license = "MIT"
 requires-python = ">=3.13"
 authors = [{ name = "flo8s" }]
 dependencies = [
-    "boto3>=1.35",
+    "boto3>=1.36",
     "duckdb>=1.5.2,<1.6",
     "typer>=0.15",
 ]
@@ -16,7 +16,7 @@ dependencies = [
 Homepage = "https://fdl.flo8s.com/"
 Documentation = "https://fdl.flo8s.com/"
 Repository = "https://github.com/queria-io/fdl"
-Changelog = "https://fdl.flo8s.com/changelog/"
+Changelog = "https://github.com/queria-io/fdl/blob/main/CHANGELOG.md"
 
 [project.scripts]
 fdl = "fdl.cli:main"

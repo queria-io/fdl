@@ -1,447 +1,159 @@
-"""fdl CLI entry point."""
+"""The ``fdl`` command: the operations in `fdl.repo`, on a terminal.
 
-import re
+A working catalog is a DuckLake catalog in SQLite that you write to with any
+DuckDB client. Beside it sits ``<working>.fdl.json``, which remembers the
+repository it came from and the version it was checked out at, so a commit
+knows what it builds on.
+"""
+
+from __future__ import annotations
+
+import json
+import shutil
+import tempfile
 from pathlib import Path
 
 import typer
-from typer.main import Typer
 
-from fdl.console import console
+from . import catalog, layout, refs, repo
+from .stores import StoreError, open_store
+from .version import VersionError
 
-app = typer.Typer(pretty_exceptions_short=True, invoke_without_command=True)
+app = typer.Typer(no_args_is_help=True, pretty_exceptions_short=True)
 
-
-def _sanitize_name(name: str) -> str:
-    """Sanitize a directory name into a valid SQL identifier."""
-    name = re.sub(r"[^a-zA-Z0-9_]", "_", name)
-    if name and name[0].isdigit():
-        name = f"_{name}"
-    return name
+Remote = typer.Argument(help="The repository: s3://bucket/prefix/ or a folder")
+Working = typer.Argument(help="The working catalog (.sqlite)")
 
 
-def _resolve_target(name: str) -> str:
-    """Resolve a target name, converting ValueError to BadParameter."""
-    from fdl.config import resolve_target
-
-    try:
-        return resolve_target(name)
-    except ValueError as e:
-        raise typer.BadParameter(str(e)) from None
+def _state_path(working: Path) -> Path:
+    return working.with_name(working.name + ".fdl.json")
 
 
-def _version_callback(value: bool) -> None:
-    if value:
-        from importlib.metadata import version
+def _read_state(working: Path) -> dict:
+    path = _state_path(working)
+    if not path.is_file():
+        raise typer.BadParameter(f"{working} was not made by `fdl checkout`")
+    return json.loads(path.read_text())
 
-        console.print(f"fdl {version('frozen-ducklake')}", highlight=False)
-        raise typer.Exit()
+
+def _write_state(working: Path, state: dict) -> None:
+    _state_path(working).write_text(json.dumps(state, indent=2) + "\n")
 
 
-@app.callback()
-def callback(
-    ctx: typer.Context,
-    version: bool = typer.Option(
-        False,
-        "--version",
-        "-V",
-        callback=_version_callback,
-        is_eager=True,
-        help="Show version and exit",
-    ),
-) -> None:
-    """fdl: DuckLake catalog management CLI"""
-    # Use the Typer-injected context rather than click.get_current_context():
-    # under Typer 0.26+ the callback runs outside an active click context when
-    # a subcommand is invoked, so get_current_context() raises RuntimeError.
-    if ctx.invoked_subcommand is None:
-        import click
+def _fail(exc: Exception) -> typer.Exit:
+    typer.echo(f"error: {exc}", err=True)
+    return typer.Exit(1)
 
-        click.echo(ctx.get_help())
+
+ERRORS = (repo.RepoError, refs.RefError, layout.LayoutError, VersionError, StoreError)
 
 
 @app.command()
 def init(
-    name: str = typer.Argument(
-        None, help="Datasource name (default: current directory name)"
-    ),
-    public_url: str = typer.Option(
-        None, "--public-url", help="Public URL for dataset access"
-    ),
-    target_url: str = typer.Option(
-        None, "--target-url", help="Target URL for push/pull"
-    ),
-    target_name: str = typer.Option(None, "--target-name", help="Target name"),
+    remote: str = Remote,
+    data_dir: str = typer.Option(layout.DEFAULT_DATA_DIR, help="Where data files go, under the root"),
 ) -> None:
-    """Initialize a new fdl project."""
-    import fdl
-    from fdl.config import PROJECT_CONFIG
-
-    dataset_dir = Path.cwd()
-    if name:
-        sanitized = _sanitize_name(name)
-        if sanitized != name:
-            raise typer.BadParameter(
-                f"'{name}' is not a valid SQL identifier. Use '{sanitized}' instead."
-            )
-    else:
-        default_name = _sanitize_name(dataset_dir.resolve().name)
-        name = typer.prompt("Datasource name", default=default_name)
-
-    if (dataset_dir / PROJECT_CONFIG).exists():
-        raise typer.BadParameter(f"{PROJECT_CONFIG} already exists")
-
-    # Prompt for target config if not provided via flags
-    if target_name is None:
-        target_name = typer.prompt("Target name", default="default")
-    if public_url is None:
-        public_url = typer.prompt("Public URL", default="http://localhost:4001")
-    if target_url is None:
-        target_url = typer.prompt("Target URL", default=fdl.default_target_url())
-
-    fdl.init(
-        name,
-        target_name=target_name,
-        target_url=target_url,
-        public_url=public_url,
-        project_dir=dataset_dir,
-    )
-
-    console.print(f"[green]Initialized fdl project: {name}[/green]")
+    """Start a repository (fdl.json and HEAD). Harmless on one that exists."""
+    try:
+        config = repo.init(open_store(remote), data_dir=data_dir)
+    except ERRORS as exc:
+        raise _fail(exc) from exc
+    typer.echo(f"fdl {config.fdl} repository, data in {config.data_dir}")
 
 
 @app.command()
-def pull(
-    source: str = typer.Argument(..., help="Target name (e.g. default)"),
-    force: bool = typer.Option(
-        False, "--force", "-f", help="Force re-download even if up to date"
-    ),
+def checkout(
+    remote: str = Remote,
+    working: Path = Working,
+    ref: str = typer.Option(layout.DEFAULT_BRANCH, help="The branch to build on"),
 ) -> None:
-    """Pull DuckLake catalog from a target."""
-    import fdl
-
+    """Make a working catalog from the version a branch holds."""
+    store = open_store(remote)
     try:
-        fdl.pull(source, force=force)
-    except ValueError as e:
-        raise typer.BadParameter(str(e)) from None
+        version = repo.checkout(store, working, ref=ref)
+        data = repo.data_url(store)
+    except ERRORS as exc:
+        raise _fail(exc) from exc
+    _write_state(working, {"remote": remote, "ref": ref, "base": version.id if version else None})
+    typer.echo(f"{working} at {version.id if version else 'an empty catalog'}")
+    typer.echo("Write to it with:")
+    typer.echo("  " + catalog.attach_sql(working, alias="lake", data_path=data)[-1] + ";")
 
 
 @app.command()
-def push(
-    dest: str = typer.Argument(..., help="Target name (e.g. default)"),
-    force: bool = typer.Option(
-        False, "--force", "-f", help="Override conflict detection"
-    ),
+def commit(
+    working: Path = Working,
+    message: str = typer.Option(..., "-m", "--message", help="What changed"),
+    author: str = typer.Option(..., help="Who made it"),
 ) -> None:
-    """Push catalog to a target."""
-    import fdl
-    from fdl.meta import PushConflictError
-
+    """Freeze the working catalog into a version and push it to its branch."""
+    state = _read_state(working)
+    store = open_store(state["remote"])
+    out = Path(tempfile.mkdtemp(prefix="fdl-"))
     try:
-        fdl.push(dest, force=force)
-    except PushConflictError as e:
-        console.print(f"[red]{e}[/red]")
-        raise SystemExit(1) from None
-    except FileNotFoundError as e:
-        console.print(f"[red]{e}[/red]")
-        raise SystemExit(1) from None
-    except ValueError as e:
-        raise typer.BadParameter(str(e)) from None
-
-
-@app.command(
-    context_settings={"allow_extra_args": True, "allow_interspersed_args": False}
-)
-def run(ctx: typer.Context) -> None:
-    """Run a command with fdl environment variables.
-
-    \b
-    Sets FDL_CATALOG_URL, FDL_CATALOG_PATH, FDL_DATA_URL (and
-    FDL_DATA_BUCKET, FDL_DATA_PREFIX, FDL_S3_* for S3 targets):
-      fdl run TARGET
-      fdl run TARGET -- COMMAND [ARGS...]
-    """
-    import fdl
-
-    target, cmd = _parse_command_args(ctx.args)
-    try:
-        raise SystemExit(fdl.run(target, cmd))
-    except FileNotFoundError as e:
-        console.print(f"[red]{e}[/red]")
-        raise SystemExit(1) from None
-    except ValueError as e:
-        raise typer.BadParameter(_command_missing_hint(str(e))) from None
-
-
-@app.command(
-    context_settings={"allow_extra_args": True, "allow_interspersed_args": False}
-)
-def sync(
-    ctx: typer.Context,
-    force: bool = typer.Option(
-        False, "--force", "-f", help="Override conflict detection on push"
-    ),
-) -> None:
-    """Run pipeline and push in one step.
-
-    \b
-    Uses command from fdl.toml, or specify explicitly:
-      fdl sync TARGET
-      fdl sync TARGET -- COMMAND [ARGS...]
-    """
-    import fdl
-    from fdl.meta import PushConflictError
-
-    target, cmd = _parse_command_args(ctx.args)
-    try:
-        raise SystemExit(fdl.sync(target, cmd, force=force))
-    except PushConflictError as e:
-        console.print(f"[red]{e}[/red]")
-        raise SystemExit(1) from None
-    except FileNotFoundError as e:
-        console.print(f"[red]{e}[/red]")
-        raise SystemExit(1) from None
-    except ValueError as e:
-        raise typer.BadParameter(_command_missing_hint(str(e))) from None
-
-
-def _command_missing_hint(msg: str) -> str:
-    """Add CLI-specific usage hint to a 'no command' error."""
-    return (
-        f"{msg}\n"
-        "  Either use: fdl <command> TARGET -- COMMAND\n"
-        "  Or add to fdl.toml:\n"
-        '    command = "python main.py"'
-    )
-
-
-def _parse_command_args(args: list[str]) -> tuple[str, list[str] | None]:
-    """Parse TARGET [-- COMMAND] from raw args.
-
-    When no ``--`` separator is given, returns (target, None) so the API
-    falls back to the ``command`` field in fdl.toml.
-    """
-    if "--" in args:
-        idx = args.index("--")
-        before, cmd = args[:idx], args[idx + 1 :]
-        if len(before) != 1:
-            raise typer.BadParameter("Usage: fdl <command> TARGET [-- COMMAND]")
-        if not cmd:
-            raise typer.BadParameter("No command after --")
-        return before[0], cmd
-
-    if len(args) != 1:
-        raise typer.BadParameter("Usage: fdl <command> TARGET [-- COMMAND]")
-    return args[0], None
-
-
-@app.command("config")
-def config_cmd(
-    key: str = typer.Argument(None, help="Config key (e.g. 'targets.default.url')"),
-    value: str = typer.Argument(None, help="Value to set"),
-) -> None:
-    """Get or set fdl configuration (reads/writes fdl.toml)."""
-    from fdl.config import (
-        _load_toml,
-        get_all,
-        project_config_path,
-        set_value,
-    )
-
-    dest = project_config_path()
-
-    if key is None:
-        for k, v in get_all(dest).items():
-            console.print(f"{k}={v}", highlight=False)
-        return
-
-    if value is not None:
-        set_value(key, value, dest)
-    else:
-        data = _load_toml(dest)
-        parts = key.split(".")
-        result = data
-        for part in parts:
-            if isinstance(result, dict):
-                result = result.get(part)
-            else:
-                result = None
-                break
-        if result is None:
-            raise SystemExit(1)
-        console.print(result, highlight=False)
-
-
-@app.command()
-def sql(
-    target: str = typer.Argument(..., help="Target name (e.g. default)"),
-    query: str = typer.Argument(..., help="SQL query to execute"),
-    force: bool = typer.Option(
-        False, "--force", "-f", help="Skip stale catalog check"
-    ),
-) -> None:
-    """Execute a SQL query against the DuckLake catalog."""
-    import fdl
-    from fdl.config import datasource_name
-    from fdl.meta import catalog_is_stale
-
-    resolved = _resolve_target(target)
-    datasource = datasource_name()
-
-    if not force and catalog_is_stale(target, resolved, datasource):
-        console.print(
-            "[red]Remote catalog has been updated since the last pull. "
-            "Run 'fdl pull' first, or use --force to override.[/red]"
+        parent = repo.read_version(store, state["base"]) if state["base"] else None
+        version = repo.commit(
+            working,
+            out,
+            parent=parent,
+            data_path=repo.data_url(store),
+            author={"name": author},
+            message=message,
         )
-        raise SystemExit(1)
+        repo.push(store, out / version.id, version, ref=state["ref"])
+    except ERRORS as exc:
+        raise _fail(exc) from exc
+    finally:
+        shutil.rmtree(out, ignore_errors=True)
+    _write_state(working, {**state, "base": version.id})
+    typer.echo(f"{state['ref']} -> {version.id} (version {version.seq})")
 
-    from fdl.config import find_project_dir
-    from fdl.maintenance import auto_expire, latest_snapshot_id
 
-    root = find_project_dir()
-    snapshot_before = latest_snapshot_id(target, root)
+@app.command()
+def log(remote: str = Remote, ref: str = typer.Option(layout.HEAD)) -> None:
+    """Versions from the one a ref holds back to the first."""
+    store = open_store(remote)
     try:
-        with fdl.connect(target) as conn:
-            conn.execute(query)
-            if conn.description:
-                columns = [desc[0] for desc in conn.description]
-                rows = conn.fetchall()
-                if rows:
-                    # Format as table
-                    col_widths = [len(c) for c in columns]
-                    for row in rows:
-                        for i, val in enumerate(row):
-                            col_widths[i] = max(col_widths[i], len(str(val)))
-                    header = " | ".join(
-                        c.ljust(w) for c, w in zip(columns, col_widths)
-                    )
-                    separator = "-+-".join("-" * w for w in col_widths)
-                    print(header)
-                    print(separator)
-                    for row in rows:
-                        print(" | ".join(
-                            str(v).ljust(w) for v, w in zip(row, col_widths)
-                        ))
-    except FileNotFoundError as e:
-        console.print(f"[red]{e}[/red]")
-        raise SystemExit(1) from None
+        for version in repo.log(store, ref):
+            mark = " (expired)" if repo.is_expired(store, version.id) else ""
+            typer.echo(f"{version.seq:>4}  {version.id}  {version.created_at}  {version.author['name']}{mark}")
+            typer.echo(f"      {version.message}")
+    except ERRORS as exc:
+        raise _fail(exc) from exc
 
-    # Auto-expire only when the query wrote to the catalog (writes always
-    # create snapshots); SELECTs stay side-effect free.
-    if latest_snapshot_id(target, root) != snapshot_before:
-        auto_expire(target, project_dir=root)
+
+@app.command()
+def url(remote: str = Remote, ref: str = typer.Option(layout.HEAD)) -> None:
+    """Where the catalog of the version a ref holds is, to ATTACH."""
+    store = open_store(remote)
+    try:
+        version = repo.head(store, ref)
+    except ERRORS as exc:
+        raise _fail(exc) from exc
+    if version is None:
+        raise _fail(repo.RepoError(f"{ref} holds no version yet"))
+    typer.echo(store.url.rstrip("/") + "/" + layout.version_catalog(version.id))
 
 
 @app.command()
 def expire(
-    target: str = typer.Argument(..., help="Target name (e.g. default)"),
-    retention_days: int = typer.Option(
-        None,
-        "--retention-days",
-        help="Retention period in days "
-        "(default: maintenance.snapshot_retention_days from fdl.toml, or 7)",
-    ),
-    dry_run: bool = typer.Option(
-        False, "--dry-run", help="Only report what would be expired"
-    ),
+    remote: str = Remote,
+    keep: int = typer.Option(1, help="How many of the newest versions to keep"),
+    since: str | None = typer.Option(None, help="Also keep those made at or after this time (ISO 8601)"),
+    ref: str = typer.Option(layout.DEFAULT_BRANCH),
 ) -> None:
-    """Expire old snapshots and delete unreferenced data files."""
-    import fdl
+    """Take older versions out of retention: mark them and drop their catalogs.
 
+    Data files are left in place; versions that are kept still share them.
+    """
+    store = open_store(remote)
     try:
-        result = fdl.expire(target, retention_days=retention_days, dry_run=dry_run)
-    except FileNotFoundError as e:
-        console.print(f"[red]{e}[/red]")
-        raise SystemExit(1) from None
-
-    window = f"older than {result.retention_days} days"
-    if result.dry_run:
-        console.print(
-            f"Would expire {result.expired_snapshots} snapshots ({window}) "
-            f"and delete {result.deleted_files} data files"
-        )
-    elif result.expired_snapshots or result.deleted_files:
-        console.print(
-            f"Expired {result.expired_snapshots} snapshots ({window}), "
-            f"deleted {result.deleted_files} data files"
-        )
-    else:
-        console.print(f"Nothing to expire ({window})")
+        newest = repo.head(store, ref)
+        expired = repo.prune(store, newest, keep=keep, since=since) if newest else []
+    except ERRORS as exc:
+        raise _fail(exc) from exc
+    typer.echo(f"Expired {len(expired)} version(s).")
 
 
-@app.command()
-def duckdb(
-    target: str = typer.Argument(..., help="Target name (e.g. default)"),
-    read_only: bool = typer.Option(
-        False, "--read-only", help="Open the catalog in read-only mode"
-    ),
-    force: bool = typer.Option(
-        False, "--force", "-f", help="Skip stale catalog check"
-    ),
-    dry_run: bool = typer.Option(
-        False,
-        "--dry-run",
-        help="Print the duckdb command that would be executed and exit",
-    ),
-    duckdb_bin: str = typer.Option(
-        "duckdb",
-        "--duckdb-bin",
-        help="Path to the duckdb binary (default: first on PATH)",
-    ),
-) -> None:
-    """Launch an interactive DuckDB shell with the DuckLake catalog attached."""
-    import os
-    import shlex
-
-    from fdl.config import datasource_name
-    from fdl.ducklake import build_attach_sql
-    from fdl.meta import catalog_is_stale
-
-    resolved = _resolve_target(target)
-    datasource = datasource_name()
-
-    if not force and catalog_is_stale(target, resolved, datasource):
-        console.print(
-            "[red]Remote catalog has been updated since the last pull. "
-            "Run 'fdl pull' first, or use --force to override.[/red]"
-        )
-        raise SystemExit(1)
-
-    try:
-        stmts = build_attach_sql(target, read_only=read_only)
-    except FileNotFoundError as e:
-        console.print(f"[red]{e}[/red]")
-        raise SystemExit(1) from None
-    argv = [duckdb_bin]
-    for s in stmts:
-        argv += ["-cmd", s]
-
-    if dry_run:
-        print(shlex.join(argv))
-        return
-
-    try:
-        os.execvp(duckdb_bin, argv)
-    except FileNotFoundError:
-        console.print(
-            f"[red]duckdb binary '{duckdb_bin}' not found on PATH. "
-            f"Install DuckDB CLI or pass --duckdb-bin.[/red]"
-        )
-        raise SystemExit(127)
-
-
-@app.command()
-def serve(
-    target: str = typer.Argument(..., help="Target name (e.g. default)"),
-    port: int = typer.Option(4001, help="Port number"),
-) -> None:
-    """Serve a target directory over HTTP (CORS + Range support)."""
-    from fdl.serve import run_server
-
-    serve_dir = Path(_resolve_target(target))
-    run_server(serve_dir, port)
-
-
-main: Typer = app
-
-if __name__ == "__main__":
-    main()
+def main() -> None:
+    app()

@@ -1,6 +1,6 @@
 [project]
-site_name = "fdl — Frozen DuckLake CLI"
-site_description = "Frozen DuckLake CLI"
+site_name = "fdl"
+site_description = "Versions of a DuckLake catalog on object storage"
 site_url = "https://fdl.flo8s.com/"
 repo_url = "https://github.com/queria-io/fdl"
 repo_name = "queria-io/fdl"
