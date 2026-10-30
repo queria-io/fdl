@@ -89,7 +89,7 @@ for version in repo.log(store):
 
 ## Earlier releases
 
-Releases up to 0.11 were a different tool for managing a single frozen catalog. Their code is at the [`legacy`](https://github.com/queria-io/fdl/tree/legacy) tag.
+Releases up to 0.11 were a different tool for managing a single frozen catalog. Their code is at the [`legacy`](https://github.com/queria-io/fdl/tree/legacy) branch.
 
 ## License
 
