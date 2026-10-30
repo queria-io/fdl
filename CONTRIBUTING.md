@@ -2,7 +2,7 @@
 
 ## Prerequisites
 
-- Python 3.13 or later
+- Python 3.10 or later
 - [uv](https://docs.astral.sh/uv/) for dependency management
 
 ## Getting started
@@ -18,18 +18,16 @@ uv run pytest
 ## Project structure
 
 ```
+docs/spec.md          — the format
 src/fdl/
-├── cli.py            — Typer CLI entry point
-├── config.py         — 3-layer config resolution (env → workspace → user)
-├── ducklake.py       — DuckLake catalog operations
-├── pull.py           — Pull catalog from target
-├── push.py           — Push catalog to target
-├── maintenance.py    — Snapshot expiration and data file cleanup
-├── serve.py          — Local HTTP server with CORS + Range support
-├── s3.py             — S3 storage operations
-└── console.py        — Console output utilities
-
-docs/                 — Zensical documentation source
+├── layout.py         — where each file of a repository sits
+├── version.py        — version.json and version IDs
+├── refs.py           — reading refs and moving them on condition
+├── catalog.py        — DuckLake catalogs in SQLite and DuckDB, and the conversion
+├── repo.py           — init, checkout, commit, push, log, expire
+├── store.py          — what a store has to provide
+├── stores.py         — a folder and S3 as stores
+└── cli.py            — the fdl command
 ```
 
 ## Commit conventions
@@ -63,5 +61,5 @@ Documentation deploys automatically on push to main when files under `docs/` or 
 
 ## Code style
 
-- Python 3.13+ — use modern syntax (`X | Y` for unions, etc.)
+- Python 3.10+ — `X | Y` unions are fine; nothing newer
 - All code comments, docstrings, and commit messages in English

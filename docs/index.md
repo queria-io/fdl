@@ -1,30 +1,12 @@
----
-title: Home
----
+# fdl
 
-# fdl — Frozen DuckLake CLI
+Versions of a [DuckLake](https://ducklake.select/) catalog on object storage, kept the way Git keeps commits.
 
-fdl automates the lifecycle of [Frozen DuckLake](https://ducklake.select/2025/10/24/frozen-ducklake/) catalogs — from initialization to deployment.
+Each version is a frozen catalog with a record of its parent, author and message. Refs such as `refs/heads/main` say which version readers get. Data files are shared between versions and never rewritten. All it needs is a store that can read, write and write on condition: a folder, S3, R2 or anything S3-compatible.
 
-## Installation
+- [Specification](spec.md): the layout, `version.json`, and the rules for refs and retention
+- [Command line](cli.md): `fdl init`, `checkout`, `commit`, `log`, `url`, `expire`
 
 ```bash
-pip install frozen-ducklake
+pip install 'fdl[s3]'
 ```
-
-See [Installation](getting-started/installation.md) for other methods (uv, pipx).
-
-## Features
-
-- Publish data to S3-compatible storage or local directories with a single command
-- Run data pipelines with automatic storage and credential resolution
-- Serve datasets over HTTP for instant DuckDB access
-- Works with dbt and dlt out of the box
-- CLI and Python API share the same operations, so pipelines (e.g. Dagster) can drive fdl in-process
-
-## Learn More
-
-- [Quick Start](getting-started/quickstart.md) — Create and serve your first dataset in under 5 minutes
-- [Working with Data](guide/working-with-data.md) — How to read and write data in your catalog
-- [CLI Reference](reference/cli.md) — All available commands
-- [Python API Reference](reference/python-api.md) — Call fdl from Python
