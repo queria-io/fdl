@@ -1,6 +1,83 @@
 # CHANGELOG
 
 
+## v0.12.1 (2026-10-30)
+
+### Bug Fixes
+
+- Publish as fdl-cli on PyPI
+  ([`37afe71`](https://github.com/queria-io/fdl/commit/37afe717b53151f59f4c221292192bb0fba13995))
+
+PyPI refuses the name fdl as too similar to an existing project. The command and the import name
+  stay fdl.
+
+
+## v0.12.0 (2026-10-30)
+
+### Build System
+
+- Publish as fdl on PyPI
+  ([`c5fc6c1`](https://github.com/queria-io/fdl/commit/c5fc6c1b5141c000550a15a081d9a8dd71628138))
+
+BREAKING CHANGE: the package is now fdl. frozen-ducklake stays at 0.11, the earlier tool.
+
+### Continuous Integration
+
+- Decouple PyPI publish into a retriable workflow
+  ([`270f436`](https://github.com/queria-io/fdl/commit/270f436b63dd8d2f645682415ac968f9d7d9a0c2))
+
+The publish step lived inside release.yml behind a released==true guard, so a failed upload could
+  not be retried: re-running release.yml makes semantic-release refuse (the tag already exists) and
+  the publish step is skipped. A trusted-publisher misconfiguration left v0.11.0 tagged and released
+  on GitHub but never uploaded to PyPI, with no way to recover short of hand-publishing.
+
+Move build+publish into publish.yml (workflow_dispatch, ref input) and have release.yml dispatch it
+  with the new tag, mirroring the existing docs trigger. A stranded release can now be published
+  with: gh workflow run publish.yml -R <owner>/fdl -f ref=<tag>
+
+### Documentation
+
+- Point to the legacy tag for the earlier tool
+  ([`6a6773b`](https://github.com/queria-io/fdl/commit/6a6773b74b7c0a67f7bb1846169313099e809d29))
+
+- Replace derivable project structure with a DuckLake gotcha
+  ([`0f5228b`](https://github.com/queria-io/fdl/commit/0f5228b957be12a9636e90b158b9d3140f068120))
+
+The project structure section only restated what `ls src/fdl/` shows. Replace it with the
+  CALL-vs-SELECT trap in DuckLake maintenance functions, which is not apparent from any single file
+  and corrupts the catalog when missed.
+
+- The earlier tool lives on the legacy branch
+  ([`33c0e8c`](https://github.com/queria-io/fdl/commit/33c0e8cc1366c78294c279f3aac5d21790e173a0))
+
+### Features
+
+- Replace the tool with the FDL repository format
+  ([`eb4fbe7`](https://github.com/queria-io/fdl/commit/eb4fbe7297870d20c2969bc4cce1d2aa883475a1))
+
+fdl now keeps versions of a DuckLake catalog the way Git keeps commits: versions/<ID>/ holds a
+  frozen catalog and version.json (parents, author, message, sha256), refs/heads/main says which
+  version readers get, and refs only move by conditional writes. Data files are shared between
+  versions and never rewritten.
+
+- docs/spec.md: the format - fdl.repo: init, checkout, commit, push, log, expire, prune -
+  fdl.stores: a folder and S3 (conditional writes through boto3) - fdl command: init, checkout,
+  commit, log, url, expire
+
+BREAKING CHANGE: the earlier commands (pull, push by target, run, serve, sql and the rest) and their
+  configuration are gone. The previous tool is kept at the v0.11.0 tag.
+
+- Run on Python 3.10 and make boto3 an extra
+  ([`675f6ac`](https://github.com/queria-io/fdl/commit/675f6ace4832e96de1678748aa0ac2fc32430ca5))
+
+Tools that build on fdl as a library often support older Pythons and bring their own store, so the
+  floor goes to 3.10 and S3 support moves to frozen-ducklake[s3].
+
+### Breaking Changes
+
+- The package is now fdl. frozen-ducklake stays at 0.11, the earlier tool.
+
+
 ## v0.11.0 (2026-07-11)
 
 ### Chores

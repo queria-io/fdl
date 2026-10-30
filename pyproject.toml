@@ -1,6 +1,6 @@
 [project]
 name = "fdl-cli"
-version = "0.12.0"
+version = "0.12.1"
 description = "Versions of a DuckLake catalog on object storage, kept the way Git keeps commits"
 readme = "README.md"
 license = "MIT"
