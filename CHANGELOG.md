@@ -1,6 +1,17 @@
 # CHANGELOG
 
 
+## v0.14.1 (2026-11-01)
+
+### Bug Fixes
+
+- Name fdl in the User-Agent of HTTP requests
+  ([`f1fa818`](https://github.com/queria-io/fdl/commit/f1fa818c02ff66ef50a6277d258719dc446bb129))
+
+Cloudflare's browser integrity check refuses the default Python-urllib agent with 403 (error code
+  1010), so checkout from such a host failed.
+
+
 ## v0.14.0 (2026-11-01)
 
 ### Documentation
