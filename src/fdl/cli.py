@@ -15,7 +15,7 @@ from pathlib import Path
 
 import typer
 
-from . import catalog, layout, refs, repo
+from . import catalog, dataset, layout, refs, repo
 from .stores import StoreError, open_store, save_credentials
 from .version import VersionError
 
@@ -45,7 +45,14 @@ def _fail(exc: Exception) -> typer.Exit:
     return typer.Exit(1)
 
 
-ERRORS = (repo.RepoError, refs.RefError, layout.LayoutError, VersionError, StoreError)
+ERRORS = (
+    repo.RepoError,
+    refs.RefError,
+    layout.LayoutError,
+    VersionError,
+    StoreError,
+    dataset.DatasetError,
+)
 
 
 @app.command()
@@ -89,13 +96,16 @@ def commit(
     working: Path = Working,
     message: str = typer.Option(..., "-m", "--message", help="What changed"),
     author: str = typer.Option(..., help="Who made it"),
-    attach: list[Path] = typer.Option([], help="A file to keep beside the version (repeatable)"),
+    describe: Path = typer.Option(
+        Path(layout.DATASET), "--dataset", help="The description of what the version holds"
+    ),
 ) -> None:
     """Freeze the working catalog into a version and push it to its branch."""
     state = _read_state(working)
     store = open_store(state["remote"])
     out = Path(tempfile.mkdtemp(prefix="fdl-"))
     try:
+        declared = dataset.read(describe)
         parent = repo.read_version(store, state["base"]) if state["base"] else None
         version = repo.commit(
             working,
@@ -104,8 +114,8 @@ def commit(
             data_path=repo.data_url(store),
             author={"name": author},
             message=message,
+            dataset=declared,
         )
-        repo.attach(out / version.id, tuple(attach))
         local = Path(state["data"]) if state.get("data") else None
         repo.push(store, out / version.id, version, ref=state["ref"], local_data=local)
     except ERRORS as exc:

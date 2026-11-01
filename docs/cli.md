@@ -31,11 +31,12 @@ For a repository over HTTP, new data files are written to `<working.sqlite>.data
 ## fdl commit
 
 ```bash
-fdl commit <working.sqlite> -m "What changed" --author alice [--attach dataset.json]
+fdl commit <working.sqlite> -m "What changed" --author alice [--dataset dataset.json]
 ```
 
-Freezes the working catalog into a new version whose parent is the version it was checked out at, uploads it, and moves the branch on condition. `--attach` puts a file beside the version's catalog; what it means is the host's call. It is refused when:
+Freezes the working catalog into a new version whose parent is the version it was checked out at, uploads it, and moves the branch on condition. Every version is described by a `dataset.json` (see the specification), read from the current directory or from `--dataset`. The command checks it against the catalog and fills in the column types, row counts and catalog comments. It is refused when:
 
+- there is no `dataset.json`, or it describes a table or column the catalog lacks, or has keys the format does not define
 - the branch has moved since the checkout (check out again and redo the work)
 - a data file the catalog names is not in the repository
 - a data file is recorded with an absolute path outside the data directory

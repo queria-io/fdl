@@ -17,8 +17,9 @@ from pathlib import Path
 from typing import Iterator
 
 from . import catalog, layout, refs
+from . import dataset as dataset_json
 from .store import Store, is_conflict, is_missing
-from .version import Catalog, DuckLake, Version, new_id, parse, utc_now
+from .version import Catalog, DuckLake, File, Version, new_id, parse, utc_now
 
 
 class RepoError(RuntimeError):
@@ -104,8 +105,12 @@ def commit(
     message: str,
     inputs: tuple[dict, ...] = (),
     extensions: dict | None = None,
+    dataset: dict | None = None,
 ) -> Version:
     """Freeze the working catalog into a version under ``out_dir/<ID>/``.
+
+    ``dataset`` is the writer's description (`dataset.json`), checked against
+    the frozen catalog and completed from it.
 
     ``data_path`` is where readers find the data files (the remote's root and
     data_dir), written into the frozen catalog. Every file reference must be
@@ -133,6 +138,7 @@ def commit(
             message=message,
             inputs=inputs,
             extensions=extensions,
+            dataset=dataset,
         )
     finally:
         frozen.unlink(missing_ok=True)
@@ -209,6 +215,7 @@ def record(
     message: str,
     inputs: tuple[dict, ...] = (),
     extensions: dict | None = None,
+    dataset: dict | None = None,
 ) -> Version:
     """Make a version out of a catalog that is already frozen.
 
@@ -229,6 +236,13 @@ def record(
         first, last = catalog.snapshot_range(
             copied, parent.ducklake.snapshot_id if parent else None
         )
+        described = None
+        if dataset is not None:
+            written = target / layout.DATASET
+            written.write_bytes(dataset_json.to_json(dataset_json.describe(dataset, copied)))
+            described = File(
+                path=layout.DATASET, bytes=written.stat().st_size, sha256=_sha256(written)
+            )
         version = Version(
             id=version_id,
             seq=parent.seq + 1 if parent else 1,
@@ -245,6 +259,7 @@ def record(
             ducklake=DuckLake(format=recorded, snapshot_id=last, snapshots=(first, last)),
             inputs=tuple(inputs),
             extensions=dict(extensions or {}),
+            dataset=described,
         )
         (target / layout.VERSION_RECORD).write_bytes(version.to_json())
     except BaseException:
@@ -307,15 +322,6 @@ def push(
         raise NotFastForward(f"{ref} moved during the push. Pull and build again.") from exc
 
 
-def attach(local: Path, files: tuple[Path, ...]) -> None:
-    """Put files beside a committed version's catalog, to be uploaded with it."""
-    reserved = {layout.CATALOG, layout.VERSION_RECORD, layout.EXPIRED, layout.CATALOGS_DIR.rstrip("/")}
-    for path in map(Path, files):
-        if path.name in reserved:
-            raise RepoError(f"{path.name} is a name the format keeps for itself")
-        shutil.copyfile(path, Path(local) / path.name)
-
-
 def upload(store: Store, local: Path, version: Version) -> None:
     """Put a committed version's files, catalog first and the record last.
 
@@ -323,11 +329,9 @@ def upload(store: Store, local: Path, version: Version) -> None:
     """
     local = Path(local)
     _put_once(store, layout.version_catalog(version.id), local / layout.CATALOG)
-    # Files attached to the version, whose meaning is the host's. Before the
-    # record, which is what makes a version there at all.
-    for path in sorted(local.iterdir()):
-        if path.is_file() and path.name not in (layout.CATALOG, layout.VERSION_RECORD):
-            _put_once(store, layout.version_dir(version.id) + path.name, path)
+    # Before the record, which is what makes a version there at all.
+    if version.dataset is not None:
+        _put_once(store, layout.version_dir(version.id) + version.dataset.path, local / version.dataset.path)
     _put_once(store, layout.version_record(version.id), local / layout.VERSION_RECORD)
 
 

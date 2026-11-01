@@ -18,6 +18,13 @@ from http_repo import TOKEN, serve
 runner = CliRunner()
 
 
+@pytest.fixture(autouse=True)
+def described(tmp_path: Path, monkeypatch) -> None:
+    """Every commit reads `dataset.json` from where it runs."""
+    (tmp_path / "dataset.json").write_text('{"name": "towns", "title": "Towns"}')
+    monkeypatch.chdir(tmp_path)
+
+
 @pytest.fixture
 def served(tmp_path: Path, monkeypatch):
     local = LocalStore(tmp_path / "served")
@@ -75,9 +82,7 @@ def test_the_round_trip_over_http(served, tmp_path: Path) -> None:
     working = tmp_path / "work" / "lake.sqlite"
     run("checkout", url, working)
     write(working, "CREATE TABLE lake.main.towns AS SELECT 1 AS id")
-    readme = tmp_path / "dataset.json"
-    readme.write_text('{"title": "Towns"}')
-    run("commit", working, "-m", "first", "--author", "tester", "--attach", readme)
+    run("commit", working, "-m", "first", "--author", "tester")
 
     # A second working catalog reads the published file where it is, and
     # writes its new one locally.
@@ -87,7 +92,9 @@ def test_the_round_trip_over_http(served, tmp_path: Path) -> None:
     run("commit", again, "-m", "second", "--author", "tester")
 
     first, second = reversed(list(repo.log(local)))
-    assert local.get(layout.version_dir(first.id) + "dataset.json") == readme.read_bytes()
+    described = json.loads(local.get(layout.version_dir(first.id) + "dataset.json"))
+    assert described["title"] == "Towns"
+    assert [t["name"] for t in described["tables"]] == ["towns"]
     frozen = tmp_path / "frozen.duckdb"
     frozen.write_bytes(local.get(layout.version_catalog(second.id)))
     assert catalog.absolute_paths(frozen) == []
