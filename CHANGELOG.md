@@ -1,6 +1,31 @@
 # CHANGELOG
 
 
+## v0.16.0 (2026-11-01)
+
+### Documentation
+
+- Compare files.json with Git's reachability bitmap
+  ([`181a738`](https://github.com/queria-io/fdl/commit/181a738c9b09dde2e74adea19b9b520884d76833))
+
+### Features
+
+- Index each table's files in files.json, not version.json
+  ([`74412af`](https://github.com/queria-io/fdl/commit/74412af89913284ea48ab66f333da0725fb724b9))
+
+files.json sits beside the catalog as an optional index made from it, like Git's commit-graph.
+  version.json names it with its size and sha256. Tables with a renamed column are marked, and
+  readers without DuckLake must not read a table with deletes or renamed columns. Expiry deletes the
+  index with the catalogs.
+
+- List each table's files in version.json
+  ([`1134b2d`](https://github.com/queria-io/fdl/commit/1134b2df324b6eb3fe0fa3598c5bf355bed64561))
+
+Readers without DuckDB (a Worker reading Parquet by range) need to know which files make up a table
+  at a version. commit now writes tables with each data file's path under data_dir, rows, bytes,
+  footer size and its delete file.
+
+
 ## v0.15.0 (2026-11-01)
 
 ### Features
