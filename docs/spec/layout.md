@@ -21,6 +21,7 @@ Paths are relative to the root, lower case, and separated by `/`. The root is wh
     version.json.sig               a signature of the record (optional)
     ducklake.duckdb                the frozen catalog
     dataset.json                   what the version holds, described
+    files.json                     each table's data files, indexed from the catalog (optional)
     catalogs/<format>.duckdb       the catalog in another DuckLake format (optional)
     expired.json                   the past-retention mark (only once expired)
     <others>                       files a host adds, such as previews

@@ -20,6 +20,8 @@ VERSION_RECORD = "version.json"
 CATALOG = "ducklake.duckdb"
 #: What the version holds, described (see `fdl.dataset`).
 DATASET = "dataset.json"
+#: The index of each table's files, made from the catalog (optional).
+FILES = "files.json"
 EXPIRED = "expired.json"
 #: Other formats of the same catalog, under the version (optional).
 CATALOGS_DIR = "catalogs/"

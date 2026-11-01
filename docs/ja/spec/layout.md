@@ -21,6 +21,7 @@ description: リポジトリのファイル、そのパス、fdl.json の中身�
     version.json.sig               記録の署名（任意）
     ducklake.duckdb                固めたカタログ
     dataset.json                   バージョンの中身の説明
+    files.json                     カタログから作った、表ごとのデータファイルの索引（任意）
     catalogs/<format>.duckdb       別の DuckLake 形式のカタログ（任意）
     expired.json                   保持期間を過ぎた印（過ぎたときだけ）
     <others>                       ホストが足すファイル（プレビューなど）

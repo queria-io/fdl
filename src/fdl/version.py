@@ -76,8 +76,8 @@ class Version:
     changes: tuple[dict, ...] = ()
     inputs: tuple[dict, ...] = ()
     extensions: dict = field(default_factory=dict)
-    #: Each table's files at the frozen snapshot, keyed ``schema.table``.
-    tables: dict = field(default_factory=dict)
+    #: The version's `files.json`, the index of each table's files. Optional.
+    files: File | None = None
     #: The version's `dataset.json`. None only in versions written before it was required.
     dataset: File | None = None
     fdl: str = layout.FDL_VERSION
@@ -113,7 +113,17 @@ class Version:
                 "snapshot_id": self.ducklake.snapshot_id,
                 "snapshots": list(self.ducklake.snapshots),
             },
-            "tables": self.tables,
+            **(
+                {
+                    "files": {
+                        "path": self.files.path,
+                        "bytes": self.files.bytes,
+                        "sha256": self.files.sha256,
+                    }
+                }
+                if self.files
+                else {}
+            ),
             "changes": list(self.changes),
             "inputs": list(self.inputs),
             "extensions": self.extensions,
@@ -155,7 +165,7 @@ def parse(data: bytes, *, expected_id: str | None = None) -> Version:
             changes=tuple(record.get("changes", ())),
             inputs=tuple(record.get("inputs", ())),
             extensions=dict(record.get("extensions", {})),
-            tables=dict(record.get("tables", {})),
+            files=_file(record.get("files")),
             dataset=(
                 File(path=dataset["path"], bytes=int(dataset["bytes"]), sha256=dataset["sha256"])
                 if dataset
@@ -166,6 +176,12 @@ def parse(data: bytes, *, expected_id: str | None = None) -> Version:
         raise
     except (KeyError, TypeError, ValueError) as exc:
         raise VersionError(f"not a version record: {exc}") from exc
+
+
+def _file(entry: dict | None) -> File | None:
+    if not entry:
+        return None
+    return File(path=entry["path"], bytes=int(entry["bytes"]), sha256=entry["sha256"])
 
 
 def utc_now() -> str:

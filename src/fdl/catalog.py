@@ -508,9 +508,9 @@ def storage_version(catalog_path: Path) -> str:
 def table_files(catalog_path: Path, snapshot_id: int) -> dict[str, dict]:
     """Each table's files at ``snapshot_id``, keyed ``schema.table``.
 
-    For readers without DuckDB: what to read for a table, and the rows each
-    data file has deleted. A relative path is relative to the data path, as in
-    `data_files`; an absolute one is written as ``url``.
+    For readers without DuckDB: what to read for a table, the rows each data
+    file has deleted, and whether a column was ever renamed. Paths are
+    relative to the data path, as in `data_files`.
     """
     con = _open(Path(catalog_path))
     live = "begin_snapshot <= ? AND (end_snapshot IS NULL OR end_snapshot > ?)"
@@ -547,6 +547,20 @@ def table_files(catalog_path: Path, snapshot_id: int) -> dict[str, dict]:
             if _table_exists(con, "ducklake_delete_file")
             else []
         )
+        # A renamed column keeps its id under a new name, while files written
+        # before the rename still carry the old one.
+        renamed = {
+            row[0]
+            for row in con.execute(
+                """
+                SELECT DISTINCT table_id FROM ducklake_column
+                WHERE begin_snapshot <= ?
+                GROUP BY table_id, column_id
+                HAVING count(DISTINCT column_name) > 1
+                """,
+                [snapshot_id],
+            ).fetchall()
+        }
     except Exception as exc:  # noqa: BLE001 - duckdb raises several types
         raise CatalogError(f"{catalog_path} is not a DuckLake catalog: {exc}") from exc
     finally:
@@ -555,7 +569,9 @@ def table_files(catalog_path: Path, snapshot_id: int) -> dict[str, dict]:
     prefixes = {table_id: prefix for table_id, _, prefix in tables}
 
     def where(table_id: int, path: str, relative: bool) -> dict:
-        return {"path": prefixes[table_id] + path} if relative else {"url": path}
+        if not relative:
+            raise CatalogError(f"{catalog_path} names a data file by an absolute path: {path}")
+        return {"path": prefixes[table_id] + path}
 
     table_of = {data_id: table_id for data_id, table_id, *_ in files}
     deleted = {
@@ -577,7 +593,13 @@ def table_files(catalog_path: Path, snapshot_id: int) -> dict[str, dict]:
         ]
         for table_id in prefixes
     }
-    return {name: {"files": listed[table_id]} for table_id, name, _ in tables}
+    return {
+        name: {
+            "files": listed[table_id],
+            **({"renamed_columns": True} if table_id in renamed else {}),
+        }
+        for table_id, name, _ in tables
+    }
 
 
 def snapshot_range(catalog_path: Path, after: int | None) -> tuple[int, int]:

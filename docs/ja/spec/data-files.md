@@ -24,7 +24,7 @@ DuckLake 自身の片付け（`ducklake_cleanup_old_files`、`ducklake_expire_sn
 バージョンの保持期間は、次の順に終わらせます。
 
 1. `versions/<ID>/expired.json` を置く
-2. バージョンのカタログを消す: `ducklake.duckdb` と `catalogs/`
+2. バージョンのカタログ（`ducklake.duckdb` と `catalogs/`）と `files.json` を消す
 3. 猶予期間のあと、上の条件に合うデータファイルを消す
 
 ```json expired.json
