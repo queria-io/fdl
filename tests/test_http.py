@@ -3,6 +3,8 @@
 from __future__ import annotations
 
 import json
+import urllib.error
+import urllib.request
 from pathlib import Path
 
 import duckdb
@@ -108,3 +110,16 @@ def test_the_round_trip_over_http(served, tmp_path: Path) -> None:
         f"ATTACH 'ducklake:{frozen}' AS v (READ_ONLY, DATA_PATH '{repo.data_url(local)}', OVERRIDE_DATA_PATH true)"
     )
     assert con.execute("SELECT towns FROM v.main.roads").fetchone() == (1,)
+
+
+def test_requests_name_fdl(monkeypatch) -> None:
+    sent = []
+
+    def urlopen(request):
+        sent.append(request)
+        raise urllib.error.URLError("offline")
+
+    monkeypatch.setattr(urllib.request, "urlopen", urlopen)
+    with pytest.raises(StoreError):
+        HttpStore("https://example.invalid/repo/").get("fdl.json")
+    assert sent[0].get_header("User-agent").startswith("fdl/")

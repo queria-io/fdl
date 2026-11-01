@@ -8,6 +8,7 @@ missing, 412 for a failed condition), which is all `fdl.store` looks at.
 from __future__ import annotations
 
 import hashlib
+import importlib.metadata
 import json
 import os
 import urllib.error
@@ -15,6 +16,17 @@ import urllib.request
 from pathlib import Path
 from typing import Iterator, Sequence
 from urllib.parse import quote, urlencode, urlparse
+
+
+def _version() -> str:
+    try:
+        return importlib.metadata.version("fdl-cli")
+    except importlib.metadata.PackageNotFoundError:
+        return "dev"
+
+
+#: Sent with every request. Some hosts refuse the default ``Python-urllib/x.y``.
+USER_AGENT = f"fdl/{_version()}"
 
 
 class StoreError(RuntimeError):
@@ -215,7 +227,9 @@ class HttpStore:
         headers: dict[str, str] | None = None,
     ):
         url = self.root + quote(key) + ("?" + urlencode(query) if query else "")
-        request = urllib.request.Request(url, data=data, method=method, headers=dict(headers or {}))
+        request = urllib.request.Request(
+            url, data=data, method=method, headers={"User-Agent": USER_AGENT, **(headers or {})}
+        )
         if self.token:
             request.add_header("Authorization", f"Bearer {self.token}")
         try:
