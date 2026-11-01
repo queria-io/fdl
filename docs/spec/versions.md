@@ -142,6 +142,8 @@ The writer describes; the writer's tool checks the description against the froze
 ```
 
 - `name` and `title` are required. Everything else may be left out
+- A writer may keep its description as YAML (`dataset.yml`); the version always holds it as JSON
+- Each of `licenses` is an SPDX identifier, or an object with `id` and what the writer wants to add (`spdx`, `url`, `title`)
 - `tables` lists every table of the catalog's last snapshot. The writer's tool adds the tables the writer did not describe, with what the catalog knows of them, and refuses a described table or column the catalog lacks
 - From the catalog: each table's `rows`, and each field's `type` (DuckLake's type name) and `nullable`. Comments in the catalog (`COMMENT ON`) are used where the writer gave no `description`
 - Keys this specification does not define are refused. A host's or a writer's own fields go under `extensions`, keyed by their name, at the top, in a table or in a field
