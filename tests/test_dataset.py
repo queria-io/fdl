@@ -7,7 +7,7 @@ from pathlib import Path
 import duckdb
 import pytest
 
-from fdl.dataset import DatasetError, describe
+from fdl.dataset import DatasetError, describe, gather
 
 
 @pytest.fixture
@@ -68,3 +68,15 @@ def test_a_description_can_be_yaml(tmp_path: Path, frozen: Path) -> None:
     from fdl.dataset import to_json
 
     assert b'"issued": "2026-10-30"' in to_json(described)
+
+
+def test_tables_can_be_described_in_their_own_files(tmp_path: Path, frozen: Path) -> None:
+    (tmp_path / "dataset.yml").write_text("name: towns\ntitle: Towns\n")
+    (tmp_path / "models").mkdir()
+    (tmp_path / "models" / "towns.table.yml").write_text(
+        "schema: main\nname: towns\ntitle: The towns\n"
+    )
+    (tmp_path / ".fdl").mkdir()
+    (tmp_path / ".fdl" / "stale.table.yml").write_text("schema: main\nname: gone\n")
+    (table,) = describe(gather(tmp_path / "dataset.yml"), frozen)["tables"]
+    assert table["title"] == "The towns"
