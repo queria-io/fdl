@@ -7,6 +7,7 @@ version that comes out the other side.
 from __future__ import annotations
 
 import json
+import uuid
 from pathlib import Path
 
 import duckdb
@@ -64,11 +65,19 @@ def read_rows(store: LocalStore, version_id: str) -> list[tuple]:
 
 
 def test_init_writes_the_config_and_head(remote) -> None:
-    assert json.loads(remote.get(layout.CONFIG)) == {"fdl": "0.1", "data_dir": "data/"}
+    config = json.loads(remote.get(layout.CONFIG))
+    assert config == {"fdl": "0.1", "id": config["id"], "data_dir": "data/"}
+    assert uuid.UUID(config["id"])
     assert remote.get(layout.HEAD) == b"ref: refs/heads/main\n"
     assert repo.head(remote) is None
-    # Twice is harmless.
-    assert repo.init(remote).data_dir == "data/"
+    # Twice is harmless, and the id stays.
+    assert repo.init(remote) == repo.Config(fdl="0.1", data_dir="data/", id=config["id"])
+
+
+def test_a_repository_without_an_id_still_reads(tmp_path: Path) -> None:
+    store = LocalStore(tmp_path / "old")
+    store.put(layout.CONFIG, b'{"fdl": "0.1", "data_dir": "ducklake.duckdb.files/"}')
+    assert repo.read_config(store).id is None
 
 
 def test_commit_push_and_read_back(tmp_path: Path, remote) -> None:
