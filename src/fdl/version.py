@@ -47,6 +47,15 @@ class Catalog:
 
 
 @dataclass(frozen=True)
+class File:
+    """A file of the version beside its catalog, pinned by its hash."""
+
+    path: str
+    bytes: int
+    sha256: str
+
+
+@dataclass(frozen=True)
 class DuckLake:
     format: str
     snapshot_id: int
@@ -67,6 +76,8 @@ class Version:
     changes: tuple[dict, ...] = ()
     inputs: tuple[dict, ...] = ()
     extensions: dict = field(default_factory=dict)
+    #: The version's `dataset.json`. None only in versions written before it was required.
+    dataset: File | None = None
     fdl: str = layout.FDL_VERSION
 
     def to_json(self) -> bytes:
@@ -84,6 +95,17 @@ class Version:
                 "bytes": self.catalog.bytes,
                 "sha256": self.catalog.sha256,
             },
+            **(
+                {
+                    "dataset": {
+                        "path": self.dataset.path,
+                        "bytes": self.dataset.bytes,
+                        "sha256": self.dataset.sha256,
+                    }
+                }
+                if self.dataset
+                else {}
+            ),
             "ducklake": {
                 "format": self.ducklake.format,
                 "snapshot_id": self.ducklake.snapshot_id,
@@ -107,6 +129,7 @@ def parse(data: bytes, *, expected_id: str | None = None) -> Version:
             raise VersionError(f"records id {record['id']} but sits under {expected_id}")
         catalog = record["catalog"]
         ducklake = record["ducklake"]
+        dataset = record.get("dataset")
         return Version(
             fdl=record["fdl"],
             id=record["id"],
@@ -129,6 +152,11 @@ def parse(data: bytes, *, expected_id: str | None = None) -> Version:
             changes=tuple(record.get("changes", ())),
             inputs=tuple(record.get("inputs", ())),
             extensions=dict(record.get("extensions", {})),
+            dataset=(
+                File(path=dataset["path"], bytes=int(dataset["bytes"]), sha256=dataset["sha256"])
+                if dataset
+                else None
+            ),
         )
     except VersionError:
         raise

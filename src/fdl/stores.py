@@ -1,4 +1,5 @@
-"""Two stores: a folder on this machine, and an S3-compatible bucket.
+"""Three stores: a folder on this machine, an S3-compatible bucket, and a
+repository served over HTTP.
 
 Both raise `StoreError` with the HTTP status a failure would have had (404 for
 missing, 412 for a failed condition), which is all `fdl.store` looks at.
@@ -7,9 +8,13 @@ missing, 412 for a failed condition), which is all `fdl.store` looks at.
 from __future__ import annotations
 
 import hashlib
+import json
+import os
+import urllib.error
+import urllib.request
 from pathlib import Path
-from typing import Sequence
-from urllib.parse import urlparse
+from typing import Iterator, Sequence
+from urllib.parse import quote, urlencode, urlparse
 
 
 class StoreError(RuntimeError):
@@ -22,6 +27,9 @@ class LocalStore:
     """A repository in a folder. ETags are content hashes, which is enough for
     the conditional writes refs rely on. One writer at a time: the condition
     is checked and the file written in two steps."""
+
+    #: DuckDB writes data files straight into the repository.
+    writes_data_files = True
 
     def __init__(self, root: Path | str) -> None:
         self.root = Path(root)
@@ -90,6 +98,8 @@ class S3Store:
     ``AWS_*`` environment variables, ``AWS_ENDPOINT_URL`` for R2 and other
     S3-compatible stores, or a profile).
     """
+
+    writes_data_files = True
 
     def __init__(self, bucket: str, prefix: str = "", *, client=None) -> None:
         if client is None:
@@ -167,11 +177,181 @@ class S3Store:
             self._call("delete_object", key, Key=self.prefix + key)
 
 
-def open_store(url: str) -> LocalStore | S3Store:
-    """``s3://bucket/prefix/`` or a path on this machine."""
+class HttpStore:
+    """A repository served over HTTP by a host that takes writes.
+
+    The protocol is in the specification ("A repository over HTTP"): plain
+    GET, HEAD and conditional PUT, a listing, and an upload in parts for files
+    larger than a host takes in one request. There is no delete: what to keep
+    is the host's call.
+
+    DuckDB cannot write data files to an HTTP URL, so a working catalog of
+    this store writes them to a folder on this machine and `fdl.repo.push`
+    uploads them (`writes_data_files` is False).
+    """
+
+    writes_data_files = False
+
+    #: Files larger than this go up in parts. Hosts commonly cap a request
+    #: body at 100 MB.
+    PART_SIZE = 64 * 1024 * 1024
+
+    def __init__(self, url: str, *, token: str | None = None, part_size: int | None = None) -> None:
+        self.root = url.rstrip("/") + "/"
+        self.token = token if token is not None else credentials_for(self.root)
+        self.part_size = part_size or self.PART_SIZE
+
+    @property
+    def url(self) -> str:
+        return self.root
+
+    def _request(
+        self,
+        method: str,
+        key: str,
+        *,
+        query: dict[str, str] | None = None,
+        data: bytes | None = None,
+        headers: dict[str, str] | None = None,
+    ):
+        url = self.root + quote(key) + ("?" + urlencode(query) if query else "")
+        request = urllib.request.Request(url, data=data, method=method, headers=dict(headers or {}))
+        if self.token:
+            request.add_header("Authorization", f"Bearer {self.token}")
+        try:
+            return urllib.request.urlopen(request)
+        except urllib.error.HTTPError as exc:
+            detail = exc.read().decode(errors="replace").strip()
+            raise StoreError(
+                f"{method} {key or '/'}: {exc.code} {detail or exc.reason}", status=exc.code
+            ) from exc
+        except urllib.error.URLError as exc:
+            raise StoreError(f"{method} {key or '/'}: {exc.reason}") from exc
+
+    @staticmethod
+    def _conditions(
+        content_type: str | None, if_match: str | None, if_none_match: str | None
+    ) -> dict[str, str]:
+        return {
+            name: value
+            for name, value in (
+                ("Content-Type", content_type),
+                ("If-Match", if_match),
+                ("If-None-Match", if_none_match),
+            )
+            if value is not None
+        }
+
+    def put(
+        self,
+        key: str,
+        data: bytes,
+        *,
+        content_type: str | None = None,
+        if_match: str | None = None,
+        if_none_match: str | None = None,
+    ) -> str:
+        headers = self._conditions(content_type, if_match, if_none_match)
+        with self._request("PUT", key, data=data, headers=headers) as answer:
+            return answer.headers.get("ETag", "")
+
+    def put_file(self, key: str, path: Path, **kwargs) -> str:
+        path = Path(path)
+        size = path.stat().st_size
+        if size <= self.part_size:
+            return self.put(key, path.read_bytes(), **kwargs)
+        return self._put_in_parts(key, path, **kwargs)
+
+    def _put_in_parts(
+        self,
+        key: str,
+        path: Path,
+        *,
+        content_type: str | None = None,
+        if_match: str | None = None,
+        if_none_match: str | None = None,
+    ) -> str:
+        headers = self._conditions(content_type, if_match, if_none_match)
+        with self._request("POST", key, query={"uploads": ""}, headers=headers) as answer:
+            upload = json.load(answer)["upload"]
+        parts = []
+        with path.open("rb") as fh:
+            for number, chunk in enumerate(iter(lambda: fh.read(self.part_size), b""), start=1):
+                query = {"upload": upload, "part": str(number)}
+                with self._request("PUT", key, query=query, data=chunk) as answer:
+                    parts.append({"part": number, "etag": json.load(answer)["etag"]})
+        body = json.dumps({"parts": parts}).encode()
+        headers = {**headers, "Content-Type": "application/json"}
+        with self._request("POST", key, query={"upload": upload}, data=body, headers=headers) as answer:
+            return answer.headers.get("ETag", "")
+
+    def get(self, key: str) -> bytes:
+        with self._request("GET", key) as answer:
+            return answer.read()
+
+    def head(self, key: str) -> dict[str, str] | None:
+        try:
+            with self._request("HEAD", key) as answer:
+                return {"ETag": answer.headers.get("ETag", "")}
+        except StoreError as exc:
+            if exc.status == 404:
+                return None
+            raise
+
+    def list(self, prefix: str = "") -> list[str]:
+        return list(self._pages(prefix))
+
+    def _pages(self, prefix: str) -> Iterator[str]:
+        after: str | None = None
+        while True:
+            query = {"list": "", "prefix": prefix, **({"after": after} if after else {})}
+            with self._request("GET", "", query=query) as answer:
+                page = json.load(answer)
+            yield from page["keys"]
+            after = page.get("next")
+            if not after:
+                return
+
+    def delete(self, keys: Sequence[str]) -> None:
+        raise StoreError("a repository over HTTP is not deleted from by writers", status=405)
+
+
+#: Where `fdl login` keeps tokens, one per host.
+CREDENTIALS = Path(os.environ.get("XDG_CONFIG_HOME", Path.home() / ".config")) / "fdl" / "credentials.json"
+
+
+def credentials_for(url: str) -> str | None:
+    """The token for the host of ``url``: ``FDL_TOKEN``, else what `fdl login` saved."""
+    if os.environ.get("FDL_TOKEN"):
+        return os.environ["FDL_TOKEN"]
+    try:
+        saved = json.loads(CREDENTIALS.read_text())
+    except (OSError, ValueError):
+        return None
+    return saved.get(urlparse(url).netloc)
+
+
+def save_credentials(host: str, token: str) -> Path:
+    try:
+        saved = json.loads(CREDENTIALS.read_text())
+    except (OSError, ValueError):
+        saved = {}
+    saved[host] = token
+    CREDENTIALS.parent.mkdir(parents=True, exist_ok=True)
+    CREDENTIALS.touch(mode=0o600, exist_ok=True)
+    CREDENTIALS.write_text(json.dumps(saved, indent=2) + "\n")
+    return CREDENTIALS
+
+
+def open_store(url: str) -> LocalStore | S3Store | HttpStore:
+    """``s3://bucket/prefix/``, ``https://host/path/`` or a path on this machine."""
     parsed = urlparse(url)
     if parsed.scheme == "s3":
         return S3Store(parsed.netloc, parsed.path)
+    if parsed.scheme in ("http", "https"):
+        return HttpStore(url)
     if parsed.scheme in ("", "file"):
         return LocalStore(parsed.path if parsed.scheme == "file" else url)
-    raise StoreError(f"not a store this knows: {url!r} (s3://bucket/prefix/ or a folder)")
+    raise StoreError(
+        f"not a store this knows: {url!r} (s3://bucket/prefix/, https://host/path/ or a folder)"
+    )

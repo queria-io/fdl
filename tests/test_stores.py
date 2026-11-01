@@ -7,7 +7,7 @@ import pytest
 from moto import mock_aws
 
 from fdl import refs, repo
-from fdl.stores import LocalStore, S3Store, StoreError, open_store
+from fdl.stores import HttpStore, LocalStore, S3Store, StoreError, open_store
 
 
 @pytest.fixture
@@ -48,5 +48,6 @@ def test_a_repository_on_s3(s3: S3Store) -> None:
 
 def test_open_store(tmp_path) -> None:
     assert isinstance(open_store(str(tmp_path)), LocalStore)
+    assert isinstance(open_store("https://example.org/lake/"), HttpStore)
     with pytest.raises(StoreError):
-        open_store("https://example.org/lake/")
+        open_store("ftp://example.org/lake/")
