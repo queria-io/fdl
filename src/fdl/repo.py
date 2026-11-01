@@ -257,6 +257,7 @@ def record(
                 sha256=_sha256(copied),
             ),
             ducklake=DuckLake(format=recorded, snapshot_id=last, snapshots=(first, last)),
+            tables=catalog.table_files(copied, last),
             inputs=tuple(inputs),
             extensions=dict(extensions or {}),
             dataset=described,

@@ -251,3 +251,33 @@ def test_prune_keeps_what_was_made_since(tmp_path: Path, remote) -> None:
         versions[1].id,
         versions[0].id,
     ]
+
+
+def test_a_version_lists_each_tables_files(tmp_path: Path, remote) -> None:
+    build(
+        tmp_path / "work.sqlite",
+        remote,
+        "CREATE TABLE lake.main.towns AS SELECT range AS id FROM range(3);"
+        "DELETE FROM lake.main.towns WHERE id = 0",
+    )
+    version = commit(tmp_path, remote)
+    repo.push(remote, tmp_path / "local" / version.id, version)
+
+    (data_file,) = parse(remote.get(layout.version_record(version.id))).tables["main.towns"][
+        "files"
+    ]
+    assert data_file["rows"] == 3
+    assert (remote.root / layout.DEFAULT_DATA_DIR / data_file["path"]).stat().st_size == (
+        data_file["bytes"]
+    )
+    assert data_file["deletes"]["rows"] == 1
+    assert (remote.root / layout.DEFAULT_DATA_DIR / data_file["deletes"]["path"]).exists()
+
+
+def test_a_dropped_table_is_not_listed(tmp_path: Path, remote) -> None:
+    build(tmp_path / "work.sqlite", remote, "CREATE TABLE lake.main.towns AS SELECT 1 AS id")
+    build(tmp_path / "work.sqlite", remote, "CREATE TABLE lake.main.gone AS SELECT 1 AS id")
+    build(tmp_path / "work.sqlite", remote, "DROP TABLE lake.main.gone")
+    version = commit(tmp_path, remote)
+
+    assert list(version.tables) == ["main.towns"]

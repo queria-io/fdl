@@ -43,6 +43,19 @@ description: バージョン ID、version.json の項目、固めたカタログ
     "snapshot_id": 345,
     "snapshots": [301, 345]
   },
+  "tables": {
+    "main.population": {
+      "files": [
+        {
+          "path": "main/population/ducklake-019a3c4e-….parquet",
+          "rows": 1741,
+          "bytes": 52311,
+          "footer_bytes": 2048,
+          "deletes": { "path": "main/population/ducklake-019a3c4f-…-delete.parquet", "rows": 3, "bytes": 812 }
+        }
+      ]
+    }
+  },
   "changes": [
     { "table": "main.population", "kind": "add_column", "column": "note", "breaking": false }
   ],
@@ -70,6 +83,7 @@ description: バージョン ID、version.json の項目、固めたカタログ
 | `catalog` | must | カタログのファイル名、大きさ、sha256、保存形式（`storage`） |
 | `dataset` | must | カタログの隣の `dataset.json` のファイル名、大きさ、sha256。必須になる前に書かれたバージョンには無い |
 | `ducklake` | must | DuckLake の形式、固めたスナップショット、親から足したスナップショットの範囲（最初と最後） |
+| `tables` | may | 固めたスナップショットでの、表ごとのファイル。DuckDB を使わない読み手がファイルを見つけるためのもの（[表のファイル](#表のファイル)） |
 | `changes` | may | 親との列の違い。`breaking` は、親に向けて書いた SQL が失敗しうるか（列の削除・改名・作り直し） |
 | `inputs` | may | 使った元のファイル。`source_id` の付け方は書き手が決める |
 | `extensions` | may | ホスト固有の項目。ホストの名前をキーにする |
@@ -79,6 +93,17 @@ description: バージョン ID、version.json の項目、固めたカタログ
 FDL 0.1 では、書き手が書く親は多くても 1 つです。`parents` をリストにしているのは、仕様の将来のバージョンで、項目を変えずにマージを表せるようにするためです。読み手は、どんな長さのリストも受け付け、履歴をたどるときは最初の要素を使わなければなりません。
 
 スナップショットごとの説明と SQL は、DuckLake の `commit_message` と `commit_extra_info` としてカタログの中に残し、`version.json` には写しません。
+
+### 表のファイル
+
+`tables` は、`ducklake.snapshot_id` の時点にある表ごとに、読み手が読むデータファイルを並べます。キーは `schema.table` です。同じことはカタログにも書いてあり、この写しはカタログを開けない読み手のためのものです。
+
+- `path` はリポジトリの `data_dir` からの相対パスです。カタログが絶対パスで持つファイルは、代わりに `url` に書きます
+- `rows` と `bytes` は、カタログが記録している行数と大きさです。`footer_bytes` は Parquet のフッターの大きさで、記録があるときだけ書きます
+- `deletes` は、そのデータファイルから行を消したときの削除ファイルです。これを使わずにデータファイルを読むと、消した行も返ります
+- ファイルはカタログの順に並べます。行の無い表の `files` は空です
+
+書き手はこれをカタログから作ります。カタログと食い違ったときは、カタログが正です。
 
 ### 形式番号
 

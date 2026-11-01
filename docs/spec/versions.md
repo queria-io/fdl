@@ -43,6 +43,19 @@ A version is the files under `versions/<version ID>/`. They must not change once
     "snapshot_id": 345,
     "snapshots": [301, 345]
   },
+  "tables": {
+    "main.population": {
+      "files": [
+        {
+          "path": "main/population/ducklake-019a3c4e-….parquet",
+          "rows": 1741,
+          "bytes": 52311,
+          "footer_bytes": 2048,
+          "deletes": { "path": "main/population/ducklake-019a3c4f-…-delete.parquet", "rows": 3, "bytes": 812 }
+        }
+      ]
+    }
+  },
   "changes": [
     { "table": "main.population", "kind": "add_column", "column": "note", "breaking": false }
   ],
@@ -70,6 +83,7 @@ A version is the files under `versions/<version ID>/`. They must not change once
 | `catalog` | must | The catalog's file name, size, sha256, and storage format (`storage`) |
 | `dataset` | must | The `dataset.json` beside the catalog: its file name, size and sha256. Versions written before it was required lack it |
 | `ducklake` | must | The DuckLake format, the snapshot frozen, and the range of snapshots this version adds after its parent (first and last) |
+| `tables` | may | Each table's files at the frozen snapshot, so a reader without DuckDB can find them ([Table files](#table-files)) |
 | `changes` | may | Column differences from the parent. `breaking` says whether SQL written for the parent may fail (a column dropped, renamed or recreated) |
 | `inputs` | may | Source files used. How `source_id` is assigned is up to the writer |
 | `extensions` | may | Host-specific fields, keyed by the host's name |
@@ -79,6 +93,17 @@ A reader must ignore fields it does not know.
 In FDL 0.1 a writer writes at most one parent. `parents` is a list so that a later version of this specification can describe merges without changing the field; a reader must accept a list of any length and follow the first entry for history.
 
 The description and SQL of each snapshot stay in the catalog, in DuckLake's `commit_message` and `commit_extra_info`. They are not copied into `version.json`.
+
+### Table files
+
+`tables` lists, for each table alive at `ducklake.snapshot_id`, the data files a reader reads, keyed `schema.table`. The same facts are in the catalog; this copy is for readers that cannot open it.
+
+- `path` is relative to the repository's `data_dir`. A file the catalog holds by an absolute path is written as `url` instead
+- `rows` and `bytes` are the row count and size the catalog records. `footer_bytes` is the size of the Parquet footer, when recorded
+- `deletes` is the delete file for that data file, if rows were deleted from it. A reader that reads the data file without it returns deleted rows
+- Files are in the catalog's order. A table with no rows has an empty `files`
+
+The writer takes this from the catalog. Where the two differ, the catalog wins.
 
 ### Format numbers
 

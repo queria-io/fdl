@@ -76,6 +76,8 @@ class Version:
     changes: tuple[dict, ...] = ()
     inputs: tuple[dict, ...] = ()
     extensions: dict = field(default_factory=dict)
+    #: Each table's files at the frozen snapshot, keyed ``schema.table``.
+    tables: dict = field(default_factory=dict)
     #: The version's `dataset.json`. None only in versions written before it was required.
     dataset: File | None = None
     fdl: str = layout.FDL_VERSION
@@ -111,6 +113,7 @@ class Version:
                 "snapshot_id": self.ducklake.snapshot_id,
                 "snapshots": list(self.ducklake.snapshots),
             },
+            "tables": self.tables,
             "changes": list(self.changes),
             "inputs": list(self.inputs),
             "extensions": self.extensions,
@@ -152,6 +155,7 @@ def parse(data: bytes, *, expected_id: str | None = None) -> Version:
             changes=tuple(record.get("changes", ())),
             inputs=tuple(record.get("inputs", ())),
             extensions=dict(record.get("extensions", {})),
+            tables=dict(record.get("tables", {})),
             dataset=(
                 File(path=dataset["path"], bytes=int(dataset["bytes"]), sha256=dataset["sha256"])
                 if dataset
