@@ -32,8 +32,24 @@ A version is taken out of retention in this order:
 ```
 
 - `version.json` stays, so the history still says the version was there and what it was, and the graph of parents stays whole
-- A reader that sees `expired.json` treats the version as past retention and does not open its catalog
+- A reader that sees `expired.json` treats the version as past retention and does not open its catalog, whatever the `reason`
 - A version a ref points at must not be taken out
+
+## Withdrawal
+
+Withdrawal removes data that must not be published, such as personal data published by mistake. Unlike retention, it removes data from every version that holds it, live ones included, and does not wait for the grace period.
+
+1. Make a new version without the data and move every branch that holds an affected version to it. This is a forward move: the new version's parent is the current one
+2. Delete the tags that point at affected versions
+3. For every affected version, put `expired.json` with `"reason": "withdrawn"` and delete its catalogs
+4. Delete the data files that hold the data, at once
+
+```json expired.json
+{ "expired_at": "2026-12-01T00:00:00Z", "reason": "withdrawn" }
+```
+
+- `version.json` stays, as with retention. If the record itself holds the data (in `message` or `inputs`), it is deleted too, and the history shows a missing parent at that point
+- Mirrors keep their own copies. A mirror that copies `expired.json` with `"reason": "withdrawn"` deletes the catalogs and the data files the origin deleted. The origin cannot force this; the host tells the mirrors it knows of
 
 ## Source files
 

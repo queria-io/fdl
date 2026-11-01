@@ -5,7 +5,7 @@ sidebar:
 description: The normative description of FDL 0.1 (draft) - what it decides, what it leaves to hosts, and the terms it uses.
 ---
 
-This is the specification of FDL 0.1. It is a draft: [Open questions](/spec/open-questions) lists what is not settled yet. Tools are written against this specification, and where a tool and this text disagree, the text decides.
+This is the specification of FDL 0.1, a draft. It changes as the tools that implement it are built. Tools are written against this specification, and where a tool and this text disagree, the text is changed first and the tool follows.
 
 FDL is a storage layout for keeping versions of a [DuckLake](https://ducklake.select/) catalog, modelled on how Git stores commits. It says which files go where in a store and how readers and writers handle them. No server is needed: the store has to read, write and write on condition.
 
@@ -16,8 +16,8 @@ FDL is a storage layout for keeping versions of a [DuckLake](https://ducklake.se
 - the layout of a repository, and the name and content of each file ([Layout](/spec/layout))
 - the fields of a version record and the frozen catalog ([Versions](/spec/versions))
 - the content of refs and the rules for moving them ([Refs](/spec/refs))
-- when data files may be deleted, and how a version is taken out of retention ([Data files](/spec/data-files))
-- how a reader finds and opens a version ([Reading](/spec/reading))
+- when data files may be deleted, and how a version is taken out of retention or withdrawn ([Data files](/spec/data-files))
+- how a reader finds and opens a version, and checks who made it ([Reading](/spec/reading))
 - the order of writes, and when a push is refused ([Writing](/spec/writing))
 
 ## What it leaves to hosts

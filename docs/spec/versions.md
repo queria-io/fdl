@@ -7,6 +7,7 @@ A version is the files under `versions/<version ID>/`. They must not change once
 
 - `expired.json` is added and the catalogs deleted when the version falls out of retention ([Data files](/spec/data-files#past-retention))
 - `catalogs/<format>.duckdb` may be added later. Files already there are not changed
+- `version.json.sig` may be added later, by a writer that signs a version after making it
 
 ## Version ID
 
@@ -56,7 +57,7 @@ A version is the files under `versions/<version ID>/`. They must not change once
 | `fdl` | must | The specification version it was written for |
 | `id` | must | The same ID as the directory. A reader must not read a version where they differ |
 | `seq` | must | The number shown to people: 1 for the first, the first parent's `seq` plus 1 after |
-| `parents` | must | Parent version IDs. Empty for the first, usually one |
+| `parents` | must | Parent version IDs. Empty for the first version, one after |
 | `created_at` | must | UTC, ISO 8601 |
 | `author` | must | Who made it. `name` is required; `email` and others are optional |
 | `message` | must | What changed |
@@ -67,6 +68,8 @@ A version is the files under `versions/<version ID>/`. They must not change once
 | `extensions` | may | Host-specific fields, keyed by the host's domain |
 
 A reader must ignore fields it does not know.
+
+In FDL 0.1 a writer writes at most one parent. `parents` is a list so that a later version of this specification can describe merges without changing the field; a reader must accept a list of any length and follow the first entry for history.
 
 The description and SQL of each snapshot stay in the catalog, in DuckLake's `commit_message` and `commit_extra_info`. They are not copied into `version.json`.
 
@@ -103,6 +106,7 @@ versions/<ID>/
 
 - Every `catalogs/<format>.duckdb` must name the same data files and return the same rows
 - A reader tries the formats it can open, newest first, then falls back to `ducklake.duckdb`
+- A writer that cannot produce a declared format for a version leaves that file out. A reader that can open none of the files of a version cannot read it
 - A version that uses something an older format cannot express has no catalog in that format
 - A format past its `until` in `fdl.json` is not written for new versions. Past versions may keep theirs
 - Data files must be written so that the oldest format declared in `fdl.json` can read them

@@ -24,6 +24,7 @@ ATTACH 'ducklake:https://data.example.org/towns/versions/019a3c4e-…/ducklake.d
 | Path | `Cache-Control` | `Content-Type` |
 | --- | --- | --- |
 | `HEAD`, `refs/**` | `no-store` | `text/plain; charset=utf-8` |
+| `refs.json` | `no-store` | `application/json` |
 | `versions/**` | `public, max-age=31536000, immutable` | as the file |
 | `data/**` | `public, max-age=31536000, immutable` | `application/octet-stream` |
 | `fdl.json` | a short `max-age` | `application/json` |
@@ -34,7 +35,7 @@ The server must answer range requests (`Accept-Ranges: bytes`, `206 Partial Cont
 
 ## Listing
 
-Readers do not list. A reader that knows a ref name gets everything else by following IDs. Leave directory listings off; nothing needs them.
+Readers do not list. A reader that knows a ref name gets everything else by following IDs, and one that does not reads `refs.json` for the names. Leave directory listings off; nothing needs them.
 
 ## Serving the latest catalog at a fixed URL
 

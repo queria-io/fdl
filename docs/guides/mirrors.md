@@ -12,7 +12,7 @@ Copy in the same order a push writes, so a reader of the mirror never follows a 
 1. data files under `data/` that the mirror lacks
 2. version folders under `versions/` that the mirror lacks, `version.json` last in each
 3. `fdl.json`, if it changed
-4. `refs/` and `HEAD`
+4. `refs/`, `HEAD` and `refs.json`
 
 ```bash
 aws s3 sync s3://origin/towns/data/     s3://mirror/towns/data/
@@ -20,6 +20,7 @@ aws s3 sync s3://origin/towns/versions/ s3://mirror/towns/versions/
 aws s3 cp   s3://origin/towns/fdl.json  s3://mirror/towns/fdl.json
 aws s3 sync s3://origin/towns/refs/     s3://mirror/towns/refs/ --delete
 aws s3 cp   s3://origin/towns/HEAD      s3://mirror/towns/HEAD
+aws s3 cp   s3://origin/towns/refs.json s3://mirror/towns/refs.json
 ```
 
 A mirror keeps the origin's `id` in `fdl.json`. That is how a tool can tell the two URLs hold the same repository.
@@ -42,8 +43,10 @@ Without `OVERRIDE_DATA_PATH true`, DuckDB refuses to use a data path other than 
 
 `version.json` records the size and sha256 of the catalog. A mirror can check each catalog after copying it. Parquet files are named by a UUID and carry their own checksums, and DuckLake records each file's size in the catalog.
 
-Anyone can write a `version.json`, so a checksum shows the copy matches the record, not that the record came from the origin. How a reader of a mirror can check where a version came from is an [open question](/spec/open-questions).
+Anyone can write a `version.json`, so a checksum shows the copy matches the record, not that the record came from the origin. A version signed by the origin can be checked on a mirror: see [Signatures](/spec/reading#signatures).
 
 ## Expired versions and withdrawn data
 
 When the origin takes a version out of retention, the mirror sees `expired.json` appear and the catalog disappear on the next copy. Copy `expired.json` and delete the catalogs the origin deleted. A mirror that keeps them serves versions its origin no longer does.
+
+An `expired.json` with `"reason": "withdrawn"` means the origin removed data that must not be published. Delete the catalogs and the data files the origin deleted, without waiting.
