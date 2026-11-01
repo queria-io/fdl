@@ -1,6 +1,17 @@
 # CHANGELOG
 
 
+## v0.15.0 (2026-11-01)
+
+### Features
+
+- Read tables from *.table.yml files beside the description
+  ([`3ffa77a`](https://github.com/queria-io/fdl/commit/3ffa77a620ec818ce59ea5f957c7b341bae72f8d))
+
+A table can be described in its own file next to what builds it. fdl commit adds the tables in
+  *.table.yml / *.table.json below the description's folder, skipping hidden folders.
+
+
 ## v0.14.1 (2026-11-01)
 
 ### Bug Fixes
