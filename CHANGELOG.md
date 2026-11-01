@@ -1,6 +1,69 @@
 # CHANGELOG
 
 
+## v0.14.0 (2026-11-01)
+
+### Documentation
+
+- Add a Japanese translation of every page
+  ([`0d7bb97`](https://github.com/queria-io/fdl/commit/0d7bb9707d51b83fe029fef8f875a4007f4669ee))
+
+English stays the source. The Japanese pages live under docs/ja/ and are served at /ja/.
+
+- Bring in dataset.json and pushing over HTTP from the implementation
+  ([`0e7817b`](https://github.com/queria-io/fdl/commit/0e7817b9c120b7f683dcf00f23663480793e91f7))
+
+Port the specification and CLI text of fdl#23 into the new pages: dataset.json in each version, the
+  HTTP push requests, fdl login and commit --dataset.
+
+- Fix review findings in the spec and guides
+  ([`53e8cc4`](https://github.com/queria-io/fdl/commit/53e8cc4d20d4cfdc8dced8e529d899432aa1687f))
+
+Name the HTTP repository as the exception to where new data files go, say a host answers HEAD
+  requests, list withdrawal among the changes a version allows, add dataset.json to the second
+  commit example, pass DATA_PATH in the README reader, and say versions have one parent.
+
+- Rewrite the documentation with Blume and split the specification into pages
+  ([`8bfdb79`](https://github.com/queria-io/fdl/commit/8bfdb79039a63ee82f260d4e5b5689b701d47e48))
+
+Guide pages (getting started, concepts, how it works, guides) explain the format the way Git's
+  documentation does; docs/spec/ is the normative specification, with the data_path and DuckLake
+  format rules written in. GitHub Pages now builds the site with Blume.
+
+- **spec**: Settle the open questions
+  ([`b98a88f`](https://github.com/queria-io/fdl/commit/b98a88f4928a54deaa1c8298cd671c91d6b636a8))
+
+Add refs.json, ASCII-only ref names, one parent per version in 0.1, optional SSH signatures
+  (version.json.sig and signers in fdl.json), withdrawal, and leave retention defaults to hosts.
+  Remove the open questions page.
+
+### Features
+
+- Describe every version in dataset.json
+  ([`4608dec`](https://github.com/queria-io/fdl/commit/4608dec8631d12fafac2169ba5948f79988b202d))
+
+dataset.json is now part of a version, listed in version.json with its hash. fdl commit reads it,
+  refuses tables, columns and keys the format does not know, and fills in types, nulls, row counts
+  and comments from the catalog. --attach is gone.
+
+- Push to a repository over HTTP
+  ([`659399b`](https://github.com/queria-io/fdl/commit/659399b12f06e50aa229b8dee9d42d725f6aa427))
+
+A host can take pushes over plain HTTP: GET, HEAD and conditional PUT, a listing, and uploads in
+  parts for large files. The writer needs a token (fdl login, or FDL_TOKEN) instead of keys to the
+  storage.
+
+DuckDB cannot write data files over HTTP, so a working catalog of such a repository writes new files
+  to a folder beside it and reads the published ones where they are; commit makes both relative
+  again and push uploads the new ones. commit --attach keeps a file beside the version.
+
+- Read the description from dataset.yml too
+  ([`c04b6e8`](https://github.com/queria-io/fdl/commit/c04b6e891428b82749b231ab69d77f783d3b69ea))
+
+fdl commit looks for dataset.json, then dataset.yml, in the current directory. Licenses may be
+  written as bare SPDX identifiers.
+
+
 ## v0.13.0 (2026-11-01)
 
 ### Features
