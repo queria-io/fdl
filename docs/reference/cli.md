@@ -36,12 +36,14 @@ Refused when the version is past retention.
 ## fdl commit
 
 ```bash
-fdl commit <working.sqlite> -m "What changed" --author alice [--dataset dataset.json]
+fdl commit <working.sqlite> -m "What changed" --author alice [--dataset dataset.json] [--allow-empty]
 ```
 
 Freezes the working catalog into a new version whose parent is the version it was checked out at, uploads it, and moves the branch on condition. It prints the branch, the new version ID and its `seq`.
 
 Every version is described by a `dataset.json` (see [Versions](/spec/versions#datasetjson)), read from `--dataset` or else from `dataset.json` or `dataset.yml` in the current directory. Tables described in `*.table.yml` (or `*.table.json`) files below that folder are added to it; hidden folders are skipped. The command checks it against the catalog and fills in the column types, row counts and catalog comments.
+
+When the version would hold what its parent holds (see [When nothing changed](/spec/writing#when-nothing-changed)), it prints `Nothing to commit`, leaves the branch where it is and exits 0. A rebuild that writes the same rows to new files counts as unchanged. `--allow-empty` makes the version anyway. If the rows cannot be read to tell, it warns and makes the version.
 
 Refused when:
 

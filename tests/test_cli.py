@@ -80,3 +80,69 @@ def test_a_second_checkout_starts_from_the_branch(tmp_path: Path) -> None:
     assert result.exit_code == 1 and "Pull and build again" in result.output
     assert repo.head(store).message == "from two"
     assert remote.joinpath(layout.HEAD).read_text() == "ref: refs/heads/main\n"
+
+
+def test_a_rebuild_with_the_same_rows_makes_no_version(tmp_path: Path) -> None:
+    remote, working = tmp_path / "remote", tmp_path / "lake.sqlite"
+    store = LocalStore(remote)
+    run("init", remote)
+    run("checkout", remote, working)
+    write(working, store, "CREATE TABLE lake.main.towns AS SELECT * FROM (VALUES (1), (2), (2)) v(id)")
+    run("commit", working, "-m", "first", "--author", "t")
+    first = repo.head(store)
+
+    assert "Nothing to commit" in run("commit", working, "-m", "again", "--author", "t")
+    # Written again to new files, in another order: still the same rows.
+    write(working, store, "CREATE OR REPLACE TABLE lake.main.towns AS SELECT * FROM (VALUES (2), (1), (2)) v(id)")
+    assert "Nothing to commit" in run("commit", working, "-m", "rebuilt", "--author", "t")
+    assert repo.head(store).id == first.id
+
+    run("commit", working, "-m", "forced", "--author", "t", "--allow-empty")
+    assert repo.head(store).message == "forced"
+
+
+@pytest.mark.parametrize(
+    "sql",
+    [
+        "CREATE OR REPLACE TABLE lake.main.towns AS SELECT * FROM (VALUES (1), (2)) v(id)",
+        "CREATE OR REPLACE TABLE lake.main.towns AS SELECT id::BIGINT AS id FROM (VALUES (1), (2), (2)) v(id)",
+        "CREATE TABLE lake.main.more AS SELECT 1 AS id",
+        "CREATE VIEW lake.main.ids AS SELECT id FROM lake.main.towns",
+    ],
+)
+def test_a_change_makes_a_version(tmp_path: Path, sql: str) -> None:
+    remote, working = tmp_path / "remote", tmp_path / "lake.sqlite"
+    store = LocalStore(remote)
+    run("init", remote)
+    run("checkout", remote, working)
+    write(working, store, "CREATE TABLE lake.main.towns AS SELECT id::INTEGER AS id FROM (VALUES (1), (2), (2)) v(id)")
+    run("commit", working, "-m", "first", "--author", "t")
+    write(working, store, sql)
+    assert "version 2" in run("commit", working, "-m", "changed", "--author", "t")
+
+
+def test_a_new_description_makes_a_version(tmp_path: Path, described: Path) -> None:
+    remote, working = tmp_path / "remote", tmp_path / "lake.sqlite"
+    store = LocalStore(remote)
+    run("init", remote)
+    run("checkout", remote, working)
+    write(working, store, "CREATE TABLE lake.main.towns AS SELECT 1 AS id")
+    run("commit", working, "-m", "first", "--author", "t")
+    described.write_text('{"name": "towns", "title": "Towns of the city"}')
+    assert "version 2" in run("commit", working, "-m", "retitled", "--author", "t")
+
+
+def test_rows_it_cannot_read_are_taken_as_changed(tmp_path: Path) -> None:
+    remote, working = tmp_path / "remote", tmp_path / "lake.sqlite"
+    store = LocalStore(remote)
+    run("init", remote)
+    run("checkout", remote, working)
+    write(working, store, "CREATE TABLE lake.main.towns AS SELECT 1 AS id")
+    run("commit", working, "-m", "first", "--author", "t")
+    write(working, store, "CREATE OR REPLACE TABLE lake.main.towns AS SELECT 1 AS id")
+    for parquet in (remote / layout.DEFAULT_DATA_DIR).rglob("*.parquet"):
+        parquet.unlink()
+        break
+
+    result = runner.invoke(app, ["commit", str(working), "-m", "again", "--author", "t"])
+    assert "could not tell whether anything changed" in result.output

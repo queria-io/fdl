@@ -27,6 +27,15 @@ When freezing, a writer must:
 - set the frozen catalog's `data_path` to the absolute URL of `<root><data_dir>`
 - refuse if any data file is recorded with an absolute path, or outside `data_dir`
 
+## When nothing changed
+
+A writer should not make a version that holds what its parent holds, as Git makes no commit when the tree is the parent's. A version holds the same as its parent when:
+
+- the last snapshot is the parent's (`ducklake.snapshot_id`), or
+- the same tables and views are there, each table with the same columns and types and the same rows, counted as a multiset (order does not matter), and `dataset.json` has the parent's sha256
+
+A table rebuilt from the same input is written to new data files, so comparing files or catalog bytes is not enough. A writer compares the files first and reads the rows only of tables whose files differ. A writer that cannot read the rows makes the version. A writer may make one anyway when asked, as `git commit --allow-empty` does.
+
 ## Order of writes
 
 1. Data files
