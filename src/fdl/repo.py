@@ -30,6 +30,18 @@ class NotFastForward(RepoError):
     """The version is not built on what the ref holds now. Pull and build again."""
 
 
+class NothingToCommit(RepoError):
+    """The working catalog holds what its parent holds, so no version is made."""
+
+    def __init__(self, parent: Version) -> None:
+        super().__init__(f"nothing changed since {parent.id} (version {parent.seq})")
+        self.parent = parent
+
+
+class CannotCompare(RepoError):
+    """Whether anything changed could not be told, so nothing was made either way."""
+
+
 @dataclass(frozen=True)
 class Config:
     fdl: str
@@ -106,11 +118,17 @@ def commit(
     inputs: tuple[dict, ...] = (),
     extensions: dict | None = None,
     dataset: dict | None = None,
+    allow_empty: bool = True,
 ) -> Version:
     """Freeze the working catalog into a version under ``out_dir/<ID>/``.
 
     ``dataset`` is the writer's description (`dataset.json`), checked against
     the frozen catalog and completed from it.
+
+    ``allow_empty=False`` refuses a version that would hold what ``parent``
+    holds: the same tables, columns, rows and views, and the same
+    `dataset.json`. It raises `NothingToCommit`, or `CannotCompare` when the
+    rows could not be read to tell.
 
     ``data_path`` is where readers find the data files (the remote's root and
     data_dir), written into the frozen catalog. Every file reference must be
@@ -130,6 +148,15 @@ def commit(
                 f"{len(absolute)} file(s) are recorded with an absolute path "
                 f"(first: {absolute[0].path}); rebuild so they sit under the data path"
             )
+        # The description first: it reads the catalog alone, while comparing
+        # the contents can read every row of a rebuilt table.
+        if not allow_empty and parent is not None and _same_description(frozen, dataset, parent):
+            try:
+                unchanged = catalog.same_contents(working, parent.ducklake.snapshot_id)
+            except catalog.CatalogError as exc:
+                raise CannotCompare(str(exc)) from exc
+            if unchanged:
+                raise NothingToCommit(parent)
         return record(
             frozen,
             out_dir,
@@ -142,6 +169,13 @@ def commit(
         )
     finally:
         frozen.unlink(missing_ok=True)
+
+
+def _same_description(frozen: Path, dataset: dict | None, parent: Version) -> bool:
+    if dataset is None or parent.dataset is None:
+        return dataset is None and parent.dataset is None
+    written = dataset_json.to_json(dataset_json.describe(dataset, frozen))
+    return hashlib.sha256(written).hexdigest() == parent.dataset.sha256
 
 
 def checkout(

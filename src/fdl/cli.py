@@ -101,25 +101,46 @@ def commit(
         "--dataset",
         help="The description of what the version holds (default: dataset.json or dataset.yml here), with any *.table.yml below it",
     ),
+    allow_empty: bool = typer.Option(
+        False, "--allow-empty", help="Make a version even if nothing changed since the last one"
+    ),
 ) -> None:
-    """Freeze the working catalog into a version and push it to its branch."""
+    """Freeze the working catalog into a version and push it to its branch.
+
+    Nothing is made when the tables, their rows and the description are what
+    the last version holds.
+    """
     state = _read_state(working)
     store = open_store(state["remote"])
     out = Path(tempfile.mkdtemp(prefix="fdl-"))
     try:
         declared = dataset.gather(describe or dataset.find())
         parent = repo.read_version(store, state["base"]) if state["base"] else None
-        version = repo.commit(
-            working,
-            out,
-            parent=parent,
-            data_path=repo.data_url(store),
-            author={"name": author},
-            message=message,
-            dataset=declared,
-        )
+
+        def make(allow_empty: bool):
+            return repo.commit(
+                working,
+                out,
+                parent=parent,
+                data_path=repo.data_url(store),
+                author={"name": author},
+                message=message,
+                dataset=declared,
+                allow_empty=allow_empty,
+            )
+
+        try:
+            version = make(allow_empty)
+        except repo.CannotCompare as exc:
+            typer.echo(f"warning: could not tell whether anything changed ({exc}); committing", err=True)
+            version = make(True)
         local = Path(state["data"]) if state.get("data") else None
         repo.push(store, out / version.id, version, ref=state["ref"], local_data=local)
+    except repo.NothingToCommit as exc:
+        # The branch may have moved on since the checkout, so say what the
+        # working catalog matches rather than where the branch is.
+        typer.echo(f"Nothing to commit: {exc}; {state['ref']} was not moved")
+        return
     except ERRORS as exc:
         raise _fail(exc) from exc
     finally:

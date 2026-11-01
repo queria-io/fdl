@@ -36,12 +36,14 @@ HTTP のリポジトリでは、新しいデータファイルは `<working.sqli
 ## fdl commit
 
 ```bash
-fdl commit <working.sqlite> -m "What changed" --author alice [--dataset dataset.json]
+fdl commit <working.sqlite> -m "What changed" --author alice [--dataset dataset.json] [--allow-empty]
 ```
 
 作業カタログを、チェックアウトしたバージョンを親とする新しいバージョンに固め、アップロードし、条件付きでブランチを動かします。ブランチ、新しいバージョン ID、`seq` を表示します。
 
 バージョンはそれぞれ `dataset.json`（[バージョン](/ja/spec/versions#datasetjson)を参照）で説明します。`--dataset` で指定したファイルか、なければいまのディレクトリの `dataset.json` か `dataset.yml` から読みます。そのフォルダより下にある `*.table.yml`（または `*.table.json`）のテーブルの説明も合わせて読みます。隠しフォルダの中は読みません。コマンドはそれをカタログと照らし合わせ、列の型、行数、カタログのコメントを書き足します。
+
+親と同じ中身になるとき（[変更がないとき](/ja/spec/writing#変更がないとき)）は `Nothing to commit` と表示し、ブランチを動かさずに終了コード 0 で終わります。同じ行を新しいファイルに書き直しただけの作り直しも、変更なしとみなします。`--allow-empty` を付けると、それでもバージョンを作ります。行を読めず判定できないときは、警告を出してバージョンを作ります。
 
 次のときは断られます。
 

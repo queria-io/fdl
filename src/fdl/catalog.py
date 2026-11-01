@@ -623,3 +623,146 @@ def snapshot_range(catalog_path: Path, after: int | None) -> tuple[int, int]:
     if last is None:
         raise CatalogError(f"{catalog_path} holds no snapshot")
     return (first if first is not None else last, last)
+
+
+# -- whether anything changed --------------------------------------------------
+
+
+def _working_data_path(working: Path) -> str:
+    import sqlite3
+
+    con = sqlite3.connect(f"file:{working}?mode=ro", uri=True)
+    try:
+        row = con.execute(
+            "SELECT value FROM ducklake_metadata WHERE key = ? AND scope IS NULL",
+            (DATA_PATH_KEY,),
+        ).fetchone()
+    except sqlite3.Error as exc:
+        raise CatalogError(f"{working} is not a working catalog: {exc}") from exc
+    finally:
+        con.close()
+    if not row:
+        raise CatalogError(f"{working} records no data path")
+    return row[0]
+
+
+def last_snapshot(working: Path) -> int:
+    """The newest snapshot of a working catalog."""
+    import sqlite3
+
+    con = sqlite3.connect(f"file:{working}?mode=ro", uri=True)
+    try:
+        return con.execute("SELECT max(snapshot_id) FROM ducklake_snapshot").fetchone()[0]
+    except sqlite3.Error as exc:
+        raise CatalogError(f"{working} is not a working catalog: {exc}") from exc
+    finally:
+        con.close()
+
+
+def same_contents(working: Path, since: int) -> bool:
+    """Whether the working catalog's last snapshot holds what snapshot ``since`` held.
+
+    The same tables and views, each table with the same columns and the same
+    rows, in any order. A table rebuilt from the same input is written to new
+    files, so files are compared first and rows only where the files differ.
+    Reading those rows needs the data files: one the writer cannot read raises
+    `CatalogError`.
+    """
+    import duckdb
+
+    working = Path(working)
+    last = last_snapshot(working)
+    if last == since:
+        return True
+    con = duckdb.connect()
+    try:
+        for statement in attach_sql(
+            working, alias="lake", data_path=_working_data_path(working), read_only=True
+        ):
+            if statement:
+                con.execute(statement)
+        meta = "__ducklake_metadata_lake.main"
+
+        def live(alias: str) -> str:
+            return f"{alias}.begin_snapshot <= $s AND ({alias}.end_snapshot IS NULL OR {alias}.end_snapshot > $s)"
+
+        def tables(snapshot: int) -> dict[tuple[str, str], int]:
+            rows = con.execute(
+                f"""
+                SELECT s.schema_name, t.table_name, t.table_id
+                FROM {meta}.ducklake_table t JOIN {meta}.ducklake_schema s USING (schema_id)
+                WHERE {live('t')} AND {live('s')}
+                """,
+                {"s": snapshot},
+            ).fetchall()
+            return {(schema, name): table_id for schema, name, table_id in rows}
+
+        def views(snapshot: int) -> set[tuple]:
+            return set(
+                con.execute(
+                    f"""
+                    SELECT s.schema_name, v.view_name, v.dialect, v.sql
+                    FROM {meta}.ducklake_view v JOIN {meta}.ducklake_schema s USING (schema_id)
+                    WHERE {live('v')} AND {live('s')}
+                    """,
+                    {"s": snapshot},
+                ).fetchall()
+            )
+
+        def files(table_id: int, snapshot: int) -> set[tuple]:
+            return set(
+                con.execute(
+                    f"""
+                    SELECT d.data_file_id, x.delete_file_id
+                    FROM {meta}.ducklake_data_file d
+                    LEFT JOIN {meta}.ducklake_delete_file x
+                      ON x.data_file_id = d.data_file_id AND {live('x')}
+                    WHERE d.table_id = $t AND {live('d')}
+                    """,
+                    {"s": snapshot, "t": table_id},
+                ).fetchall()
+            )
+
+        def shape(name: str, snapshot: int) -> list[tuple]:
+            return con.execute(
+                f"SELECT column_name, column_type FROM "
+                f"(DESCRIBE SELECT * FROM {name} AT (VERSION => {int(snapshot)}))"
+            ).fetchall()
+
+        def same_rows(name: str) -> bool:
+            # Compared as values, not hashes: DuckDB's hash() gives a NULL
+            # list, struct or map the hash of an empty one, so a sum of row
+            # hashes misses rows that trade the two. With the counts equal,
+            # nothing left by EXCEPT ALL means the same multiset.
+            old = f"SELECT * FROM {name} AT (VERSION => {int(since)})"
+            new = f"SELECT * FROM {name} AT (VERSION => {int(last)})"
+            counts = con.execute(
+                f"SELECT (SELECT count(*) FROM ({old})), (SELECT count(*) FROM ({new}))"
+            ).fetchone()
+            if counts[0] != counts[1]:
+                return False
+            return bool(con.execute(f"SELECT NOT EXISTS ({old} EXCEPT ALL {new})").fetchone()[0])
+
+        def quoted(identifier: str) -> str:
+            return '"' + identifier.replace('"', '""') + '"'
+
+        before, after = tables(since), tables(last)
+        if before.keys() != after.keys() or views(since) != views(last):
+            return False
+        for (schema, table), table_id in after.items():
+            name = f"lake.{quoted(schema)}.{quoted(table)}"
+            if shape(name, since) != shape(name, last):
+                return False
+            if before[(schema, table)] == table_id and files(table_id, since) == files(
+                table_id, last
+            ):
+                continue
+            if not same_rows(name):
+                return False
+        return True
+    except CatalogError:
+        raise
+    except Exception as exc:  # noqa: BLE001 - duckdb raises several types
+        raise CatalogError(f"could not compare {working} with snapshot {since}: {exc}") from exc
+    finally:
+        con.close()
