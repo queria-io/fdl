@@ -41,7 +41,7 @@ fdl commit <working.sqlite> -m "What changed" --author alice [--dataset dataset.
 
 Freezes the working catalog into a new version whose parent is the version it was checked out at, uploads it, and moves the branch on condition. It prints the branch, the new version ID and its `seq`.
 
-Every version is described by a `dataset.json` (see [Versions](/spec/versions#datasetjson)), read from the current directory or from `--dataset`. The command checks it against the catalog and fills in the column types, row counts and catalog comments.
+Every version is described by a `dataset.json` (see [Versions](/spec/versions#datasetjson)), read from `--dataset` or else from `dataset.json` or `dataset.yml` in the current directory. The command checks it against the catalog and fills in the column types, row counts and catalog comments.
 
 Refused when:
 

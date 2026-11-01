@@ -96,8 +96,10 @@ def commit(
     working: Path = Working,
     message: str = typer.Option(..., "-m", "--message", help="What changed"),
     author: str = typer.Option(..., help="Who made it"),
-    describe: Path = typer.Option(
-        Path(layout.DATASET), "--dataset", help="The description of what the version holds"
+    describe: Path | None = typer.Option(
+        None,
+        "--dataset",
+        help="The description of what the version holds (default: dataset.json or dataset.yml here)",
     ),
 ) -> None:
     """Freeze the working catalog into a version and push it to its branch."""
@@ -105,7 +107,7 @@ def commit(
     store = open_store(state["remote"])
     out = Path(tempfile.mkdtemp(prefix="fdl-"))
     try:
-        declared = dataset.read(describe)
+        declared = dataset.read(describe or dataset.find())
         parent = repo.read_version(store, state["base"]) if state["base"] else None
         version = repo.commit(
             working,

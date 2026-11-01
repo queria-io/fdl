@@ -55,3 +55,16 @@ def test_keys_outside_the_format_go_under_extensions(frozen: Path) -> None:
         describe({"name": "t"}, frozen)
     described = describe({"name": "t", "title": "T", "extensions": {"queria": {"themes": ["x"]}}}, frozen)
     assert described["extensions"] == {"queria": {"themes": ["x"]}}
+
+
+def test_a_description_can_be_yaml(tmp_path: Path, frozen: Path) -> None:
+    from fdl.dataset import find, read
+
+    (tmp_path / "dataset.yml").write_text("name: towns\ntitle: Towns\nissued: 2026-10-30\nlicenses: [CC-BY-4.0]\n")
+    path = find(tmp_path)
+    assert path.name == "dataset.yml"
+    described = describe(read(path), frozen)
+    assert described["licenses"] == ["CC-BY-4.0"]
+    from fdl.dataset import to_json
+
+    assert b'"issued": "2026-10-30"' in to_json(described)

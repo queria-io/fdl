@@ -364,6 +364,7 @@ version = "0.13.0"
 source = { editable = "." }
 dependencies = [
     { name = "duckdb" },
+    { name = "pyyaml" },
     { name = "typer" },
 ]
 
@@ -382,6 +383,7 @@ dev = [
 requires-dist = [
     { name = "boto3", marker = "extra == 's3'", specifier = ">=1.36" },
     { name = "duckdb", specifier = ">=1.5.2,<2.0" },
+    { name = "pyyaml", specifier = ">=6.0" },
     { name = "typer", specifier = ">=0.15" },
 ]
 provides-extras = ["s3"]

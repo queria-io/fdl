@@ -13,8 +13,12 @@ from pathlib import Path
 from typing import Any
 
 import duckdb
+import yaml
 
 from . import layout
+
+#: Where `fdl commit` looks when no file is named, in this order.
+DEFAULT_FILES = (layout.DATASET, "dataset.yml", "dataset.yaml")
 
 DATASET_KEYS = {
     "name", "title", "description", "keywords", "language", "homepage", "issued",
@@ -33,13 +37,29 @@ class DatasetError(ValueError):
     """A description the format does not take."""
 
 
+def find(directory: Path = Path(".")) -> Path:
+    """The description in ``directory``: dataset.json, else dataset.yml."""
+    for name in DEFAULT_FILES:
+        if (Path(directory) / name).is_file():
+            return Path(directory) / name
+    raise DatasetError(
+        f"no {' or '.join(DEFAULT_FILES)} here: every version is described by one"
+    )
+
+
 def read(path: Path) -> dict[str, Any]:
+    """A description written as JSON, or as YAML (``.yml`` / ``.yaml``)."""
+    path = Path(path)
     try:
-        declared = json.loads(Path(path).read_text(encoding="utf-8"))
+        text = path.read_text(encoding="utf-8")
     except FileNotFoundError as exc:
         raise DatasetError(f"no {path}: every version is described by a {layout.DATASET}") from exc
-    except json.JSONDecodeError as exc:
-        raise DatasetError(f"{path} is not JSON: {exc}") from exc
+    try:
+        declared = (
+            yaml.safe_load(text) if path.suffix in (".yml", ".yaml") else json.loads(text)
+        )
+    except (json.JSONDecodeError, yaml.YAMLError) as exc:
+        raise DatasetError(f"{path} could not be read: {exc}") from exc
     if not isinstance(declared, dict):
         raise DatasetError(f"{path} has to be a JSON object")
     return declared
@@ -72,7 +92,8 @@ def describe(declared: dict[str, Any], frozen: Path) -> dict[str, Any]:
 
 
 def to_json(description: dict[str, Any]) -> bytes:
-    return (json.dumps(description, ensure_ascii=False, indent=2) + "\n").encode()
+    # YAML reads `issued: 2026-10-30` as a date; it is written back as the same text.
+    return (json.dumps(description, ensure_ascii=False, indent=2, default=str) + "\n").encode()
 
 
 def _check_keys(record: Any, allowed: set[str], what: str) -> None:
