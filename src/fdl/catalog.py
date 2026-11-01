@@ -380,6 +380,58 @@ def set_data_path(catalog_path: Path, value: str) -> None:
         )
 
 
+def pin_files(catalog_path: Path, data_url: str) -> int:
+    """Turn every relative file reference into an absolute one under
+    ``data_url``, and return how many there were.
+
+    For a working catalog whose data path is a folder on this machine: the
+    files already published stay readable where they are, and new ones land
+    in the folder. `unpin_files` undoes it.
+    """
+    return _rewrite_files(catalog_path, data_url, pin=True)
+
+
+def unpin_files(catalog_path: Path, data_url: str) -> int:
+    """Turn every absolute file reference under ``data_url`` back into a
+    relative one, and return how many there were."""
+    return _rewrite_files(catalog_path, data_url, pin=False)
+
+
+def _rewrite_files(catalog_path: Path, data_url: str, *, pin: bool) -> int:
+    con = _open(Path(catalog_path))
+    changed = 0
+    try:
+        for table in _FILE_TABLES:
+            if not _table_exists(con, table):
+                continue
+            key = "data_file_id" if table == "ducklake_data_file" else "delete_file_id"
+            rows = con.execute(
+                f"""
+                SELECT DISTINCT f.{key}, f.path, coalesce(s.path, '') || coalesce(t.path, '')
+                FROM {table} f
+                JOIN ducklake_table t ON t.table_id = f.table_id
+                JOIN ducklake_schema s ON s.schema_id = t.schema_id
+                WHERE f.path_is_relative = ?
+                """,
+                [pin],
+            ).fetchall()
+            for row_id, path, prefix in rows:
+                if pin:
+                    new_path, relative = data_url + prefix + path, False
+                elif path.startswith(data_url + prefix):
+                    new_path, relative = path[len(data_url + prefix) :], True
+                else:
+                    continue
+                con.execute(
+                    f"UPDATE {table} SET path = ?, path_is_relative = ? WHERE {key} = ?",
+                    [new_path, relative, row_id],
+                )
+                changed += 1
+    finally:
+        con.close()
+    return changed
+
+
 def absolute_paths(catalog_path: Path) -> list[AbsolutePath]:
     """Return every file reference that is not relative to the data path."""
     con = _open(Path(catalog_path))

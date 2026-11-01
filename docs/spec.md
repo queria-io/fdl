@@ -44,9 +44,10 @@ Paths are relative to the root, lower case, separated by `/`. The root is what a
   versions/<version ID>/
     version.json                   the version record (written last)
     ducklake.duckdb                the frozen catalog
+    dataset.json                   what the version holds, described
     catalogs/<format>.duckdb       the catalog written out in another DuckLake format (optional)
     expired.json                   the past-retention mark (only once expired)
-    <others>                       files a host adds (descriptions, previews)
+    <others>                       files a host adds (previews)
   data/<schema>/<table>/ducklake-<uuid>.parquet   data files (shared, immutable)
   sources/<sha256>                 source files (optional, may be private)
 ```
@@ -104,6 +105,11 @@ The files under `versions/<version ID>/`. Never changed once written, except:
     "bytes": 4194304,
     "sha256": "9f2c…"
   },
+  "dataset": {
+    "path": "dataset.json",
+    "bytes": 2048,
+    "sha256": "4c1d…"
+  },
   "ducklake": {
     "format": "1.0",
     "snapshot_id": 345,
@@ -134,6 +140,7 @@ The files under `versions/<version ID>/`. Never changed once written, except:
 | `author` | must | Who made it. `name` is required, `email` and others optional |
 | `message` | must | What changed (the commit message) |
 | `catalog` | must | The catalog's file name, size, sha256, and the file's storage format (`storage`) |
+| `dataset` | must | The `dataset.json` beside the catalog: its file name, size and sha256. Versions written before it was required lack it |
 | `ducklake` | must | The DuckLake format and the frozen snapshot. `snapshots` is the range this version adds (first and last after the parent) |
 | `changes` | may | Column differences from the parent. `breaking` says whether old SQL breaks (dropped, renamed, recreated) |
 | `inputs` | may | Source files used. How `source_id` is assigned is up to the writer |
@@ -155,6 +162,53 @@ There are three format versions, each for a different thing. A reader can tell f
 - No inlined rows: all data is in data files
 - Every data file it names is under `data_dir`. A writer must check them all; a host may check too
 - Until DuckLake can tag snapshots, a writer must not run `expire_snapshots` on its working catalog in a way that removes the snapshot a version was frozen at
+
+### dataset.json
+
+What a version holds, in words: the dataset, its tables and their columns. It is part of the version, written once with it, so a reader can tell what a version holds and under what terms without opening the catalog, and an old version keeps the description it was published with.
+
+The writer describes; the writer's tool checks the description against the frozen catalog and completes it from there.
+
+```json
+{
+  "name": "population",
+  "title": "Population by town",
+  "description": "Census population of each town, by age and sex",
+  "keywords": ["population", "census"],
+  "language": "en",
+  "homepage": "https://example.org/population",
+  "issued": "2026-10-30",
+  "update_frequency": "yearly",
+  "licenses": [{ "id": "CC-BY-4.0", "spdx": "CC-BY-4.0", "url": "https://creativecommons.org/licenses/by/4.0/" }],
+  "sources": [{ "title": "2025 census", "path": "https://example.org/census-2025" }],
+  "contributors": [{ "title": "Example City", "roles": ["publisher"] }],
+  "temporal_coverage": { "start": "2025", "end": "2025" },
+  "spatial_coverage": ["JP"],
+  "schemas": [{ "name": "main", "title": "Tables" }],
+  "tables": [
+    {
+      "schema": "main",
+      "name": "population",
+      "title": "Population",
+      "description": "One row per town, age group and sex",
+      "primary_key": ["town_code", "age_group", "sex"],
+      "depends_on": [],
+      "sql": "SELECT …",
+      "rows": 120000,
+      "fields": [
+        { "name": "town_code", "title": "Town code", "description": "…", "type": "varchar", "nullable": false }
+      ]
+    }
+  ],
+  "extensions": {}
+}
+```
+
+- `name` and `title` are required. Everything else may be left out
+- `tables` lists every table of the catalog's last snapshot. The writer's tool adds the tables the writer did not describe, with what the catalog knows of them, and refuses a described table or column the catalog lacks
+- From the catalog: each table's `rows`, and each field's `type` (DuckLake's type name) and `nullable`. Comments in the catalog (`COMMENT ON`) are used where the writer gave no `description`
+- Keys this specification does not define are refused. A host's or a writer's own fields go under `extensions`, keyed by their name, at the top, in a table or in a field
+- What a license or a source says is the writer's claim. A host may check it before it publishes
 
 ### When the DuckLake format moves
 
@@ -258,8 +312,8 @@ ATTACH 'ducklake:https://example.org/lake/versions/019a3c4e-…/ducklake.duckdb'
 | Step | What happens |
 | --- | --- |
 | checkout | Make a working catalog (SQLite) from the catalog of the branch's version, and remember that version |
-| commit | Freeze the working catalog's last snapshot into a new version, with the remembered version as its parent |
-| push | Check the data files are in the repository, upload the catalog then `version.json`, then move the ref on condition. If refused, check out again and redo the work |
+| commit | Freeze the working catalog's last snapshot into a new version, with the remembered version as its parent, and describe it in `dataset.json` |
+| push | Check the data files are in the repository, upload the catalog, `dataset.json`, then `version.json`, then move the ref on condition. If refused, check out again and redo the work |
 
 Turning a version's catalog into a working catalog copies DuckLake's bookkeeping tables into SQLite as they are; freezing does the reverse, dropping rows after the snapshot. Neither rewrites Parquet.
 
@@ -267,6 +321,36 @@ A push from a stale working catalog is refused on two checks:
 
 1. The current version of the branch is not among the new version's `parents`
 2. The branch is the same, but a data file the catalog names is missing. A file written and left unpushed longer than the grace period may have been deleted; rebuild in the working catalog and push again
+
+## A repository over HTTP
+
+A host can take pushes over HTTP, so a writer needs no keys to its storage. The repository's root is a URL such as `https://data.example.org/towns/`, and every key in the layout is a path under it.
+
+### Requests
+
+| Request | Does | Answers |
+| --- | --- | --- |
+| `GET`, `HEAD` `<root>/<key>` | Read an object | 200 with an `ETag`, or 404 |
+| `PUT` `<root>/<key>` | Write an object, with `If-None-Match: *` or `If-Match: <ETag>` | 200 or 201 with the new `ETag`; 412 when the condition fails |
+| `GET` `<root>/?list&prefix=<p>[&after=<key>]` | List keys under a prefix | `{"keys": [...], "next": <key or null>}`; ask again with `after` while `next` is set |
+| `POST` `<root>/<key>?uploads` | Start an upload in parts, with the same conditions as `PUT` | `{"upload": "<id>"}` |
+| `PUT` `<root>/<key>?upload=<id>&part=<n>` | Send part `n` (from 1) | `{"etag": "<part tag>"}` |
+| `POST` `<root>/<key>?upload=<id>` | Finish it with `{"parts": [{"part": n, "etag": "…"}]}` in order | As `PUT` |
+
+- Writes carry `Authorization: Bearer <token>`. 401 without a usable token, 403 for one that may not write here
+- Parts other than the last are the same size. A writer sends a file in parts when it is larger than one request may be (64 MB by default)
+- A host decides which keys it takes. It may refuse `HEAD`, `fdl.json` and anything outside the layout, and take `versions/` and data files only with `If-None-Match: *`
+- Moving a ref is where a host checks a push: the version is there, it is a fast-forward, the catalog matches `version.json`, and every data file it names is in the repository. A refusal is 409 with the reason in the body
+- There is no `DELETE`. Retention and deletion are the host's
+
+### Writing to it
+
+DuckDB cannot write data files to an HTTP URL, so a working catalog of such a repository keeps two places:
+
+- Files already in the repository stay where they are. Checking out turns their references into absolute URLs under the repository's `data_dir`, so they are read over HTTP
+- New files are written to a folder on the writer's machine, the working catalog's data path
+
+Committing turns references under the repository's `data_dir` back into relative ones, and the new files are relative already. Pushing uploads the new files the repository lacks before the catalog.
 
 ## Open questions
 

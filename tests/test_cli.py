@@ -5,6 +5,7 @@ from __future__ import annotations
 from pathlib import Path
 
 import duckdb
+import pytest
 from typer.testing import CliRunner
 
 from fdl import catalog, layout, repo
@@ -12,6 +13,15 @@ from fdl.cli import app
 from fdl.stores import LocalStore
 
 runner = CliRunner()
+
+
+@pytest.fixture(autouse=True)
+def described(tmp_path: Path, monkeypatch) -> Path:
+    """Every commit reads `dataset.json` from where it runs."""
+    path = tmp_path / "dataset.json"
+    path.write_text('{"name": "towns", "title": "Towns"}')
+    monkeypatch.chdir(tmp_path)
+    return path
 
 
 def run(*args: str) -> str:
