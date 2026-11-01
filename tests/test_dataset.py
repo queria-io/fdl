@@ -15,7 +15,7 @@ def frozen(tmp_path: Path) -> Path:
     path = tmp_path / "lake.duckdb"
     con = duckdb.connect()
     con.execute("INSTALL ducklake; LOAD ducklake;")
-    con.execute(f"ATTACH 'ducklake:{path}' AS lake (DATA_PATH '{tmp_path}/data/')")
+    con.execute(f"ATTACH 'ducklake:{path}' AS lake (DATA_PATH '{tmp_path}/data/', DATA_INLINING_ROW_LIMIT 0)")
     con.execute("CREATE TABLE lake.main.towns AS SELECT * FROM (VALUES (1, 'a'), (2, NULL)) t(code, name)")
     con.execute("COMMENT ON TABLE lake.main.towns IS 'Towns'")
     con.execute("COMMENT ON COLUMN lake.main.towns.code IS 'Town code'")
@@ -80,3 +80,23 @@ def test_tables_can_be_described_in_their_own_files(tmp_path: Path, frozen: Path
     (tmp_path / ".fdl" / "stale.table.yml").write_text("schema: main\nname: gone\n")
     (table,) = describe(gather(tmp_path / "dataset.yml"), frozen)["tables"]
     assert table["title"] == "The towns"
+
+
+@pytest.mark.parametrize(
+    ("sql", "rows"),
+    [
+        ("UPDATE lake.main.towns SET name = 'b'", 2),
+        ("DELETE FROM lake.main.towns WHERE code = 1", 1),
+        ("INSERT INTO lake.main.towns VALUES (3, 'c')", 3),
+    ],
+)
+def test_rows_are_what_a_reader_counts(frozen: Path, sql: str, rows: int) -> None:
+    con = duckdb.connect()
+    con.execute("INSTALL ducklake; LOAD ducklake;")
+    con.execute(f"ATTACH 'ducklake:{frozen}' AS lake (DATA_PATH '{frozen.parent}/data/', DATA_INLINING_ROW_LIMIT 0)")
+    con.execute(sql)
+    assert con.execute("SELECT count(*) FROM lake.main.towns").fetchone() == (rows,)
+    con.close()
+
+    (table,) = describe({"name": "towns", "title": "Towns"}, frozen)["tables"]
+    assert table["rows"] == rows
