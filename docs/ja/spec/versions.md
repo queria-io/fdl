@@ -43,6 +43,11 @@ description: バージョン ID、version.json の項目、固めたカタログ
     "snapshot_id": 345,
     "snapshots": [301, 345]
   },
+  "files": {
+    "path": "files.json",
+    "bytes": 1536,
+    "sha256": "7a0e…"
+  },
   "changes": [
     { "table": "main.population", "kind": "add_column", "column": "note", "breaking": false }
   ],
@@ -70,6 +75,7 @@ description: バージョン ID、version.json の項目、固めたカタログ
 | `catalog` | must | カタログのファイル名、大きさ、sha256、保存形式（`storage`） |
 | `dataset` | must | カタログの隣の `dataset.json` のファイル名、大きさ、sha256。必須になる前に書かれたバージョンには無い |
 | `ducklake` | must | DuckLake の形式、固めたスナップショット、親から足したスナップショットの範囲（最初と最後） |
+| `files` | may | カタログの隣の `files.json` を書いたときの、そのファイル名、大きさ、sha256（[files.json](#filesjson)） |
 | `changes` | may | 親との列の違い。`breaking` は、親に向けて書いた SQL が失敗しうるか（列の削除・改名・作り直し） |
 | `inputs` | may | 使った元のファイル。`source_id` の付け方は書き手が決める |
 | `extensions` | may | ホスト固有の項目。ホストの名前をキーにする |
@@ -89,6 +95,38 @@ FDL 0.1 では、書き手が書く親は多くても 1 つです。`parents` �
 | `catalog.storage` | カタログファイルの保存形式 | DuckDB の保存形式が変わったとき |
 
 読み手は、`version.json` だけで、そのバージョンを開けるか判断できます。
+
+## files.json
+
+`files.json` は、`ducklake.snapshot_id` の時点の表ごとのデータファイルの索引です。カタログを開けない読み手のためのものです。書き手はこれをカタログから作り、カタログと食い違ったときはカタログが正です。置くかどうかは任意で、読み手はこれが無くても動かなければなりません。Git の到達可能性ビットマップ（pack の隣の `.bitmap`）に当たります。あるコミットからたどれるオブジェクトの一覧をオブジェクトから作ったもので、読むのを速くし、無くても読めます。
+
+```json files.json
+{
+  "tables": {
+    "main.population": {
+      "files": [
+        {
+          "path": "main/population/ducklake-019a3c4e-….parquet",
+          "rows": 1741,
+          "bytes": 52311,
+          "footer_bytes": 2048,
+          "deletes": { "path": "main/population/ducklake-019a3c4f-…-delete.parquet", "rows": 3, "bytes": 812 }
+        }
+      ]
+    }
+  }
+}
+```
+
+- `tables` には、そのスナップショットにあるすべての表を `schema.table` をキーにして入れます。行の無い表の `files` は空です
+- `path` はリポジトリの `data_dir` からの相対パスです。ファイルはカタログの順に並べます
+- `rows` と `bytes` は、カタログが記録している行数と大きさです。`footer_bytes` は Parquet のフッターの大きさで、記録があるときだけ書きます
+- `deletes` は、そのデータファイルから行を消したときの削除ファイルです
+- `renamed_columns` は、その表の列の名前を変えたことがあるときに `true` にします。名前を変える前に書いたデータファイルは、古い名前のままです
+
+DuckLake を使わずに Parquet ファイルを読む読み手は、`deletes` を持つファイルがある表や、`renamed_columns` が `true` の表を読んではいけません。DuckLake と同じように削除と改名を当てはめる場合は読んでかまいません。当てはめずに読むと、消した行が返ったり、名前を変えた列が欠けたりします。
+
+保持期間から外すとき、`files.json` はカタログと一緒に消します。
 
 ## 固めたカタログ
 

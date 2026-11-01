@@ -243,6 +243,7 @@ def record(
             described = File(
                 path=layout.DATASET, bytes=written.stat().st_size, sha256=_sha256(written)
             )
+        indexed = _write_files_index(target, copied, last)
         version = Version(
             id=version_id,
             seq=parent.seq + 1 if parent else 1,
@@ -257,6 +258,7 @@ def record(
                 sha256=_sha256(copied),
             ),
             ducklake=DuckLake(format=recorded, snapshot_id=last, snapshots=(first, last)),
+            files=indexed,
             inputs=tuple(inputs),
             extensions=dict(extensions or {}),
             dataset=described,
@@ -268,6 +270,14 @@ def record(
         shutil.rmtree(target, ignore_errors=True)
         raise
     return version
+
+
+def _write_files_index(target: Path, frozen: Path, snapshot_id: int) -> File:
+    """Write `files.json`: each table's files at the frozen snapshot, from the catalog."""
+    written = target / layout.FILES
+    index = {"tables": catalog.table_files(frozen, snapshot_id)}
+    written.write_bytes((json.dumps(index, ensure_ascii=False, indent=2) + "\n").encode())
+    return File(path=layout.FILES, bytes=written.stat().st_size, sha256=_sha256(written))
 
 
 def push(
@@ -332,6 +342,8 @@ def upload(store: Store, local: Path, version: Version) -> None:
     # Before the record, which is what makes a version there at all.
     if version.dataset is not None:
         _put_once(store, layout.version_dir(version.id) + version.dataset.path, local / version.dataset.path)
+    if version.files is not None:
+        _put_once(store, layout.version_dir(version.id) + version.files.path, local / version.files.path)
     _put_once(store, layout.version_record(version.id), local / layout.VERSION_RECORD)
 
 
@@ -393,6 +405,8 @@ def expire(store: Store, version_id: str, *, reason: str = "retention") -> None:
     store.delete(
         [
             layout.version_catalog(version_id),
+            # The index names files the grace period may delete.
+            layout.version_dir(version_id) + layout.FILES,
             *store.list(layout.version_dir(version_id) + layout.CATALOGS_DIR),
         ]
     )

@@ -251,3 +251,45 @@ def test_prune_keeps_what_was_made_since(tmp_path: Path, remote) -> None:
         versions[1].id,
         versions[0].id,
     ]
+
+
+
+def files_index(store: LocalStore, version) -> dict:
+    data = store.get(layout.version_dir(version.id) + version.files.path)
+    assert len(data) == version.files.bytes
+    return json.loads(data)["tables"]
+
+
+def test_a_version_indexes_each_tables_files(tmp_path: Path, remote) -> None:
+    build(
+        tmp_path / "work.sqlite",
+        remote,
+        "CREATE TABLE lake.main.towns AS SELECT range AS id FROM range(3);"
+        "DELETE FROM lake.main.towns WHERE id = 0",
+    )
+    version = commit(tmp_path, remote)
+    repo.push(remote, tmp_path / "local" / version.id, version)
+
+    assert parse(remote.get(layout.version_record(version.id))).files == version.files
+    (data_file,) = files_index(remote, version)["main.towns"]["files"]
+    assert data_file["rows"] == 3
+    assert (remote.root / layout.DEFAULT_DATA_DIR / data_file["path"]).stat().st_size == (
+        data_file["bytes"]
+    )
+    assert data_file["deletes"]["rows"] == 1
+    assert (remote.root / layout.DEFAULT_DATA_DIR / data_file["deletes"]["path"]).exists()
+
+
+def test_the_index_leaves_out_dropped_tables_and_marks_renames(tmp_path: Path, remote) -> None:
+    build(tmp_path / "work.sqlite", remote, "CREATE TABLE lake.main.towns AS SELECT 1 AS id")
+    build(tmp_path / "work.sqlite", remote, "CREATE TABLE lake.main.gone AS SELECT 1 AS id")
+    build(tmp_path / "work.sqlite", remote, "DROP TABLE lake.main.gone")
+    build(tmp_path / "work.sqlite", remote, "CREATE TABLE lake.main.moved AS SELECT 1 AS id")
+    build(tmp_path / "work.sqlite", remote, "ALTER TABLE lake.main.moved RENAME COLUMN id TO code")
+    version = commit(tmp_path, remote)
+    repo.push(remote, tmp_path / "local" / version.id, version)
+
+    tables = files_index(remote, version)
+    assert sorted(tables) == ["main.moved", "main.towns"]
+    assert tables["main.moved"]["renamed_columns"] is True
+    assert "renamed_columns" not in tables["main.towns"]

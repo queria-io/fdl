@@ -24,7 +24,7 @@ DuckLake's own cleanup (`ducklake_cleanup_old_files`, `ducklake_expire_snapshots
 A version is taken out of retention in this order:
 
 1. Put `versions/<ID>/expired.json`
-2. Delete the version's catalogs: `ducklake.duckdb` and `catalogs/`
+2. Delete the version's catalogs, `ducklake.duckdb` and `catalogs/`, and its `files.json`
 3. After the grace period, delete the data files that meet the conditions above
 
 ```json expired.json

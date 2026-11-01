@@ -505,6 +505,103 @@ def storage_version(catalog_path: Path) -> str:
     return f"duckdb-{row[0].rstrip('+')}"
 
 
+def table_files(catalog_path: Path, snapshot_id: int) -> dict[str, dict]:
+    """Each table's files at ``snapshot_id``, keyed ``schema.table``.
+
+    For readers without DuckDB: what to read for a table, the rows each data
+    file has deleted, and whether a column was ever renamed. Paths are
+    relative to the data path, as in `data_files`.
+    """
+    con = _open(Path(catalog_path))
+    live = "begin_snapshot <= ? AND (end_snapshot IS NULL OR end_snapshot > ?)"
+    try:
+        tables = con.execute(
+            """
+            SELECT t.table_id, s.schema_name || '.' || t.table_name,
+                   coalesce(s.path, '') || coalesce(t.path, '')
+            FROM ducklake_table t
+            JOIN ducklake_schema s ON s.schema_id = t.schema_id
+            WHERE t.begin_snapshot <= ? AND (t.end_snapshot IS NULL OR t.end_snapshot > ?)
+              AND s.begin_snapshot <= ? AND (s.end_snapshot IS NULL OR s.end_snapshot > ?)
+            ORDER BY 2
+            """,
+            [snapshot_id] * 4,
+        ).fetchall()
+        files = con.execute(
+            f"""
+            SELECT data_file_id, table_id, path, path_is_relative, record_count,
+                   file_size_bytes, footer_size
+            FROM ducklake_data_file WHERE {live}
+            ORDER BY table_id, file_order NULLS LAST, data_file_id
+            """,
+            [snapshot_id] * 2,
+        ).fetchall()
+        deletes = (
+            con.execute(
+                f"""
+                SELECT data_file_id, path, path_is_relative, delete_count, file_size_bytes
+                FROM ducklake_delete_file WHERE {live}
+                """,
+                [snapshot_id] * 2,
+            ).fetchall()
+            if _table_exists(con, "ducklake_delete_file")
+            else []
+        )
+        # A renamed column keeps its id under a new name, while files written
+        # before the rename still carry the old one.
+        renamed = {
+            row[0]
+            for row in con.execute(
+                """
+                SELECT DISTINCT table_id FROM ducklake_column
+                WHERE begin_snapshot <= ?
+                GROUP BY table_id, column_id
+                HAVING count(DISTINCT column_name) > 1
+                """,
+                [snapshot_id],
+            ).fetchall()
+        }
+    except Exception as exc:  # noqa: BLE001 - duckdb raises several types
+        raise CatalogError(f"{catalog_path} is not a DuckLake catalog: {exc}") from exc
+    finally:
+        con.close()
+
+    prefixes = {table_id: prefix for table_id, _, prefix in tables}
+
+    def where(table_id: int, path: str, relative: bool) -> dict:
+        if not relative:
+            raise CatalogError(f"{catalog_path} names a data file by an absolute path: {path}")
+        return {"path": prefixes[table_id] + path}
+
+    table_of = {data_id: table_id for data_id, table_id, *_ in files}
+    deleted = {
+        data_id: {**where(table_of[data_id], path, relative), "rows": rows, "bytes": size}
+        for data_id, path, relative, rows, size in deletes
+        if data_id in table_of
+    }
+    listed = {
+        table_id: [
+            {
+                **where(table_id, path, relative),
+                "rows": rows,
+                "bytes": size,
+                **({"footer_bytes": footer} if footer is not None else {}),
+                **({"deletes": deleted[data_id]} if data_id in deleted else {}),
+            }
+            for data_id, owner, path, relative, rows, size, footer in files
+            if owner == table_id
+        ]
+        for table_id in prefixes
+    }
+    return {
+        name: {
+            "files": listed[table_id],
+            **({"renamed_columns": True} if table_id in renamed else {}),
+        }
+        for table_id, name, _ in tables
+    }
+
+
 def snapshot_range(catalog_path: Path, after: int | None) -> tuple[int, int]:
     """The first and last snapshot past ``after`` (the parent's last one).
 
