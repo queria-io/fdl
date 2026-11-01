@@ -74,6 +74,7 @@ Bob checks out `main`, adds a column and commits:
 refs/heads/main                                   019a3c4e-…
 versions/019a2f10-…/…
 versions/019a3c4e-…/ducklake.duckdb
+versions/019a3c4e-…/dataset.json
 versions/019a3c4e-…/version.json
 data/main/towns/ducklake-0199f1….parquet          named by both versions
 data/main/towns/ducklake-019a3b….parquet          named by the second only
@@ -89,6 +90,7 @@ data/main/towns/ducklake-019a3b….parquet          named by the second only
   "author": { "name": "bob" },
   "message": "Add a note column",
   "catalog": { "path": "ducklake.duckdb", "storage": "duckdb-v1.5.0", "bytes": 4194304, "sha256": "9f2c…" },
+  "dataset": { "path": "dataset.json", "bytes": 2048, "sha256": "4c1d…" },
   "ducklake": { "format": "1.0", "snapshot_id": 12, "snapshots": [8, 12] }
 }
 ```

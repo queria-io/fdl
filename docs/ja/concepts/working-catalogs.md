@@ -33,7 +33,7 @@ ATTACH 'ducklake:work/lake.sqlite' AS lake (
 );
 ```
 
-- `DATA_PATH` はリポジトリのデータフォルダです。新しい Parquet ファイルは、読み手が探す場所に書かれます
+- `DATA_PATH` はリポジトリのデータフォルダです。新しい Parquet ファイルは、読み手が探す場所に書かれます。HTTP 越しのリポジトリでは、かわりに作業カタログの隣のフォルダになり、新しいファイルは `fdl commit` が上げます（[HTTP での push](/ja/spec/http#書き方)）
 - `DATA_INLINING_ROW_LIMIT 0` で、行をカタログの中に入れないようにします。バージョンはカタログの中に行を持てないので、行を持つ作業カタログは `fdl commit` が断ります
 - `META_TYPE 'sqlite'` は省略できません。省くと DuckDB がファイルから種類を推測し、SQLite が受け付けないオプションを渡してしまいます
 

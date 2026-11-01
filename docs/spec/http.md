@@ -18,7 +18,7 @@ A host can take pushes over HTTP, so a writer needs no keys to its storage. The 
 
 - Writes carry `Authorization: Bearer <token>`. 401 without a usable token, 403 for one that may not write here
 - Parts other than the last are the same size. A writer sends a file in parts when it is larger than one request may be (64 MB by default)
-- A host decides which keys it takes. It may refuse `HEAD`, `fdl.json` and anything outside the layout, and take `versions/` and data files only with `If-None-Match: *`
+- A host decides which keys it takes. It may refuse writes to `HEAD`, `fdl.json` and anything outside the layout (but must answer `HEAD` requests, which a writer needs for a ref's ETag), and take `versions/` and data files only with `If-None-Match: *`
 - Moving a ref is where a host checks a push: the version is there, it is a fast-forward, the catalog matches `version.json`, and every data file it names is in the repository. A refusal is 409 with the reason in the body
 - There is no `DELETE`. Retention and deletion are the host's
 

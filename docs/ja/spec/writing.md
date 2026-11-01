@@ -8,7 +8,7 @@ description: チェックアウト、コミット、push。作業カタログ、
 書き手は作業カタログに書きます。リポジトリの外にある、SQLite の DuckLake カタログです。手元のパソコンでもホストのコンテナでも、作業カタログは 1 種類です。
 
 - `DATA_INLINING_ROW_LIMIT 0` で ATTACH し、すべての行をデータファイルに書かなければならない
-- データパスはリポジトリのデータフォルダ（`<root><data_dir>`）。新しいデータファイルはリポジトリに書かれる
+- データパスはリポジトリのデータフォルダ（`<root><data_dir>`）。新しいデータファイルはリポジトリに書かれる。HTTP 越しのリポジトリだけは例外で、新しいデータファイルは書き手のマシンのフォルダに書き、push がそれを上げる（[HTTP での push](/ja/spec/http#書き方)）
 - `ducklake_expire_snapshots` と `ducklake_cleanup_old_files` を流してはいけない
 
 ## 段階

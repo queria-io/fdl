@@ -8,7 +8,7 @@ description: Checkout, commit and push - the working catalog, the order of write
 A writer writes to a working catalog: a DuckLake catalog in SQLite, outside the repository. There is one kind of working catalog, whether it is on a laptop or in a host's container.
 
 - It must be attached with `DATA_INLINING_ROW_LIMIT 0`, so that every row goes to a data file
-- Its data path is the repository's data folder (`<root><data_dir>`), so new data files land in the repository
+- Its data path is the repository's data folder (`<root><data_dir>`), so new data files land in the repository. A repository over HTTP is the exception: new data files go to a folder on the writer's machine and the push uploads them (see [Pushing over HTTP](/spec/http#writing-to-it))
 - `ducklake_expire_snapshots` and `ducklake_cleanup_old_files` must not be run on it
 
 ## Steps

@@ -18,7 +18,7 @@ The record says:
 
 - `id`: the version ID, a UUIDv7. IDs sort by creation time, and two writers never make the same one
 - `seq`: the number shown to people, the parent's `seq` plus one
-- `parents`: the version or versions it was built on. Empty for the first
+- `parents`: the version it was built on. Empty for the first
 - `author`, `message` and `created_at`
 - `catalog`: the size and sha256 of the catalog file, so a reader can check what it fetched
 - `ducklake`: the DuckLake format of the catalog and the snapshot it was frozen at

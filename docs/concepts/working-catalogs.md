@@ -33,7 +33,7 @@ ATTACH 'ducklake:work/lake.sqlite' AS lake (
 );
 ```
 
-- `DATA_PATH` is the repository's data folder, so new Parquet files land where readers will look for them
+- `DATA_PATH` is the repository's data folder, so new Parquet files land where readers will look for them. For a repository over HTTP it is a folder beside the working catalog instead, and `fdl commit` uploads the new files (see [Pushing over HTTP](/spec/http#writing-to-it))
 - `DATA_INLINING_ROW_LIMIT 0` keeps every row out of the catalog. A version must not carry inlined rows, and `fdl commit` refuses a working catalog that holds some
 - `META_TYPE 'sqlite'` has to be stated. Left to guess from the file, DuckDB passes an option to SQLite that SQLite rejects
 

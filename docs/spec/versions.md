@@ -6,6 +6,7 @@ description: The version ID, the fields of version.json, the frozen catalog, and
 A version is the files under `versions/<version ID>/`. They must not change once written, except:
 
 - `expired.json` is added and the catalogs deleted when the version falls out of retention ([Data files](/spec/data-files#past-retention))
+- on withdrawal, `expired.json` is added with `"reason": "withdrawn"` and the catalogs deleted, and `version.json` itself is deleted if it holds the withdrawn data ([Data files](/spec/data-files#withdrawal))
 - `catalogs/<format>.duckdb` may be added later. Files already there are not changed
 - `version.json.sig` may be added later, by a writer that signs a version after making it
 
@@ -71,7 +72,7 @@ A version is the files under `versions/<version ID>/`. They must not change once
 | `ducklake` | must | The DuckLake format, the snapshot frozen, and the range of snapshots this version adds after its parent (first and last) |
 | `changes` | may | Column differences from the parent. `breaking` says whether SQL written for the parent may fail (a column dropped, renamed or recreated) |
 | `inputs` | may | Source files used. How `source_id` is assigned is up to the writer |
-| `extensions` | may | Host-specific fields, keyed by the host's domain |
+| `extensions` | may | Host-specific fields, keyed by the host's name |
 
 A reader must ignore fields it does not know.
 
