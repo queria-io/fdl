@@ -98,7 +98,7 @@ A reader can tell from `version.json` alone whether it can open a version.
 
 ## files.json
 
-`files.json` is an index of each table's data files at `ducklake.snapshot_id`, for readers that cannot open the catalog. The writer makes it from the catalog, and the catalog wins where the two differ. It is optional: a reader must work without it. It plays the part of Git's commit-graph file, an index made from the objects that speeds up reading and that a reader can do without.
+`files.json` is an index of each table's data files at `ducklake.snapshot_id`, for readers that cannot open the catalog. The writer makes it from the catalog, and the catalog wins where the two differ. It is optional: a reader must work without it. It plays the part of Git's reachability bitmap (`.bitmap` beside a pack): a list, made from the objects, of what one commit reaches, which speeds up reading and which a reader can do without.
 
 ```json files.json
 {
