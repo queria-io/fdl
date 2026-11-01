@@ -6,8 +6,17 @@
 uv sync
 uv run fdl --help
 uv run pytest
-uv run zensical serve
 ```
+
+Docs (Blume, served at https://fdl.flo8s.com):
+
+```bash
+npm ci
+npm run dev
+npm run check   # blume build --strict && blume validate --strict
+```
+
+The pages under `docs/spec/` are the specification. Change the spec first, then the code.
 
 ## Code style
 

@@ -1,0 +1,16 @@
+{
+  "name": "fdl-docs",
+  "private": true,
+  "type": "module",
+  "engines": {
+    "node": ">=22.19"
+  },
+  "scripts": {
+    "dev": "blume dev",
+    "build": "blume build",
+    "check": "blume build --strict && blume validate --strict"
+  },
+  "dependencies": {
+    "blume": "^2.2.6"
+  }
+}

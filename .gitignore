@@ -18,3 +18,8 @@ site/
 
 # Environment
 .env
+
+# Docs (Blume)
+node_modules/
+dist/
+.blume/

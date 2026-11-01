@@ -19,7 +19,7 @@ FDL is a storage layout and a tool for it. Each version is a frozen catalog with
   data/main/towns/ducklake-….parquet
 ```
 
-The format is in [docs/spec.md](docs/spec.md).
+The documentation and the specification are at [fdl.flo8s.com](https://fdl.flo8s.com).
 
 ## Quick start
 
