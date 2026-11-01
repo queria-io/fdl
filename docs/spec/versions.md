@@ -32,6 +32,11 @@ A version is the files under `versions/<version ID>/`. They must not change once
     "bytes": 4194304,
     "sha256": "9f2c…"
   },
+  "dataset": {
+    "path": "dataset.json",
+    "bytes": 2048,
+    "sha256": "4c1d…"
+  },
   "ducklake": {
     "format": "1.0",
     "snapshot_id": 345,
@@ -62,6 +67,7 @@ A version is the files under `versions/<version ID>/`. They must not change once
 | `author` | must | Who made it. `name` is required; `email` and others are optional |
 | `message` | must | What changed |
 | `catalog` | must | The catalog's file name, size, sha256, and storage format (`storage`) |
+| `dataset` | must | The `dataset.json` beside the catalog: its file name, size and sha256. Versions written before it was required lack it |
 | `ducklake` | must | The DuckLake format, the snapshot frozen, and the range of snapshots this version adds after its parent (first and last) |
 | `changes` | may | Column differences from the parent. `breaking` says whether SQL written for the parent may fail (a column dropped, renamed or recreated) |
 | `inputs` | may | Source files used. How `source_id` is assigned is up to the writer |
@@ -92,6 +98,53 @@ A reader can tell from `version.json` alone whether it can open a version.
 - Every data file it names is under `data_dir`, recorded relative to the catalog's data path. A writer must check this; a host may check it too
 - Its `data_path` is the absolute URL of the data folder where the writer published: the root plus `data_dir`. Readers override it (see [Reading](/spec/reading))
 - Until DuckLake can tag snapshots, a writer must not run `ducklake_expire_snapshots` on its working catalog in a way that removes the snapshot a version was frozen at
+
+## dataset.json
+
+What a version holds, in words: the dataset, its tables and their columns. It is part of the version, written once with it, so a reader can tell what a version holds and under what terms without opening the catalog, and an old version keeps the description it was published with.
+
+The writer describes; the writer's tool checks the description against the frozen catalog and completes it from there.
+
+```json
+{
+  "name": "population",
+  "title": "Population by town",
+  "description": "Census population of each town, by age and sex",
+  "keywords": ["population", "census"],
+  "language": "en",
+  "homepage": "https://example.org/population",
+  "issued": "2026-10-30",
+  "update_frequency": "yearly",
+  "licenses": [{ "id": "CC-BY-4.0", "spdx": "CC-BY-4.0", "url": "https://creativecommons.org/licenses/by/4.0/" }],
+  "sources": [{ "title": "2025 census", "path": "https://example.org/census-2025" }],
+  "contributors": [{ "title": "Example City", "roles": ["publisher"] }],
+  "temporal_coverage": { "start": "2025", "end": "2025" },
+  "spatial_coverage": ["JP"],
+  "schemas": [{ "name": "main", "title": "Tables" }],
+  "tables": [
+    {
+      "schema": "main",
+      "name": "population",
+      "title": "Population",
+      "description": "One row per town, age group and sex",
+      "primary_key": ["town_code", "age_group", "sex"],
+      "depends_on": [],
+      "sql": "SELECT …",
+      "rows": 120000,
+      "fields": [
+        { "name": "town_code", "title": "Town code", "description": "…", "type": "varchar", "nullable": false }
+      ]
+    }
+  ],
+  "extensions": {}
+}
+```
+
+- `name` and `title` are required. Everything else may be left out
+- `tables` lists every table of the catalog's last snapshot. The writer's tool adds the tables the writer did not describe, with what the catalog knows of them, and refuses a described table or column the catalog lacks
+- From the catalog: each table's `rows`, and each field's `type` (DuckLake's type name) and `nullable`. Comments in the catalog (`COMMENT ON`) are used where the writer gave no `description`
+- Keys this specification does not define are refused. A host's or a writer's own fields go under `extensions`, keyed by their name, at the top, in a table or in a field
+- What a license or a source says is the writer's claim. A host may check it before it publishes
 
 ## Catalogs in other formats
 

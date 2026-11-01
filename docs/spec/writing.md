@@ -16,8 +16,8 @@ A writer writes to a working catalog: a DuckLake catalog in SQLite, outside the 
 | Step | What happens |
 | --- | --- |
 | checkout | Make a working catalog from the catalog of the branch's version, and remember that version. Before the first version, make an empty one |
-| commit | Freeze the working catalog's last snapshot into a new version, with the remembered version as its parent |
-| push | Check the data files, upload the catalog then `version.json`, then move the ref on condition |
+| commit | Freeze the working catalog's last snapshot into a new version, with the remembered version as its parent, and describe it in `dataset.json` |
+| push | Check the data files, upload the catalog, `dataset.json`, then `version.json`, then move the ref on condition |
 
 Checking out copies DuckLake's bookkeeping tables from the frozen catalog into SQLite as they are. Freezing does the reverse, keeping the rows up to the last snapshot. Neither rewrites a data file.
 
@@ -31,8 +31,9 @@ When freezing, a writer must:
 
 1. Data files
 2. `versions/<ID>/ducklake.duckdb` (and any `catalogs/`)
-3. `versions/<ID>/version.json`
-4. The ref, on condition
+3. `versions/<ID>/dataset.json`
+4. `versions/<ID>/version.json`
+5. The ref, on condition
 
 A writer stopped part way has changed nothing a reader sees. The files it left are not named by any ref, and data files among them are deleted after the grace period.
 

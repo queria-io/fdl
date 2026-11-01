@@ -60,6 +60,20 @@ SELECT * FROM 'towns.csv';
 
 `DATA_INLINING_ROW_LIMIT 0` makes DuckLake write every row to Parquet. Left at its default, DuckLake keeps small tables inside the catalog, and a version has to carry its rows in data files that a reader can fetch.
 
+## Describe
+
+Every version carries a `dataset.json` that says what it holds. Write one next to where you run `fdl commit`:
+
+```json dataset.json
+{
+  "name": "towns",
+  "title": "Towns",
+  "tables": [{ "schema": "main", "name": "towns", "title": "Towns and their codes" }]
+}
+```
+
+Only `name` and `title` are required. `fdl commit` checks the file against the catalog and fills in each table's row count and each column's type.
+
 ## Commit
 
 ```bash
@@ -75,6 +89,7 @@ towns/
   refs/heads/main                       019a3c4e-…
   versions/019a3c4e-…/
     ducklake.duckdb
+    dataset.json
     version.json
   data/main/towns/ducklake-….parquet
 ```

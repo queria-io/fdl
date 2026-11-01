@@ -3,7 +3,7 @@ title: Stores
 description: Using a local folder, S3, R2 or another S3-compatible store as a repository, and what credentials the fdl command reads.
 ---
 
-A repository's URL picks the store. `s3://bucket/prefix/` is S3 or anything that speaks its API. Anything else is a folder on disk.
+A repository's URL picks the store. `s3://bucket/prefix/` is S3 or anything that speaks its API. `https://host/path/` is a host that takes [pushes over HTTP](/spec/http), with the token from `fdl login`. Anything else is a folder on disk.
 
 ## A folder
 

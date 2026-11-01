@@ -44,24 +44,27 @@ No ref and no version names the file, so no reader can reach it. If the writer g
 
 1. Copy the working catalog from SQLite into a DuckDB file, keeping the snapshots up to the last one
 2. Set the catalog's `data_path` to the repository's data folder, and refuse if any file is recorded with an absolute path elsewhere
-3. Write `version.json` next to it, with a new UUIDv7 as the ID
-4. Check that every data file the catalog names is in the repository
-5. Upload `versions/<ID>/ducklake.duckdb`
-6. Upload `versions/<ID>/version.json`
-7. Create `refs/heads/main` with `If-None-Match: *`
+3. Check `dataset.json` against the catalog and fill in row counts and column types
+4. Write `version.json` next to them, with a new UUIDv7 as the ID
+5. Check that every data file the catalog names is in the repository
+6. Upload `versions/<ID>/ducklake.duckdb`
+7. Upload `versions/<ID>/dataset.json`
+8. Upload `versions/<ID>/version.json`
+9. Create `refs/heads/main` with `If-None-Match: *`
 
 ```
 fdl.json
 HEAD
 refs/heads/main                                   019a2f10-…
 versions/019a2f10-…/ducklake.duckdb
+versions/019a2f10-…/dataset.json
 versions/019a2f10-…/version.json
 data/main/towns/ducklake-0199f1….parquet
 ```
 
-The order is what keeps readers safe. A reader starts from a ref, and the ref is written last. If the commit stops after step 5 or 6, the repository holds a version folder no ref points at. Readers never see it, and it changes nothing.
+The order is what keeps readers safe. A reader starts from a ref, and the ref is written last. If the commit stops after step 6, 7 or 8, the repository holds a version folder no ref points at. Readers never see it, and it changes nothing.
 
-`version.json` is written after the catalog for the same reason: a tool that lists `versions/` can treat a folder without `version.json` as unfinished.
+`version.json` is written after the catalog and `dataset.json` for the same reason: a tool that lists `versions/` can treat a folder without `version.json` as unfinished.
 
 ## The second commit
 
