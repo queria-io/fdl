@@ -1,6 +1,17 @@
 # CHANGELOG
 
 
+## v0.13.0 (2026-11-01)
+
+### Features
+
+- Give each repository an id in fdl.json
+  ([`389ec96`](https://github.com/queria-io/fdl/commit/389ec96899d7c33fe0fbcf11d6d958de8b1fcb1a))
+
+init writes a UUID that never changes, so a copy of a repository can tell it holds the same one.
+  Repositories started without one still read.
+
+
 ## v0.12.1 (2026-10-30)
 
 ### Bug Fixes
