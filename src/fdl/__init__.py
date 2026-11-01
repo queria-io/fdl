@@ -1,6 +1,6 @@
 """FDL: versions of a DuckLake catalog, kept the way Git keeps commits.
 
-The format is written down in ``docs/spec.md``. This package is its reference
+The format is written down in ``docs/spec/``. This package is its reference
 implementation: a repository lives in a local folder or any S3-compatible
 bucket that takes conditional writes, and every function here works on one.
 Services that host repositories call this package the way ``gh`` calls

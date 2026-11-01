@@ -6,8 +6,19 @@
 uv sync
 uv run fdl --help
 uv run pytest
-uv run zensical serve
 ```
+
+Docs (Blume, served at https://fdl.flo8s.com):
+
+```bash
+npm ci
+npm run dev
+npm run check   # blume build --strict && blume validate --strict
+```
+
+The pages under `docs/spec/` are the specification. Change the spec first, then the code.
+
+English is the source; `docs/ja/` mirrors every page in Japanese. Change both in the same PR (plain です・ます, 「バージョン」 not 「版」).
 
 ## Code style
 

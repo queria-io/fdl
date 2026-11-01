@@ -19,7 +19,7 @@ FDL is a storage layout and a tool for it. Each version is a frozen catalog with
   data/main/towns/ducklake-….parquet
 ```
 
-The format is in [docs/spec.md](docs/spec.md).
+The documentation and the specification are at [fdl.flo8s.com](https://fdl.flo8s.com).
 
 ## Quick start
 
@@ -58,7 +58,9 @@ fdl url s3://my-bucket/towns/
 ```
 
 ```sql
-ATTACH 'ducklake:s3://my-bucket/towns/versions/019a3c4e-…/ducklake.duckdb' AS towns (READ_ONLY);
+ATTACH 'ducklake:s3://my-bucket/towns/versions/019a3c4e-…/ducklake.duckdb' AS towns (
+  DATA_PATH 's3://my-bucket/towns/data/', OVERRIDE_DATA_PATH true, READ_ONLY
+);
 ```
 
 Credentials and the endpoint come from boto3's usual places (`AWS_*` environment variables, `AWS_ENDPOINT_URL` for R2 and other S3-compatible stores). A folder works as a repository too: pass its path instead of an `s3://` URL.

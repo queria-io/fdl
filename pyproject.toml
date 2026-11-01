@@ -45,6 +45,4 @@ major_on_zero = false
 dev = [
     "pytest>=9.0.2",
     "moto[s3]>=5.0",
-    "zensical>=0.0.29",
-    "mkdocstrings[python]>=1.0.3",
 ]
