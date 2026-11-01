@@ -65,6 +65,29 @@ def read(path: Path) -> dict[str, Any]:
     return declared
 
 
+#: Tables may each be described in their own file, next to what builds them.
+TABLE_FILES = ("*.table.json", "*.table.yml", "*.table.yaml")
+
+
+def gather(path: Path) -> dict[str, Any]:
+    """The description in ``path`` with the tables described in table files.
+
+    A table file (``<name>.table.yml``) holds one entry of ``tables``. They are
+    looked for below the description's folder, skipping hidden folders.
+    """
+    declared = read(path)
+    root = Path(path).resolve().parent
+    files = sorted(
+        found
+        for pattern in TABLE_FILES
+        for found in root.rglob(pattern)
+        if not any(part.startswith(".") for part in found.relative_to(root).parts[:-1])
+    )
+    if not files:
+        return declared
+    return {**declared, "tables": [*declared.get("tables", []), *map(read, files)]}
+
+
 def describe(declared: dict[str, Any], frozen: Path) -> dict[str, Any]:
     """The `dataset.json` of a version: ``declared`` checked against the catalog.
 
