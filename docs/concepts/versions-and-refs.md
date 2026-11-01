@@ -10,6 +10,7 @@ A version is one frozen DuckLake catalog and a record of how it came to be. It l
 ```
 versions/019a3c4e-7b21-7f3a-9c55-2f0d8e1a4b6c/
   version.json         the record: parents, author, message, checksums
+  dataset.json         what it holds: tables, columns, license
   ducklake.duckdb      the frozen catalog
 ```
 

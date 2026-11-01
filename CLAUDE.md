@@ -18,6 +18,8 @@ npm run check   # blume build --strict && blume validate --strict
 
 The pages under `docs/spec/` are the specification. Change the spec first, then the code.
 
+English is the source; `docs/ja/` mirrors every page in Japanese. Change both in the same PR (plain です・ます, 「バージョン」 not 「版」).
+
 ## Code style
 
 - Python 3.10+ — `X | Y` unions are fine; nothing newer (no `typing.Self`, `except*`, `datetime.UTC`)

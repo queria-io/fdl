@@ -12,5 +12,17 @@ export default defineConfig({
   content: {
     root: "docs",
   },
+  i18n: {
+    defaultLocale: "en",
+    locales: [
+      { code: "en", label: "English" },
+      { code: "ja", label: "日本語" },
+    ],
+  },
+  seo: {
+    og: {
+      fonts: ["Noto Sans JP"],
+    },
+  },
   redirects: [{ from: "/cli", to: "/reference/cli" }],
 });

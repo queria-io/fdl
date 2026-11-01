@@ -1,0 +1,168 @@
+---
+title: バージョン
+description: バージョン ID、version.json の項目、固めたカタログ、dataset.json、ほかの DuckLake 形式のカタログ。
+---
+
+バージョンは `versions/<version ID>/` の下のファイルです。一度書いたら変えてはいけません。例外は次のとおりです。
+
+- 保持期間を過ぎたとき、`expired.json` を足し、カタログを消す（[データファイル](/ja/spec/data-files#保持期間を過ぎたとき)）
+- `catalogs/<format>.duckdb` はあとから足してよい。既にあるファイルは変えない
+- `version.json.sig` は、バージョンを作ったあとに署名する書き手が足してよい
+
+## バージョン ID
+
+- 小文字・ハイフン区切りの UUIDv7。たとえば `019a3c4e-7b21-7f3a-9c55-2f0d8e1a4b6c`。作った順に並び、書き手どうしが調整しなくても重ならない
+- 中身のハッシュではない。同じカタログでも別のバイト列で書かれることがあり、ハッシュは安定しない。中身は `catalog.sha256` で確かめる
+- 人に見せる番号は `seq`。ブランチをまたぐと重なるので ID にはしない
+
+## version.json
+
+```json
+{
+  "fdl": "0.1",
+  "id": "019a3c4e-7b21-7f3a-9c55-2f0d8e1a4b6c",
+  "seq": 12,
+  "parents": ["019a2f10-0c4d-7e88-a1b2-55c0d9e3f7aa"],
+  "created_at": "2026-10-30T09:00:00Z",
+  "author": { "name": "example" },
+  "message": "Add the final 2025 figures",
+  "catalog": {
+    "path": "ducklake.duckdb",
+    "storage": "duckdb-v1.5.0",
+    "bytes": 4194304,
+    "sha256": "9f2c…"
+  },
+  "dataset": {
+    "path": "dataset.json",
+    "bytes": 2048,
+    "sha256": "4c1d…"
+  },
+  "ducklake": {
+    "format": "1.0",
+    "snapshot_id": 345,
+    "snapshots": [301, 345]
+  },
+  "changes": [
+    { "table": "main.population", "kind": "add_column", "column": "note", "breaking": false }
+  ],
+  "inputs": [
+    {
+      "source_id": "example:population-2025",
+      "sha256": "1b7e…",
+      "retrieved_at": "2026-10-29T03:12:00Z",
+      "url": "https://example.org/population-2025.csv"
+    }
+  ],
+  "extensions": {}
+}
+```
+
+| 項目 | 必須 | 意味 |
+| --- | --- | --- |
+| `fdl` | must | 書いたときの仕様のバージョン |
+| `id` | must | ディレクトリと同じ ID。違っていたら読み手は読んではいけない |
+| `seq` | must | 人に見せる番号。最初は 1、そのあとは最初の親の `seq` に 1 を足す |
+| `parents` | must | 親のバージョン ID。最初のバージョンでは空、そのあとは 1 つ |
+| `created_at` | must | UTC、ISO 8601 |
+| `author` | must | 作った人。`name` は必須、`email` などは任意 |
+| `message` | must | 何を変えたか |
+| `catalog` | must | カタログのファイル名、大きさ、sha256、保存形式（`storage`） |
+| `dataset` | must | カタログの隣の `dataset.json` のファイル名、大きさ、sha256。必須になる前に書かれたバージョンには無い |
+| `ducklake` | must | DuckLake の形式、固めたスナップショット、親から足したスナップショットの範囲（最初と最後） |
+| `changes` | may | 親との列の違い。`breaking` は、親に向けて書いた SQL が失敗しうるか（列の削除・改名・作り直し） |
+| `inputs` | may | 使った元のファイル。`source_id` の付け方は書き手が決める |
+| `extensions` | may | ホスト固有の項目。ホストのドメインをキーにする |
+
+読み手は、知らない項目を無視しなければなりません。
+
+FDL 0.1 では、書き手が書く親は多くても 1 つです。`parents` をリストにしているのは、仕様の将来のバージョンで、項目を変えずにマージを表せるようにするためです。読み手は、どんな長さのリストも受け付け、履歴をたどるときは最初の要素を使わなければなりません。
+
+スナップショットごとの説明と SQL は、DuckLake の `commit_message` と `commit_extra_info` としてカタログの中に残し、`version.json` には写しません。
+
+### 形式番号
+
+| 項目 | 指すもの | 変わるとき |
+| --- | --- | --- |
+| `fdl` | この仕様 | この仕様が変わったとき |
+| `ducklake.format` | DuckLake の管理用の表の形 | DuckLake の仕様が変わったとき |
+| `catalog.storage` | カタログファイルの保存形式 | DuckDB の保存形式が変わったとき |
+
+読み手は、`version.json` だけで、そのバージョンを開けるか判断できます。
+
+## 固めたカタログ
+
+`ducklake.duckdb` は、DuckDB のファイル形式の DuckLake カタログです。
+
+- 管理用の行を `ducklake.snapshot_id` まで持ち、それより後は持たない
+- 行をカタログの中に持たない。データはすべてデータファイルにある
+- 参照するデータファイルはすべて `data_dir` の下にあり、カタログのデータパスからの相対で記録されている。書き手はこれを確かめなければならず、ホストも確かめてよい
+- `data_path` は、書き手が公開したデータフォルダの絶対 URL（ルートと `data_dir`）。読み手はこれを上書きする（[読む](/ja/spec/reading)を参照）
+- DuckLake がスナップショットにタグを付けられるようになるまで、書き手は作業カタログで、バージョンを固めたスナップショットを消すような `ducklake_expire_snapshots` を流してはいけない
+
+## dataset.json
+
+バージョンの中身を言葉で説明するファイルです。データセット、その表、表の列を説明します。バージョンの一部としてバージョンと一緒に一度だけ書くので、読み手はカタログを開かなくても、何がどんな条件で入っているかが分かり、古いバージョンも公開したときの説明を持ち続けます。
+
+書き手が説明を書き、書き手のツールがそれを固めたカタログと照らし合わせ、カタログから分かることを書き足します。
+
+```json
+{
+  "name": "population",
+  "title": "Population by town",
+  "description": "Census population of each town, by age and sex",
+  "keywords": ["population", "census"],
+  "language": "en",
+  "homepage": "https://example.org/population",
+  "issued": "2026-10-30",
+  "update_frequency": "yearly",
+  "licenses": [{ "id": "CC-BY-4.0", "spdx": "CC-BY-4.0", "url": "https://creativecommons.org/licenses/by/4.0/" }],
+  "sources": [{ "title": "2025 census", "path": "https://example.org/census-2025" }],
+  "contributors": [{ "title": "Example City", "roles": ["publisher"] }],
+  "temporal_coverage": { "start": "2025", "end": "2025" },
+  "spatial_coverage": ["JP"],
+  "schemas": [{ "name": "main", "title": "Tables" }],
+  "tables": [
+    {
+      "schema": "main",
+      "name": "population",
+      "title": "Population",
+      "description": "One row per town, age group and sex",
+      "primary_key": ["town_code", "age_group", "sex"],
+      "depends_on": [],
+      "sql": "SELECT …",
+      "rows": 120000,
+      "fields": [
+        { "name": "town_code", "title": "Town code", "description": "…", "type": "varchar", "nullable": false }
+      ]
+    }
+  ],
+  "extensions": {}
+}
+```
+
+- 必須なのは `name` と `title` だけで、ほかは省いてよい
+- `tables` には、カタログの最後のスナップショットにある表をすべて並べる。書き手が説明しなかった表は、書き手のツールがカタログから分かることで足す。カタログに無い表や列を説明していたら断る
+- カタログから取るもの: 表ごとの `rows`、列ごとの `type`（DuckLake の型名）と `nullable`。書き手が `description` を書かなかったところには、カタログのコメント（`COMMENT ON`）を使う
+- この仕様が決めていないキーは断る。ホストや書き手が独自に足す項目は、最上位・表・列それぞれの `extensions` に、自分の名前をキーにして置く
+- ライセンスや出典に書いたことは書き手の主張である。ホストは公開する前に確かめてよい
+
+## ほかの形式のカタログ
+
+1 つのバージョンが DuckLake の形式ごとにカタログを持ってよく、読み手は DuckDB を替えずに、開けるファイルを選べます。
+
+```
+versions/<ID>/
+  ducklake.duckdb            作ったときのカタログ（version.json が説明するもの）
+  catalogs/1.0.duckdb        形式 1.0 で書いたもの
+  catalogs/1.1.duckdb        形式 1.1 で書いたもの
+```
+
+- `catalogs/<format>.duckdb` はすべて、同じデータファイルを参照し、同じ行を返さなければならない
+- 読み手は、開ける形式を新しい順に試し、どれも無ければ `ducklake.duckdb` を開く
+- 宣言した形式をあるバージョンで作れない書き手は、そのファイルを置かない。どのファイルも開けない読み手は、そのバージョンを読めない
+- 古い形式で表せないものを使ったバージョンには、その形式のカタログを置かない
+- `fdl.json` の `until` を過ぎた形式は、新しいバージョンでは書かない。過去のバージョンはそのまま残してよい
+- データファイルは、`fdl.json` で宣言した一番古い形式が読めるように書かなければならない
+- `catalog.storage` は、宣言した読み手が開ける一番古い DuckDB の保存形式にするのがよい
+
+DuckDB 2.0 で古い形式を書く方法は [DuckLake の形式](/ja/internals/ducklake-formats)にあります。
