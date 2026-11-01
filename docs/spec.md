@@ -58,6 +58,7 @@ Paths are relative to the root, lower case, separated by `/`. The root is what a
 ```json
 {
   "fdl": "0.1",
+  "id": "5f0c8a52-6d3e-4f8e-9b1a-2c7d4e9f0a13",
   "data_dir": "data/",
   "catalog_formats": [
     { "ducklake": "1.1" },
@@ -67,6 +68,7 @@ Paths are relative to the root, lower case, separated by `/`. The root is what a
 ```
 
 - `fdl` is the version of this specification. A reader must not read a major version it does not know
+- `id` is a UUID written when the repository is started and never changed, so a copy of the repository can tell it holds the same one. A service that hosts repositories may use its own ID for the dataset here. Repositories started without one are still read
 - `data_dir` is where data files are. The default is `data/`. A repository whose files already sit under another name declares it here instead of moving them
 - `catalog_formats` lists the DuckLake formats published and until when (see "When the DuckLake format moves"). Without it, only `ducklake.duckdb`
 - Files with other names may sit at the root. Readers ignore them
@@ -276,7 +278,6 @@ A push from a stale working catalog is refused on two checks:
 - How to make a merge (a version with two parents)
 - A compatibility test suite for readers and writers
 - Withdrawal: removing past versions entirely, for example when personal data was published by mistake (`reason: withdrawn`, rewriting Parquet, and the fact that mirrors keep their copies)
-- A repository ID: an immutable `id` in `fdl.json`, so a mirror can tell it holds the same dataset
 - Signatures, for readers of a mirror: anyone can write a `version.json`
 - How to declare retention defaults in `fdl.json` (versions to keep, days)
 

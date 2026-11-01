@@ -11,6 +11,7 @@ import hashlib
 import itertools
 import json
 import shutil
+import uuid
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Iterator
@@ -32,6 +33,9 @@ class NotFastForward(RepoError):
 class Config:
     fdl: str
     data_dir: str
+    #: Never changes, so a copy of the repository can tell it holds the same one.
+    #: None for repositories started before it was written.
+    id: str | None = None
 
 
 def init(store: Store, *, data_dir: str = layout.DEFAULT_DATA_DIR) -> Config:
@@ -42,7 +46,7 @@ def init(store: Store, *, data_dir: str = layout.DEFAULT_DATA_DIR) -> Config:
     """
     if not data_dir.endswith("/"):
         raise RepoError(f"data_dir has to end with '/': {data_dir!r}")
-    record = {"fdl": layout.FDL_VERSION, "data_dir": data_dir}
+    record = {"fdl": layout.FDL_VERSION, "id": str(uuid.uuid4()), "data_dir": data_dir}
     try:
         store.put(
             layout.CONFIG,
@@ -67,7 +71,11 @@ def read_config(store: Store) -> Config:
     major = str(record.get("fdl", "")).split(".")[0]
     if major != layout.FDL_VERSION.split(".")[0]:
         raise RepoError(f"written for fdl {record.get('fdl')}, this reads {layout.FDL_VERSION}")
-    return Config(fdl=record["fdl"], data_dir=record.get("data_dir", layout.DEFAULT_DATA_DIR))
+    return Config(
+        fdl=record["fdl"],
+        data_dir=record.get("data_dir", layout.DEFAULT_DATA_DIR),
+        id=record.get("id"),
+    )
 
 
 def read_version(store: Store, version_id: str) -> Version:
