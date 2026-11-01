@@ -117,6 +117,8 @@ def commit(
     try:
         catalog.convert(working, frozen, data_path=data_path)
         catalog.set_data_path(frozen, data_path)
+        # Files a working catalog read from the repository where they are.
+        catalog.unpin_files(frozen, data_path)
         absolute = catalog.absolute_paths(frozen)
         if absolute:
             raise RepoError(
@@ -136,16 +138,33 @@ def commit(
         frozen.unlink(missing_ok=True)
 
 
-def checkout(store: Store, working: Path, *, ref: str = layout.HEAD) -> Version | None:
+def checkout(
+    store: Store,
+    working: Path,
+    *,
+    ref: str = layout.HEAD,
+    local_data: Path | None = None,
+) -> Version | None:
     """Make a working catalog from the version ``ref`` holds.
 
     Before the first version there is nothing to copy, and an empty working
     catalog is created instead. Returns the version checked out, which a
     commit from this working catalog builds on.
+
+    A store DuckDB cannot write to (one over HTTP) needs ``local_data``, a
+    folder on this machine: new data files are written there and uploaded by
+    `push`, while the files already in the repository are read where they are.
     """
     working = Path(working)
     config = read_config(store)
-    data_path = _data_url(store, config)
+    remote_data = _data_url(store, config)
+    if writes_data_files(store):
+        data_path = remote_data
+    elif local_data is None:
+        raise RepoError("this store takes no data files from DuckDB; give a local folder for them")
+    else:
+        Path(local_data).mkdir(parents=True, exist_ok=True)
+        data_path = Path(local_data).resolve().as_posix() + "/"
     version = head(store, ref)
     if version is None:
         catalog.create(working, alias="lake", data_path=data_path)
@@ -156,10 +175,17 @@ def checkout(store: Store, working: Path, *, ref: str = layout.HEAD) -> Version 
     frozen = working.with_name(f".{working.name}.{version.id}.duckdb")
     try:
         frozen.write_bytes(store.get(layout.version_catalog(version.id)))
+        if data_path != remote_data:
+            catalog.pin_files(frozen, remote_data)
         catalog.convert(frozen, working, data_path=data_path)
     finally:
         frozen.unlink(missing_ok=True)
     return version
+
+
+def writes_data_files(store: Store) -> bool:
+    """Whether DuckDB writes data files straight into the store."""
+    return getattr(store, "writes_data_files", True)
 
 
 def data_url(store: Store) -> str:
@@ -236,6 +262,7 @@ def push(
     *,
     ref: str = layout.DEFAULT_BRANCH,
     move_ref: bool = True,
+    local_data: Path | None = None,
 ) -> None:
     """Upload a committed version, then move ``ref`` to it.
 
@@ -245,6 +272,9 @@ def push(
 
     ``move_ref=False`` uploads the version and stops: for a host that moves
     its refs itself (after an approval, say).
+
+    ``local_data`` is the folder a working catalog wrote new data files to
+    (see `checkout`). Those the repository lacks are uploaded first.
     """
     config = read_config(store)
     current_ref = refs.read(store, layout.check_ref(ref))
@@ -254,6 +284,8 @@ def push(
     _refuse_unless_fast_forward(current_ref, version)
 
     frozen = Path(local) / layout.CATALOG
+    if local_data is not None:
+        _upload_data_files(store, config, frozen, Path(local_data))
     missing = _missing_data_files(store, config, frozen)
     if missing:
         raise RepoError(
@@ -275,13 +307,28 @@ def push(
         raise NotFastForward(f"{ref} moved during the push. Pull and build again.") from exc
 
 
+def attach(local: Path, files: tuple[Path, ...]) -> None:
+    """Put files beside a committed version's catalog, to be uploaded with it."""
+    reserved = {layout.CATALOG, layout.VERSION_RECORD, layout.EXPIRED, layout.CATALOGS_DIR.rstrip("/")}
+    for path in map(Path, files):
+        if path.name in reserved:
+            raise RepoError(f"{path.name} is a name the format keeps for itself")
+        shutil.copyfile(path, Path(local) / path.name)
+
+
 def upload(store: Store, local: Path, version: Version) -> None:
     """Put a committed version's files, catalog first and the record last.
 
     No checks and no ref: for a host that checks and moves its refs itself.
     """
-    _put_once(store, layout.version_catalog(version.id), Path(local) / layout.CATALOG)
-    _put_once(store, layout.version_record(version.id), Path(local) / layout.VERSION_RECORD)
+    local = Path(local)
+    _put_once(store, layout.version_catalog(version.id), local / layout.CATALOG)
+    # Files attached to the version, whose meaning is the host's. Before the
+    # record, which is what makes a version there at all.
+    for path in sorted(local.iterdir()):
+        if path.is_file() and path.name not in (layout.CATALOG, layout.VERSION_RECORD):
+            _put_once(store, layout.version_dir(version.id) + path.name, path)
+    _put_once(store, layout.version_record(version.id), local / layout.VERSION_RECORD)
 
 
 def log(store: Store, name: str = layout.HEAD) -> Iterator[Version]:
@@ -418,6 +465,19 @@ def _missing_data_files(store: Store, config: Config, frozen: Path) -> list[str]
         for key in (config.data_dir + name for name in catalog.data_files(frozen))
         if key not in present
     ]
+
+
+def _upload_data_files(store: Store, config: Config, frozen: Path, local_data: Path) -> None:
+    for key in _missing_data_files(store, config, frozen):
+        path = local_data / key[len(config.data_dir) :]
+        if not path.is_file():
+            continue
+        try:
+            store.put_file(key, path, content_type="application/octet-stream", if_none_match="*")
+        except Exception as exc:  # noqa: BLE001 - stores raise their own types
+            # Data files are never rewritten: one already there is this one.
+            if not is_conflict(exc):
+                raise
 
 
 def _put_once(store: Store, key: str, path: Path) -> None:

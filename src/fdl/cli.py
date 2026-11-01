@@ -16,12 +16,12 @@ from pathlib import Path
 import typer
 
 from . import catalog, layout, refs, repo
-from .stores import StoreError, open_store
+from .stores import StoreError, open_store, save_credentials
 from .version import VersionError
 
 app = typer.Typer(no_args_is_help=True, pretty_exceptions_short=True)
 
-Remote = typer.Argument(help="The repository: s3://bucket/prefix/ or a folder")
+Remote = typer.Argument(help="The repository: s3://bucket/prefix/, https://host/path/ or a folder")
 Working = typer.Argument(help="The working catalog (.sqlite)")
 
 
@@ -69,12 +69,16 @@ def checkout(
 ) -> None:
     """Make a working catalog from the version a branch holds."""
     store = open_store(remote)
+    # A repository over HTTP takes no writes from DuckDB: new data files go to
+    # a folder beside the working catalog until the commit uploads them.
+    local = None if repo.writes_data_files(store) else working.with_name(working.name + ".data")
     try:
-        version = repo.checkout(store, working, ref=ref)
-        data = repo.data_url(store)
+        version = repo.checkout(store, working, ref=ref, local_data=local)
+        data = repo.data_url(store) if local is None else local.resolve().as_posix() + "/"
     except ERRORS as exc:
         raise _fail(exc) from exc
-    _write_state(working, {"remote": remote, "ref": ref, "base": version.id if version else None})
+    state = {"remote": remote, "ref": ref, "base": version.id if version else None}
+    _write_state(working, {**state, **({"data": str(local)} if local else {})})
     typer.echo(f"{working} at {version.id if version else 'an empty catalog'}")
     typer.echo("Write to it with:")
     typer.echo("  " + catalog.attach_sql(working, alias="lake", data_path=data)[-1] + ";")
@@ -85,6 +89,7 @@ def commit(
     working: Path = Working,
     message: str = typer.Option(..., "-m", "--message", help="What changed"),
     author: str = typer.Option(..., help="Who made it"),
+    attach: list[Path] = typer.Option([], help="A file to keep beside the version (repeatable)"),
 ) -> None:
     """Freeze the working catalog into a version and push it to its branch."""
     state = _read_state(working)
@@ -100,7 +105,9 @@ def commit(
             author={"name": author},
             message=message,
         )
-        repo.push(store, out / version.id, version, ref=state["ref"])
+        repo.attach(out / version.id, tuple(attach))
+        local = Path(state["data"]) if state.get("data") else None
+        repo.push(store, out / version.id, version, ref=state["ref"], local_data=local)
     except ERRORS as exc:
         raise _fail(exc) from exc
     finally:
@@ -153,6 +160,16 @@ def expire(
     except ERRORS as exc:
         raise _fail(exc) from exc
     typer.echo(f"Expired {len(expired)} version(s).")
+
+
+@app.command()
+def login(
+    host: str = typer.Argument(help="The host of a repository over HTTP, such as data.example.org"),
+    token: str = typer.Option(..., prompt=True, hide_input=True, help="The token the host gave you"),
+) -> None:
+    """Keep a token for a host, sent with every request to a repository there."""
+    path = save_credentials(host, token)
+    typer.echo(f"Saved for {host} in {path}")
 
 
 def main() -> None:
