@@ -137,7 +137,9 @@ def commit(
         local = Path(state["data"]) if state.get("data") else None
         repo.push(store, out / version.id, version, ref=state["ref"], local_data=local)
     except repo.NothingToCommit as exc:
-        typer.echo(f"Nothing to commit: {state['ref']} stays at {exc.parent.id} (version {exc.parent.seq})")
+        # The branch may have moved on since the checkout, so say what the
+        # working catalog matches rather than where the branch is.
+        typer.echo(f"Nothing to commit: {exc}; {state['ref']} was not moved")
         return
     except ERRORS as exc:
         raise _fail(exc) from exc

@@ -146,3 +146,25 @@ def test_rows_it_cannot_read_are_taken_as_changed(tmp_path: Path) -> None:
 
     result = runner.invoke(app, ["commit", str(working), "-m", "again", "--author", "t"])
     assert "could not tell whether anything changed" in result.output
+
+
+def test_values_that_hash_alike_still_count_as_changed(tmp_path: Path) -> None:
+    remote, working = tmp_path / "remote", tmp_path / "lake.sqlite"
+    store = LocalStore(remote)
+    run("init", remote)
+    run("checkout", remote, working)
+    # DuckDB's hash() gives NULL and [] the same hash, so swapping them
+    # between rows leaves a sum of row hashes (and the row and null counts) as
+    # they were.
+    write(
+        working,
+        store,
+        "CREATE TABLE lake.main.towns AS SELECT * FROM (VALUES (1, NULL::INTEGER[]), (2, []::INTEGER[])) v(id, tags)",
+    )
+    run("commit", working, "-m", "first", "--author", "t")
+    write(
+        working,
+        store,
+        "CREATE OR REPLACE TABLE lake.main.towns AS SELECT * FROM (VALUES (1, []::INTEGER[]), (2, NULL::INTEGER[])) v(id, tags)",
+    )
+    assert "version 2" in run("commit", working, "-m", "swapped", "--author", "t")

@@ -135,12 +135,6 @@ def commit(
     relative to it, or the version would point readers at the writer's disk.
     Nothing is uploaded: that is `push`.
     """
-    check = not allow_empty and parent is not None
-    if check:
-        try:
-            unchanged = catalog.same_contents(working, parent.ducklake.snapshot_id)
-        except catalog.CatalogError as exc:
-            raise CannotCompare(str(exc)) from exc
     Path(out_dir).mkdir(parents=True, exist_ok=True)
     frozen = Path(out_dir) / f".freezing-{new_id()}.duckdb"
     try:
@@ -154,8 +148,15 @@ def commit(
                 f"{len(absolute)} file(s) are recorded with an absolute path "
                 f"(first: {absolute[0].path}); rebuild so they sit under the data path"
             )
-        if check and unchanged and _same_description(frozen, dataset, parent):
-            raise NothingToCommit(parent)
+        # The description first: it reads the catalog alone, while comparing
+        # the contents can read every row of a rebuilt table.
+        if not allow_empty and parent is not None and _same_description(frozen, dataset, parent):
+            try:
+                unchanged = catalog.same_contents(working, parent.ducklake.snapshot_id)
+            except catalog.CatalogError as exc:
+                raise CannotCompare(str(exc)) from exc
+            if unchanged:
+                raise NothingToCommit(parent)
         return record(
             frozen,
             out_dir,

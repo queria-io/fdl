@@ -729,25 +729,35 @@ def same_contents(working: Path, since: int) -> bool:
                 f"(DESCRIBE SELECT * FROM {name} AT (VERSION => {int(snapshot)}))"
             ).fetchall()
 
-        def rows(name: str, snapshot: int) -> tuple:
-            # A sum, not an XOR, so that a row repeated twice still counts.
-            return con.execute(
-                f"SELECT count(*), sum(hash(r)::HUGEINT) FROM "
-                f"(SELECT * FROM {name} AT (VERSION => {int(snapshot)})) r"
+        def same_rows(name: str) -> bool:
+            # Compared as values, not hashes: DuckDB's hash() gives a NULL
+            # list, struct or map the hash of an empty one, so a sum of row
+            # hashes misses rows that trade the two. With the counts equal,
+            # nothing left by EXCEPT ALL means the same multiset.
+            old = f"SELECT * FROM {name} AT (VERSION => {int(since)})"
+            new = f"SELECT * FROM {name} AT (VERSION => {int(last)})"
+            counts = con.execute(
+                f"SELECT (SELECT count(*) FROM ({old})), (SELECT count(*) FROM ({new}))"
             ).fetchone()
+            if counts[0] != counts[1]:
+                return False
+            return bool(con.execute(f"SELECT NOT EXISTS ({old} EXCEPT ALL {new})").fetchone()[0])
+
+        def quoted(identifier: str) -> str:
+            return '"' + identifier.replace('"', '""') + '"'
 
         before, after = tables(since), tables(last)
         if before.keys() != after.keys() or views(since) != views(last):
             return False
         for (schema, table), table_id in after.items():
-            name = f'lake."{schema}"."{table}"'
+            name = f"lake.{quoted(schema)}.{quoted(table)}"
             if shape(name, since) != shape(name, last):
                 return False
             if before[(schema, table)] == table_id and files(table_id, since) == files(
                 table_id, last
             ):
                 continue
-            if rows(name, since) != rows(name, last):
+            if not same_rows(name):
                 return False
         return True
     except CatalogError:
