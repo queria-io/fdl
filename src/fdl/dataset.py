@@ -169,12 +169,18 @@ def _catalog_tables(frozen: Path) -> dict[tuple[str, str], dict[str, Any]]:
     try:
         tables = con.execute(
             """
-            SELECT t.table_id, s.schema_name, t.table_name, st.record_count,
+            SELECT t.table_id, s.schema_name, t.table_name,
+                   -- The live files' rows less what their delete files remove.
+                   -- ducklake_table_stats keeps counting rows deleted or updated.
+                   (SELECT coalesce(sum(d.record_count), 0) - coalesce(sum(x.delete_count), 0)
+                      FROM ducklake_data_file d
+                      LEFT JOIN ducklake_delete_file x
+                        ON x.data_file_id = d.data_file_id AND x.end_snapshot IS NULL
+                      WHERE d.table_id = t.table_id AND d.end_snapshot IS NULL),
                    (SELECT value FROM ducklake_tag g WHERE g.object_id = t.table_id
                       AND g.key = 'comment' AND g.end_snapshot IS NULL)
             FROM ducklake_table t
             JOIN ducklake_schema s ON s.schema_id = t.schema_id AND s.end_snapshot IS NULL
-            LEFT JOIN ducklake_table_stats st ON st.table_id = t.table_id
             WHERE t.end_snapshot IS NULL
             ORDER BY s.schema_name, t.table_name
             """
