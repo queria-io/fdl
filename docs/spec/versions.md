@@ -59,7 +59,7 @@ A version is the files under `versions/<version ID>/`. They must not change once
       "url": "https://example.org/population-2025.csv"
     }
   ],
-  "extensions": {}
+  "annotations": {}
 }
 ```
 
@@ -78,7 +78,7 @@ A version is the files under `versions/<version ID>/`. They must not change once
 | `files` | may | The `files.json` beside the catalog, if written: its file name, size and sha256 ([files.json](#filesjson)) |
 | `changes` | may | Column differences from the parent. `breaking` says whether SQL written for the parent may fail (a column dropped, renamed or recreated) |
 | `inputs` | may | Source files used. How `source_id` is assigned is up to the writer |
-| `extensions` | may | Host-specific fields, keyed by the host's name |
+| `annotations` | may | What the format does not interpret, keyed by the name of whoever reads it (a host, a tool) |
 
 A reader must ignore fields it does not know.
 
@@ -175,7 +175,7 @@ The writer describes; the writer's tool checks the description against the froze
       ]
     }
   ],
-  "extensions": {}
+  "annotations": {}
 }
 ```
 
@@ -185,7 +185,8 @@ The writer describes; the writer's tool checks the description against the froze
 - `tables` lists every table of the catalog's last snapshot. The writer's tool adds the tables the writer did not describe, with what the catalog knows of them, and refuses a described table or column the catalog lacks
 - A view of the catalog is listed after the tables with `"kind": "view"` and its `sql` from the catalog. The catalog records no columns for a view, so its `fields` are the writer's, without `type`, `nullable` or `rows`. `kind` is left out for a table
 - From the catalog: each table's `rows`, and each field's `type` (DuckLake's type name) and `nullable`. Comments in the catalog (`COMMENT ON`) are used where the writer gave no `description`
-- Keys this specification does not define are refused. A host's or a writer's own fields go under `extensions`, keyed by their name, at the top, in a table or in a field
+- Keys this specification does not define are refused. What the format does not interpret goes under `annotations`, keyed by the name of whoever reads it, at the top, in a table or in a field. Writers keep it as written
+- Versions written before `annotations` had its name carry it as `extensions`. A reader reads `extensions` as `annotations`
 - What a license or a source says is the writer's claim. A host may check it before it publishes
 
 ## Catalogs in other formats

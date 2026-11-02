@@ -48,13 +48,37 @@ def test_what_the_catalog_lacks_is_refused(frozen: Path) -> None:
         )
 
 
-def test_keys_outside_the_format_go_under_extensions(frozen: Path) -> None:
+def test_keys_outside_the_format_go_under_annotations(frozen: Path) -> None:
     with pytest.raises(DatasetError, match="title_kana"):
         describe({"name": "t", "title": "T", "title_kana": "ティー"}, frozen)
     with pytest.raises(DatasetError, match="needs a title"):
         describe({"name": "t"}, frozen)
-    described = describe({"name": "t", "title": "T", "extensions": {"queria": {"themes": ["x"]}}}, frozen)
-    assert described["extensions"] == {"queria": {"themes": ["x"]}}
+    described = describe({"name": "t", "title": "T", "annotations": {"queria": {"themes": ["x"]}}}, frozen)
+    assert described["annotations"] == {"queria": {"themes": ["x"]}}
+
+
+def test_extensions_is_read_as_annotations(frozen: Path) -> None:
+    described = describe(
+        {
+            "name": "t",
+            "title": "T",
+            "extensions": {"queria": {"themes": ["x"]}},
+            "tables": [
+                {
+                    "schema": "main",
+                    "name": "towns",
+                    "extensions": {"queria": {"published": False}},
+                    "fields": [{"name": "code", "extensions": {"queria": {"semantic": {}}}}],
+                }
+            ],
+        },
+        frozen,
+    )
+    towns = described["tables"][0]
+    assert described["annotations"] == {"queria": {"themes": ["x"]}}
+    assert towns["annotations"] == {"queria": {"published": False}}
+    assert towns["fields"][0]["annotations"] == {"queria": {"semantic": {}}}
+    assert "extensions" not in described and "extensions" not in towns
 
 
 def test_a_description_can_be_yaml(tmp_path: Path, frozen: Path) -> None:

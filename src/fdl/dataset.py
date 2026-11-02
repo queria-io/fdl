@@ -9,6 +9,7 @@ part of the version, beside the catalog.
 from __future__ import annotations
 
 import json
+import sys
 from pathlib import Path
 from typing import Any
 
@@ -23,14 +24,16 @@ DEFAULT_FILES = (layout.DATASET, "dataset.yml", "dataset.yaml")
 DATASET_KEYS = {
     "name", "title", "description", "keywords", "language", "homepage", "issued",
     "update_frequency", "licenses", "sources", "contributors", "temporal_coverage",
-    "spatial_coverage", "schemas", "tables", "extensions",
+    "spatial_coverage", "schemas", "tables", "annotations",
 }
 TABLE_KEYS = {
     "schema", "name", "title", "description", "keywords", "sql", "depends_on",
     "primary_key", "licenses", "sources", "temporal_coverage", "spatial_coverage",
-    "fields", "rows", "kind", "extensions",
+    "fields", "rows", "kind", "annotations",
 }
-FIELD_KEYS = {"name", "title", "description", "type", "nullable", "extensions"}
+FIELD_KEYS = {"name", "title", "description", "type", "nullable", "annotations"}
+#: What `annotations` was called before fdl 0.17. Still read, as `annotations`.
+OLD_ANNOTATIONS = "extensions"
 
 
 class DatasetError(ValueError):
@@ -96,6 +99,7 @@ def describe(declared: dict[str, Any], frozen: Path) -> dict[str, Any]:
     catalog is refused, and a table in the catalog but not described is listed
     with what the catalog says about it.
     """
+    declared = _renamed(declared)
     _check_keys(declared, DATASET_KEYS, "dataset.json")
     for key in ("name", "title"):
         if not isinstance(declared.get(key), str) or not declared[key].strip():
@@ -114,6 +118,35 @@ def describe(declared: dict[str, Any], frozen: Path) -> dict[str, Any]:
     tables = [_merge(described.get(key, {}), physical) for key, physical in found.items()]
     tables += [_merge_view(described.get(key, {}), view) for key, view in views.items()]
     return {**declared, "tables": tables}
+
+
+def _renamed(declared: dict[str, Any]) -> dict[str, Any]:
+    """``declared`` with `extensions`, the old name of `annotations`, renamed."""
+    found = []
+
+    def rename(record: Any) -> Any:
+        if not isinstance(record, dict) or OLD_ANNOTATIONS not in record:
+            return record
+        if "annotations" in record:
+            raise DatasetError("annotations and extensions are the same thing: keep annotations")
+        found.append(record)
+        return {
+            ("annotations" if key == OLD_ANNOTATIONS else key): value
+            for key, value in record.items()
+        }
+
+    def table(record: Any) -> Any:
+        record = rename(record)
+        if isinstance(record, dict) and isinstance(record.get("fields"), list):
+            return {**record, "fields": [rename(field) for field in record["fields"]]}
+        return record
+
+    renamed = rename(declared)
+    if isinstance(renamed, dict) and isinstance(renamed.get("tables"), list):
+        renamed = {**renamed, "tables": [table(record) for record in renamed["tables"]]}
+    if found:
+        print("fdl: extensions is now called annotations; rename it in the description", file=sys.stderr)
+    return renamed
 
 
 def _merge_view(table: dict[str, Any], view: dict[str, Any]) -> dict[str, Any]:
@@ -169,7 +202,7 @@ def _check_keys(record: Any, allowed: set[str], what: str) -> None:
     if unknown:
         raise DatasetError(
             f"{what} has keys the format does not define: {', '.join(unknown)} "
-            f"(put them under extensions.<your name>)"
+            f"(put them under annotations.<your name>)"
         )
 
 

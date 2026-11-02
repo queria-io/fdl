@@ -43,7 +43,7 @@ refs.write(store, "refs/heads/main", version.id, expected=current)
 ホストが足すものは、FDL が決めた項目の外に置きます。
 
 - バージョンのフォルダに置く追加のファイル（プレビューなど）。読み手は無視する
-- `version.json` と `dataset.json` の `extensions`。ホストの名前をキーにする
+- `version.json` と `dataset.json` の `annotations`。ホストの名前をキーにする
 - `fdl.json` の `id` に書く、ホスト側のデータセットの ID。`init` のときに書き、変えない
 
 権限、承認、課金はホスト自身のデータベースに置きます。ホストから持ち出したリポジトリも、ホストにしか分からないものを含まずに正しく読めます。
