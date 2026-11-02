@@ -100,3 +100,25 @@ def test_rows_are_what_a_reader_counts(frozen: Path, sql: str, rows: int) -> Non
 
     (table,) = describe({"name": "towns", "title": "Towns"}, frozen)["tables"]
     assert table["rows"] == rows
+
+
+def test_views_are_listed_with_their_sql(frozen: Path) -> None:
+    con = duckdb.connect()
+    con.execute("INSTALL ducklake; LOAD ducklake;")
+    con.execute(f"ATTACH 'ducklake:{frozen}' AS lake")
+    con.execute("CREATE VIEW lake.main.named AS SELECT code FROM lake.main.towns WHERE name IS NOT NULL")
+    con.execute("CREATE VIEW lake.main.plain AS SELECT 1 AS one")
+    con.close()
+
+    declared = {
+        "name": "t",
+        "title": "T",
+        "tables": [{"schema": "main", "name": "named", "title": "Named towns", "fields": [{"name": "code", "title": "Code"}]}],
+    }
+    tables = {t["name"]: t for t in describe(declared, frozen)["tables"]}
+    assert "kind" not in tables["towns"]
+    named = tables["named"]
+    assert named["kind"] == "view" and named["title"] == "Named towns"
+    assert "WHERE" in named["sql"] and "rows" not in named
+    assert named["fields"] == [{"name": "code", "title": "Code"}]
+    assert tables["plain"]["kind"] == "view"

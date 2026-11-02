@@ -28,7 +28,7 @@ DATASET_KEYS = {
 TABLE_KEYS = {
     "schema", "name", "title", "description", "keywords", "sql", "depends_on",
     "primary_key", "licenses", "sources", "temporal_coverage", "spatial_coverage",
-    "fields", "rows", "extensions",
+    "fields", "rows", "kind", "extensions",
 }
 FIELD_KEYS = {"name", "title", "description", "type", "nullable", "extensions"}
 
@@ -101,17 +101,48 @@ def describe(declared: dict[str, Any], frozen: Path) -> dict[str, Any]:
         if not isinstance(declared.get(key), str) or not declared[key].strip():
             raise DatasetError(f"dataset.json needs a {key}")
     found = _catalog_tables(frozen)
+    views = _catalog_views(frozen)
     described: dict[tuple[str, str], dict[str, Any]] = {}
     for table in declared.get("tables", []):
         _check_keys(table, TABLE_KEYS, "a table")
         key = (table.get("schema"), table.get("name"))
-        if key not in found:
+        if key not in found and key not in views:
             raise DatasetError(f"{key[0]}.{key[1]} is described but not in the catalog")
         if key in described:
             raise DatasetError(f"{key[0]}.{key[1]} is described twice")
         described[key] = table
     tables = [_merge(described.get(key, {}), physical) for key, physical in found.items()]
+    tables += [_merge_view(described.get(key, {}), view) for key, view in views.items()]
     return {**declared, "tables": tables}
+
+
+def _merge_view(table: dict[str, Any], view: dict[str, Any]) -> dict[str, Any]:
+    """A view: its SQL from the catalog, and the fields as the writer describes them.
+
+    The catalog records no columns for a view, so its fields are not checked
+    and carry no type.
+    """
+    for field in table.get("fields", []):
+        _check_keys(field, FIELD_KEYS, "a field")
+    return {**table, "schema": view["schema"], "name": view["name"], "kind": "view", "sql": view["sql"]}
+
+
+def _catalog_views(frozen: Path) -> dict[tuple[str, str], dict[str, Any]]:
+    """The live views of a frozen catalog."""
+    con = duckdb.connect(str(frozen), read_only=True)
+    try:
+        rows = con.execute(
+            """
+            SELECT s.schema_name, v.view_name, v.sql
+            FROM ducklake_view v
+            JOIN ducklake_schema s ON s.schema_id = v.schema_id AND s.end_snapshot IS NULL
+            WHERE v.end_snapshot IS NULL
+            ORDER BY s.schema_name, v.view_name
+            """
+        ).fetchall()
+    finally:
+        con.close()
+    return {(schema, name): {"schema": schema, "name": name, "sql": sql} for schema, name, sql in rows}
 
 
 def to_json(description: dict[str, Any]) -> bytes:

@@ -183,6 +183,7 @@ The writer describes; the writer's tool checks the description against the froze
 - A writer may keep its description as YAML (`dataset.yml`), and may keep each table in its own file (`<name>.table.yml`, one entry of `tables`). The version always holds the whole description as one JSON
 - Each of `licenses` is an SPDX identifier, or an object with `id` and what the writer wants to add (`spdx`, `url`, `title`)
 - `tables` lists every table of the catalog's last snapshot. The writer's tool adds the tables the writer did not describe, with what the catalog knows of them, and refuses a described table or column the catalog lacks
+- A view of the catalog is listed after the tables with `"kind": "view"` and its `sql` from the catalog. The catalog records no columns for a view, so its `fields` are the writer's, without `type`, `nullable` or `rows`. `kind` is left out for a table
 - From the catalog: each table's `rows`, and each field's `type` (DuckLake's type name) and `nullable`. Comments in the catalog (`COMMENT ON`) are used where the writer gave no `description`
 - Keys this specification does not define are refused. A host's or a writer's own fields go under `extensions`, keyed by their name, at the top, in a table or in a field
 - What a license or a source says is the writer's claim. A host may check it before it publishes
