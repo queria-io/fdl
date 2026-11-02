@@ -3,7 +3,7 @@ title: 置き場
 description: フォルダ、S3、R2、ほかの S3 互換ストレージをリポジトリの置き場にする方法と、fdl コマンドが読む認証情報。
 ---
 
-リポジトリの URL で置き場が決まります。`s3://bucket/prefix/` は S3 か、S3 の API を話すストレージです。`https://host/path/` は [HTTP で push を受け付ける](/ja/spec/http)ホストで、`fdl login` のトークンを使います。それ以外はディスク上のフォルダです。
+リポジトリの URL で置き場が決まります。`s3://bucket/prefix/` は S3 か、S3 の API を話すストレージです。`https://host/path/` は [HTTP で push を受け付ける](/ja/spec/http)ホストで、`FDL_TOKEN` か credential helper のトークンを使います（[HTTP のトークン](/ja/reference/cli#http-のトークン)）。それ以外はディスク上のフォルダです。
 
 ## フォルダ
 

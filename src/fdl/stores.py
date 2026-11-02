@@ -11,11 +11,18 @@ import hashlib
 import importlib.metadata
 import json
 import os
+import subprocess
+import sys
 import urllib.error
 import urllib.request
 from pathlib import Path
 from typing import Iterator, Sequence
 from urllib.parse import quote, urlencode, urlparse
+
+if sys.version_info >= (3, 11):
+    import tomllib
+else:  # pragma: no cover
+    import tomli as tomllib
 
 
 def _version() -> str:
@@ -330,31 +337,70 @@ class HttpStore:
         raise StoreError("a repository over HTTP is not deleted from by writers", status=405)
 
 
-#: Where `fdl login` keeps tokens, one per host.
-CREDENTIALS = Path(os.environ.get("XDG_CONFIG_HOME", Path.home() / ".config")) / "fdl" / "credentials.json"
+def config_path() -> Path:
+    """fdl's own settings: ``FDL_CONFIG``, else ``$XDG_CONFIG_HOME/fdl/config.toml``."""
+    if os.environ.get("FDL_CONFIG"):
+        return Path(os.environ["FDL_CONFIG"])
+    base = os.environ.get("XDG_CONFIG_HOME") or str(Path.home() / ".config")
+    return Path(base) / "fdl" / "config.toml"
+
+
+def helper_for(url: str, config: dict) -> str | None:
+    """The credential helper set for ``url``: the ``[credential."<prefix>"]`` with
+    the same scheme and host whose path is the longest prefix of the URL's."""
+    target = urlparse(url)
+    best: tuple[int, str] | None = None
+    for prefix, entry in (config.get("credential") or {}).items():
+        key = urlparse(prefix)
+        helper = entry.get("helper") if isinstance(entry, dict) else None
+        if not isinstance(helper, str) or (key.scheme, key.netloc) != (target.scheme, target.netloc):
+            continue
+        path = key.path.rstrip("/")
+        if target.path.rstrip("/") != path and not target.path.startswith(path + "/"):
+            continue
+        if best is None or len(path) > best[0]:
+            best = (len(path), helper)
+    return best[1] if best else None
 
 
 def credentials_for(url: str) -> str | None:
-    """The token for the host of ``url``: ``FDL_TOKEN``, else what `fdl login` saved."""
+    """The token for ``url``: ``FDL_TOKEN``, else what the credential helper set
+    for it in fdl's own config answers.
+
+    fdl keeps no tokens. A helper is a command, run as ``<helper> get`` with
+    ``protocol=``, ``host=`` and ``path=`` lines on stdin, that answers with a
+    ``password=<token>`` line. A host's own tool stores the token and
+    registers its helper here.
+    """
     if os.environ.get("FDL_TOKEN"):
         return os.environ["FDL_TOKEN"]
+    path = config_path()
     try:
-        saved = json.loads(CREDENTIALS.read_text())
-    except (OSError, ValueError):
+        config = tomllib.loads(path.read_text(encoding="utf-8"))
+    except FileNotFoundError:
         return None
-    return saved.get(urlparse(url).netloc)
-
-
-def save_credentials(host: str, token: str) -> Path:
+    except (OSError, tomllib.TOMLDecodeError) as exc:
+        raise StoreError(f"{path} could not be read: {exc}") from exc
+    helper = helper_for(url, config)
+    if helper is None:
+        return None
+    parsed = urlparse(url)
+    request = f"protocol={parsed.scheme}\nhost={parsed.netloc}\npath={parsed.path.lstrip('/')}\n\n"
     try:
-        saved = json.loads(CREDENTIALS.read_text())
-    except (OSError, ValueError):
-        saved = {}
-    saved[host] = token
-    CREDENTIALS.parent.mkdir(parents=True, exist_ok=True)
-    CREDENTIALS.touch(mode=0o600, exist_ok=True)
-    CREDENTIALS.write_text(json.dumps(saved, indent=2) + "\n")
-    return CREDENTIALS
+        answer = subprocess.run(
+            f"{helper} get",
+            shell=True,
+            input=request,
+            capture_output=True,
+            text=True,
+            timeout=30,
+        )
+    except (OSError, subprocess.SubprocessError):
+        return None
+    if answer.returncode != 0:
+        return None
+    fields = dict(line.split("=", 1) for line in answer.stdout.splitlines() if "=" in line)
+    return fields.get("password") or None
 
 
 def open_store(url: str) -> LocalStore | S3Store | HttpStore:
