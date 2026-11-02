@@ -108,6 +108,7 @@ def test_views_are_listed_with_their_sql(frozen: Path) -> None:
     con.execute(f"ATTACH 'ducklake:{frozen}' AS lake")
     con.execute("CREATE VIEW lake.main.named AS SELECT code FROM lake.main.towns WHERE name IS NOT NULL")
     con.execute("CREATE VIEW lake.main.plain AS SELECT 1 AS one")
+    con.execute("COMMENT ON VIEW lake.main.plain IS 'Just one'")
     con.close()
 
     declared = {
@@ -122,3 +123,4 @@ def test_views_are_listed_with_their_sql(frozen: Path) -> None:
     assert "WHERE" in named["sql"] and "rows" not in named
     assert named["fields"] == [{"name": "code", "title": "Code"}]
     assert tables["plain"]["kind"] == "view"
+    assert tables["plain"]["description"] == "Just one"

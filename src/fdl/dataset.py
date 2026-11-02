@@ -120,11 +120,18 @@ def _merge_view(table: dict[str, Any], view: dict[str, Any]) -> dict[str, Any]:
     """A view: its SQL from the catalog, and the fields as the writer describes them.
 
     The catalog records no columns for a view, so its fields are not checked
-    and carry no type.
+    and carry no type, and a view has no rows to count.
     """
     for field in table.get("fields", []):
         _check_keys(field, FIELD_KEYS, "a field")
-    return {**table, "schema": view["schema"], "name": view["name"], "kind": "view", "sql": view["sql"]}
+    return {
+        **_drop_none({"description": view["comment"]}),
+        **{key: value for key, value in table.items() if key != "rows"},
+        "schema": view["schema"],
+        "name": view["name"],
+        "kind": "view",
+        "sql": view["sql"],
+    }
 
 
 def _catalog_views(frozen: Path) -> dict[tuple[str, str], dict[str, Any]]:
@@ -133,7 +140,9 @@ def _catalog_views(frozen: Path) -> dict[tuple[str, str], dict[str, Any]]:
     try:
         rows = con.execute(
             """
-            SELECT s.schema_name, v.view_name, v.sql
+            SELECT s.schema_name, v.view_name, v.sql,
+                   (SELECT value FROM ducklake_tag g WHERE g.object_id = v.view_id
+                      AND g.key = 'comment' AND g.end_snapshot IS NULL)
             FROM ducklake_view v
             JOIN ducklake_schema s ON s.schema_id = v.schema_id AND s.end_snapshot IS NULL
             WHERE v.end_snapshot IS NULL
@@ -142,7 +151,10 @@ def _catalog_views(frozen: Path) -> dict[tuple[str, str], dict[str, Any]]:
         ).fetchall()
     finally:
         con.close()
-    return {(schema, name): {"schema": schema, "name": name, "sql": sql} for schema, name, sql in rows}
+    return {
+        (schema, name): {"schema": schema, "name": name, "sql": sql, "comment": comment}
+        for schema, name, sql, comment in rows
+    }
 
 
 def to_json(description: dict[str, Any]) -> bytes:
@@ -182,7 +194,8 @@ def _merge(table: dict[str, Any], physical: dict[str, Any]) -> dict[str, Any]:
     ]
     return {
         **_drop_none({"description": physical["comment"]}),
-        **table,
+        # `kind` is the catalog's to say, and a table carries none.
+        **{key: value for key, value in table.items() if key != "kind"},
         "schema": physical["schema"],
         "name": physical["name"],
         "rows": physical["rows"],

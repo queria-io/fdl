@@ -391,7 +391,9 @@ def credentials_for(url: str) -> str | None:
             f"{helper} get",
             shell=True,
             input=request,
-            capture_output=True,
+            # Only stdout is the answer; what the helper says on stderr (or the
+            # shell's "not found") reaches the person, as with Git's helpers.
+            stdout=subprocess.PIPE,
             text=True,
             timeout=30,
         )
