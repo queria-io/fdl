@@ -1,6 +1,39 @@
 # CHANGELOG
 
 
+## v0.18.0 (2026-11-03)
+
+### Bug Fixes
+
+- Send the file's Content-Type to signed URLs, ask again for expiring ones, plan withdrawals from
+  files.json
+  ([`be180a3`](https://github.com/queria-io/fdl/commit/be180a3e23364cd28ec975bac7bcc59c2ae7b6bd))
+
+### Features
+
+- Fdl withdraw
+  ([`2f3faf3`](https://github.com/queria-io/fdl/commit/2f3faf3cf21587f38e6322604cb0c7c83640d564))
+
+Withdraw versions that hold data that must not be published: delete the tags that point at them, the
+  data files no kept version reads, then their catalogs, and mark them withdrawn. Without --yes it
+  only prints the plan. The spec now deletes data files before catalogs, so a stopped run can be run
+  again.
+
+- Refs.json and fdl tag
+  ([`200a613`](https://github.com/queria-io/fdl/commit/200a6137e4451af6d5789d9a741fb54863dc7486))
+
+Rewrite refs.json after a push or a tag moves a ref, as the spec asks. A host that keeps refs.json
+  itself may refuse the write with 403. Add fdl tag to list, create and delete tags, which never
+  move.
+
+- Upload straight to storage through a batch of signed URLs
+  ([`a2b59cd`](https://github.com/queria-io/fdl/commit/a2b59cdfc2d1dd5c1f52dc013b4d8553624aeadd))
+
+Add POST ?batch to the HTTP protocol, after Git LFS's batch API: a host hands out upload URLs for
+  files written once, and the writer sends them straight to storage. A host without batches, or a
+  file it will not sign for (413), goes through the host as before.
+
+
 ## v0.17.0 (2026-11-03)
 
 ### Bug Fixes
