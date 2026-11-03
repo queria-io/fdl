@@ -13,6 +13,7 @@ import json
 import os
 import subprocess
 import sys
+import time
 import urllib.error
 import urllib.request
 from concurrent.futures import ThreadPoolExecutor
@@ -331,9 +332,16 @@ class HttpStore:
             with ThreadPoolExecutor(self.UPLOADS_AT_ONCE) as pool:
                 list(pool.map(lambda item: self._send_one(*item, content_type), answered))
 
+    #: Ask again for a URL that has less than this many seconds left.
+    URL_MARGIN = 60
+
     def _batch(self, files: list[tuple[str, Path]]) -> list[tuple[str, Path, dict | None]]:
         """Each file with the host's upload action, ``{}`` when it is already
-        there, or ``None`` to send it through the host."""
+        there, or ``None`` to send it through the host.
+
+        An action with ``expires_in`` gets ``_until``: the monotonic time it
+        stops being usable."""
+        asked_at = time.monotonic()
         body = {
             "operation": "upload",
             "objects": [{"key": key, "size": path.stat().st_size} for key, path in files],
@@ -349,7 +357,10 @@ class HttpStore:
             error = item.get("error")
             if error is not None and error.get("code") != 413:
                 raise StoreError(f"{key}: {error.get('code')} {error.get('message', '')}", status=error.get("code"))
-            answered.append((key, path, None if error else item.get("actions", {}).get("upload", {})))
+            action = None if error else dict(item.get("actions", {}).get("upload", {}))
+            if action and "expires_in" in action:
+                action["_until"] = asked_at + float(action["expires_in"])
+            answered.append((key, path, action))
         return answered
 
     def _send_one(self, key: str, path: Path, action: dict | None, content_type: str | None) -> None:
@@ -362,6 +373,13 @@ class HttpStore:
             return
         if not action:
             return
+        if "_until" in action and time.monotonic() > action["_until"] - self.URL_MARGIN:
+            # Uploads ahead of this one in the batch took the URL's lifetime.
+            [(key, path, action)] = self._batch([(key, path)])
+            # Sent at once, so the fresh URL is not checked again.
+            action = action if action is None else {k: v for k, v in action.items() if k != "_until"}
+            self._send_one(key, path, action, content_type)
+            return
         try:
             with path.open("rb") as body:
                 request = urllib.request.Request(
@@ -370,9 +388,12 @@ class HttpStore:
                     method="PUT",
                     # Only the headers the host gave: the repository's token
                     # is not for the storage the URL points at.
+                    # Without a Content-Type urllib sends a form's, which
+                    # storage keeps as the object's type.
                     headers={
                         "User-Agent": USER_AGENT,
                         "Content-Length": str(path.stat().st_size),
+                        **({"Content-Type": content_type} if content_type else {}),
                         **action.get("header", {}),
                     },
                 )

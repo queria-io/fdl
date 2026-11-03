@@ -52,7 +52,7 @@ The answer has one entry per object, in any order:
 }
 ```
 
-- `actions.upload`: the writer sends `PUT <href>` with the file as the body and the headers in `header`, and nothing from the repository's own `Authorization`. 412 there means the object is already there
+- `actions.upload`: the writer sends `PUT <href>` with the file as the body, its `Content-Type` and the headers in `header`, and nothing from the repository's own `Authorization`. 412 there means the object is already there. A writer that is about to use a URL past `expires_in` asks for that object again
 - No `actions` and no `error`: the object is already there
 - `error` with code 413: the host will not sign this one. The writer uploads it through the host (`PUT`, or in parts)
 - Any other `error`: the upload is refused, with the code and the reason

@@ -537,22 +537,26 @@ def plan_withdrawal(store: Store, version_ids: Iterable[str]) -> Withdrawal:
     kept: set[str] = set()
     with tempfile.TemporaryDirectory(prefix="fdl-") as tmp:
         for version_id in _version_ids(store):
-            if version_id not in affected and is_expired(store, version_id):
-                continue
-            local = Path(tmp) / f"{version_id}.duckdb"
-            try:
-                local.write_bytes(store.get(layout.version_catalog(version_id)))
-            except Exception as exc:  # noqa: BLE001 - stores raise their own types
-                if is_missing(exc):
-                    continue
-                raise
             if version_id in affected:
-                # Every file the catalog has ever named: earlier snapshots in
-                # it may hold the data too.
-                candidates.update(catalog.data_files(local))
-            else:
-                kept.update(_read_files(local, read_version(store, version_id)))
-            local.unlink()
+                local = _fetch_catalog(store, version_id, Path(tmp))
+                if local is not None:
+                    # Every file the catalog has ever named: earlier snapshots
+                    # in it may hold the data too.
+                    candidates.update(catalog.data_files(local))
+                    local.unlink()
+                continue
+            if is_expired(store, version_id):
+                continue
+            version = read_version(store, version_id)
+            # files.json lists what the version reads, without its catalog.
+            indexed = _indexed_files(store, version)
+            if indexed is not None:
+                kept.update(indexed)
+                continue
+            local = _fetch_catalog(store, version_id, Path(tmp))
+            if local is not None:
+                kept.update(_read_files(local, version))
+                local.unlink()
     return Withdrawal(
         versions=affected,
         tags=tuple(tags),
@@ -585,9 +589,37 @@ def _version_ids(store: Store) -> list[str]:
     return [key[len("versions/") : -len(suffix)] for key in store.list("versions/") if key.endswith(suffix)]
 
 
+def _fetch_catalog(store: Store, version_id: str, tmp: Path) -> Path | None:
+    """The version's catalog in ``tmp``, or ``None`` when it is gone."""
+    local = tmp / f"{version_id}.duckdb"
+    try:
+        local.write_bytes(store.get(layout.version_catalog(version_id)))
+    except Exception as exc:  # noqa: BLE001 - stores raise their own types
+        if is_missing(exc):
+            return None
+        raise
+    return local
+
+
+def _indexed_files(store: Store, version: Version) -> set[str] | None:
+    """What the version's `files.json` says it reads, or ``None`` without one."""
+    if version.files is None:
+        return None
+    try:
+        index = json.loads(store.get(layout.version_dir(version.id) + version.files.path))
+    except Exception as exc:  # noqa: BLE001 - stores raise their own types
+        if is_missing(exc):
+            return None
+        raise
+    return _paths_of(index["tables"].values())
+
+
 def _read_files(local: Path, version: Version) -> set[str]:
     """The data and delete files a reader of the version reads, at its snapshot."""
-    tables = catalog.table_files(local, version.ducklake.snapshot_id).values()
+    return _paths_of(catalog.table_files(local, version.ducklake.snapshot_id).values())
+
+
+def _paths_of(tables: Iterable[dict]) -> set[str]:
     files = [file for table in tables for file in table["files"]]
     return {file["path"] for file in files} | {file["deletes"]["path"] for file in files if "deletes" in file}
 
