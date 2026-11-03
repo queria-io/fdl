@@ -77,6 +77,16 @@ fdl url <remote> [--ref HEAD]
 
 ref が指すバージョンのカタログの URL を表示します。読み取り専用で `ATTACH` するのに使います。
 
+## fdl tag
+
+```bash
+fdl tag <remote>                       # タグを並べる
+fdl tag <remote> <name> [<version>]    # バージョンにタグを付ける（既定は HEAD が指すバージョン）
+fdl tag <remote> <name> --delete
+```
+
+`<version>` にはバージョン ID か、`refs/heads/main` のような ref を渡します。タグは一度作ると動かしません。別のバージョンを指す同じ名前のタグがあるときは断られます。保持期間を過ぎたバージョンにはタグを付けられません。タグを作るか消すと `refs.json` を書き直します。`fdl commit` もブランチを動かしたあとに書き直します。
+
 ## fdl expire
 
 ```bash

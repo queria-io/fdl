@@ -17,7 +17,7 @@ import typer
 
 from . import catalog, dataset, layout, refs, repo
 from .stores import StoreError, open_store
-from .version import VersionError
+from .version import VersionError, is_id
 
 app = typer.Typer(no_args_is_help=True, pretty_exceptions_short=True)
 
@@ -173,6 +173,33 @@ def url(remote: str = Remote, ref: str = typer.Option(layout.HEAD)) -> None:
     if version is None:
         raise _fail(repo.RepoError(f"{ref} holds no version yet"))
     typer.echo(store.url.rstrip("/") + "/" + layout.version_catalog(version.id))
+
+
+@app.command()
+def tag(
+    remote: str = Remote,
+    name: str | None = typer.Argument(None, help="The tag, without refs/tags/. Omit to list the tags"),
+    target: str = typer.Argument(layout.HEAD, help="A version ID, or the ref whose version to tag"),
+    delete: bool = typer.Option(False, "-d", "--delete", help="Delete the tag"),
+) -> None:
+    """List tags, tag a version, or delete a tag. Tags never move."""
+    store = open_store(remote)
+    try:
+        if name is None:
+            for tag_name, version_id in repo.tags(store).items():
+                typer.echo(f"{tag_name}  {version_id}")
+            return
+        if delete:
+            repo.delete_tag(store, name)
+            typer.echo(f"Deleted refs/tags/{name}")
+            return
+        version_id = target if is_id(target) else refs.resolve(store, target)[1]
+        if version_id is None:
+            raise repo.RepoError(f"{target} holds no version yet")
+        repo.tag(store, name, version_id)
+    except ERRORS as exc:
+        raise _fail(exc) from exc
+    typer.echo(f"refs/tags/{name} -> {version_id}")
 
 
 @app.command()

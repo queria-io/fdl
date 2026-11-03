@@ -77,6 +77,16 @@ fdl url <remote> [--ref HEAD]
 
 Prints the URL of the catalog of the version the ref holds, to `ATTACH` read-only.
 
+## fdl tag
+
+```bash
+fdl tag <remote>                       # list the tags
+fdl tag <remote> <name> [<version>]    # tag a version (default: the one HEAD holds)
+fdl tag <remote> <name> --delete
+```
+
+`<version>` is a version ID or a ref such as `refs/heads/main`. A tag is created once and never moved: tagging a name that is already there at another version is refused. A version past retention cannot be tagged. Creating or deleting a tag rewrites `refs.json`, as `fdl commit` does after moving a branch.
+
 ## fdl expire
 
 ```bash

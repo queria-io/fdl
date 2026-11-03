@@ -81,6 +81,20 @@ repo.prune(store, newest, *, keep=1, since=None, reason="retention") -> list[str
 
 Take one version out of retention, or every version behind `newest` that falls out of it. Versions a ref points at are kept.
 
+```python
+repo.tag(store, name, version_id) -> None
+repo.delete_tag(store, name) -> None
+repo.tags(store) -> dict[str, str]
+```
+
+Create `refs/tags/<name>` at a version, delete it, or list the tags with the versions they hold. A tag is never moved: `tag` raises `RepoError` when the name is already there at another version.
+
+```python
+repo.update_refs_index(store) -> None
+```
+
+Rewrite `refs.json` from the refs. `push`, `tag` and `delete_tag` call it after moving a ref. A 403 from a host that keeps `refs.json` itself is taken as done.
+
 ## fdl.refs
 
 ```python
@@ -89,3 +103,10 @@ refs.write(store, name, version_id, *, expected) -> str
 ```
 
 `read` returns the ref with the ETag a move has to name. `write` creates the ref when `expected` is `None` and moves it otherwise, and raises `RefConflict` when the condition fails.
+
+```python
+refs.listed(store) -> dict[str, str]
+refs.write_index(store) -> dict
+```
+
+`listed` reads every branch and tag afresh. `write_index` writes `refs.json` from them and `HEAD`.

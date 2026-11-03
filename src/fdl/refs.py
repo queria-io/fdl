@@ -9,6 +9,7 @@ other without a server in between.
 
 from __future__ import annotations
 
+import json
 from dataclasses import dataclass
 
 from . import layout
@@ -113,3 +114,39 @@ def write_head(store: Store, branch: str = layout.DEFAULT_BRANCH) -> None:
     except Exception as exc:  # noqa: BLE001 - stores raise their own types
         if not is_conflict(exc):
             raise
+
+
+def delete(store: Store, name: str) -> None:
+    """Remove a ref. Stores have no conditional delete, so this is for tags,
+    which never move."""
+    store.delete([layout.check_ref(name)])
+
+
+def listed(store: Store) -> dict[str, str]:
+    """Every branch and tag with the version it holds, read afresh."""
+    found: dict[str, str] = {}
+    for name in sorted(n for prefix in layout.LISTED_REFS for n in store.list(prefix)):
+        try:
+            ref = read(store, name)
+        except (RefError, layout.LayoutError):
+            continue
+        if ref is not None:
+            found[name] = ref.target
+    return found
+
+
+def write_index(store: Store) -> dict:
+    """Rewrite `refs.json` from a fresh read of HEAD and every ref.
+
+    Whoever moves, creates or deletes a ref does this afterwards. It is a list
+    for finding names, so it is written without a condition: the last writer
+    read the refs last.
+    """
+    head = read(store, layout.HEAD)
+    index = {"head": head.target if head else None, "refs": listed(store)}
+    store.put(
+        layout.REFS_INDEX,
+        (json.dumps(index, indent=2) + "\n").encode(),
+        content_type="application/json",
+    )
+    return index

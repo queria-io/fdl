@@ -293,3 +293,66 @@ def test_the_index_leaves_out_dropped_tables_and_marks_renames(tmp_path: Path, r
     assert sorted(tables) == ["main.moved", "main.towns"]
     assert tables["main.moved"]["renamed_columns"] is True
     assert "renamed_columns" not in tables["main.towns"]
+
+
+def pushed(tmp_path: Path, store, parent=None, sql="CREATE TABLE lake.main.towns AS SELECT 1 AS id"):
+    build(tmp_path / "work.sqlite", store, sql)
+    version = commit(tmp_path, store, parent=parent)
+    repo.push(store, tmp_path / "local" / version.id, version)
+    return version
+
+
+def test_push_and_tags_keep_refs_json(tmp_path: Path, remote) -> None:
+    first = pushed(tmp_path, remote)
+    assert json.loads(remote.get(layout.REFS_INDEX)) == {
+        "head": "refs/heads/main",
+        "refs": {"refs/heads/main": first.id},
+    }
+
+    repo.tag(remote, "2025-final", first.id)
+    second = pushed(tmp_path, remote, parent=first, sql="INSERT INTO lake.main.towns VALUES (2)")
+    assert json.loads(remote.get(layout.REFS_INDEX))["refs"] == {
+        "refs/heads/main": second.id,
+        "refs/tags/2025-final": first.id,
+    }
+    assert repo.tags(remote) == {"2025-final": first.id}
+    assert repo.head(remote, "refs/tags/2025-final") == first
+
+    repo.delete_tag(remote, "2025-final")
+    assert repo.tags(remote) == {}
+    assert json.loads(remote.get(layout.REFS_INDEX))["refs"] == {"refs/heads/main": second.id}
+
+
+def test_a_tag_is_never_moved(tmp_path: Path, remote) -> None:
+    first = pushed(tmp_path, remote)
+    second = pushed(tmp_path, remote, parent=first, sql="INSERT INTO lake.main.towns VALUES (2)")
+    repo.tag(remote, "v1", first.id)
+    repo.tag(remote, "v1", first.id)  # a retry is the same tag
+    with pytest.raises(repo.RepoError, match="already there"):
+        repo.tag(remote, "v1", second.id)
+
+
+def test_a_tag_needs_a_version_in_retention(tmp_path: Path, remote) -> None:
+    first = pushed(tmp_path, remote)
+    pushed(tmp_path, remote, parent=first, sql="INSERT INTO lake.main.towns VALUES (2)")
+    repo.expire(remote, first.id)
+    with pytest.raises(repo.RepoError, match="out of retention"):
+        repo.tag(remote, "old", first.id)
+    with pytest.raises(layout.LayoutError):
+        repo.tag(remote, "Not ASCII ü", first.id)
+
+
+def test_a_host_that_keeps_refs_json_itself_does_not_fail_the_push(tmp_path: Path, remote) -> None:
+    class Refused(Exception):
+        status = 403
+
+    class Host(LocalStore):
+        def put(self, key, data, **kwargs):
+            if key == layout.REFS_INDEX:
+                raise Refused()
+            return super().put(key, data, **kwargs)
+
+    host = Host(remote.root)
+    version = pushed(tmp_path, host)
+    assert repo.head(host) == version
+    assert host.head(layout.REFS_INDEX) is None

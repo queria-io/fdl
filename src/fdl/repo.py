@@ -12,6 +12,7 @@ import itertools
 import json
 import shutil
 import uuid
+import warnings
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Iterator
@@ -361,9 +362,51 @@ def push(
         # A write sent again after a lost answer is refused by its own first
         # attempt. That moved the ref to this version, which is what was asked.
         now = refs.read(store, ref)
-        if now is not None and now.target == version.id:
+        if now is None or now.target != version.id:
+            raise NotFastForward(f"{ref} moved during the push. Pull and build again.") from exc
+    update_refs_index(store)
+
+
+def tag(store: Store, name: str, version_id: str) -> None:
+    """Create ``refs/tags/<name>`` at a version. Tags are created, never moved."""
+    ref = layout.check_ref(f"refs/tags/{name}")
+    read_version(store, version_id)
+    if is_expired(store, version_id):
+        raise RepoError(f"{version_id} is out of retention, so it cannot be tagged")
+    try:
+        refs.write(store, ref, version_id, expected=None)
+    except refs.RefConflict as exc:
+        now = refs.read(store, ref)
+        # A retry whose first answer was lost is not a second tag.
+        if now is None or now.target != version_id:
+            raise RepoError(f"{ref} is already there, at {now.target if now else '?'}") from exc
+    update_refs_index(store)
+
+
+def delete_tag(store: Store, name: str) -> None:
+    """Delete ``refs/tags/<name>``. One already gone is not an error."""
+    refs.delete(store, f"refs/tags/{name}")
+    update_refs_index(store)
+
+
+def tags(store: Store) -> dict[str, str]:
+    """Each tag's name (after ``refs/tags/``) and the version it holds."""
+    prefix = "refs/tags/"
+    return {name[len(prefix) :]: target for name, target in refs.listed(store).items() if name.startswith(prefix)}
+
+
+def update_refs_index(store: Store) -> None:
+    """Rewrite `refs.json` after moving a ref.
+
+    A host that checks pushes and moves refs itself keeps `refs.json` too, and
+    may refuse a writer's (403). That is not an error: the ref has moved.
+    """
+    try:
+        refs.write_index(store)
+    except Exception as exc:  # noqa: BLE001 - stores raise their own types
+        if getattr(exc, "status", None) == 403:
             return
-        raise NotFastForward(f"{ref} moved during the push. Pull and build again.") from exc
+        warnings.warn(f"the ref moved, but refs.json was not rewritten: {exc}", stacklevel=2)
 
 
 def upload(store: Store, local: Path, version: Version) -> None:

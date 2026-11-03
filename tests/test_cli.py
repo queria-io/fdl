@@ -168,3 +168,19 @@ def test_values_that_hash_alike_still_count_as_changed(tmp_path: Path) -> None:
         "CREATE OR REPLACE TABLE lake.main.towns AS SELECT * FROM (VALUES (1, []::INTEGER[]), (2, NULL::INTEGER[])) v(id, tags)",
     )
     assert "version 2" in run("commit", working, "-m", "swapped", "--author", "t")
+
+
+def test_tags(tmp_path: Path) -> None:
+    remote, working = tmp_path / "remote", tmp_path / "work" / "lake.sqlite"
+    store = LocalStore(remote)
+    run("init", remote)
+    run("checkout", remote, working)
+    write(working, store, "CREATE TABLE lake.main.towns AS SELECT 1 AS id")
+    run("commit", working, "-m", "first", "--author", "tester")
+    version = repo.head(store)
+
+    assert f"refs/tags/v1 -> {version.id}" in run("tag", remote, "v1")
+    assert run("tag", remote, "v2", version.id).strip().endswith(version.id)
+    assert run("tag", remote).splitlines() == [f"v1  {version.id}", f"v2  {version.id}"]
+    run("tag", remote, "v1", "-d")
+    assert repo.tags(store) == {"v2": version.id}
