@@ -1,6 +1,53 @@
 # CHANGELOG
 
 
+## v0.17.0 (2026-11-03)
+
+### Bug Fixes
+
+- Compare rows by value and check the description first
+  ([`5d17ae5`](https://github.com/queria-io/fdl/commit/5d17ae57ee79af2cf02ffe7ffd12f72176ecbdc0))
+
+hash() gives NULL and empty nested values the same hash, so rows are compared with EXCEPT ALL once
+  the counts match. The dataset.json check runs before reading rows, table names are escaped, and
+  the message no longer names the checked-out version as where the branch is.
+
+- Count a table's rows as a reader would
+  ([`ca8c020`](https://github.com/queria-io/fdl/commit/ca8c02095f11763adbfb72c556fe00da1c0488a9))
+
+dataset.json took rows from ducklake_table_stats, which keeps counting rows that were deleted or
+  updated. Rows are now the live data files' records less what their delete files remove.
+
+### Documentation
+
+- Add a guide to reading without DuckDB
+  ([`b61328e`](https://github.com/queria-io/fdl/commit/b61328ef8ac0585dd5d547f25c8e0511370d4f28))
+
+### Features
+
+- Credential helper in fdl's config, views in dataset.json, and annotations
+  ([#30](https://github.com/queria-io/fdl/pull/30),
+  [`e082f2b`](https://github.com/queria-io/fdl/commit/e082f2b189bae5491da0863bd1c48b1519e920f0))
+
+BREAKING CHANGE: tokens saved by `fdl login` are no longer read. Set `FDL_TOKEN` or a credential
+  helper in fdl's config. `dataset.json` and `version.json` write `annotations` instead of
+  `extensions`.
+
+- Make no version when nothing changed
+  ([`fc08213`](https://github.com/queria-io/fdl/commit/fc08213f60195a474238f22bb1a513d903f8182e))
+
+fdl commit compares the working catalog's last snapshot with the parent's. No new snapshot, or the
+  same tables, views, columns and rows (as a multiset) and the same dataset.json, prints "Nothing to
+  commit" and leaves the branch. Files are compared first, so rows are read only for tables written
+  to new files. --allow-empty makes the version anyway; rows that cannot be read are taken as
+  changed.
+
+### Breaking Changes
+
+- Tokens saved by `fdl login` are no longer read. Set `FDL_TOKEN` or a credential helper in fdl's
+  config. `dataset.json` and `version.json` write `annotations` instead of `extensions`.
+
+
 ## v0.16.0 (2026-11-01)
 
 ### Documentation
