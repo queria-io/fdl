@@ -1,6 +1,18 @@
 # CHANGELOG
 
 
+## v0.18.1 (2026-11-03)
+
+### Bug Fixes
+
+- Compare a rebuild over HTTP with the new files where they were written
+  ([`c0f091a`](https://github.com/queria-io/fdl/commit/c0f091a76831b58afa91be16643e3b08ae9ae2c1))
+
+A working catalog of a repository over HTTP writes new data files to a local folder, but comparing
+  with the parent read them under the repository's URL. The read failed (404), the commit fell back
+  to making a version, and every rebuild made one even when nothing changed.
+
+
 ## v0.18.0 (2026-11-03)
 
 ### Bug Fixes
