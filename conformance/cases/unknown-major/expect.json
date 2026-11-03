@@ -1,8 +1,0 @@
-{
-  "about": "fdl.json is of a major version no reader knows.",
-  "reads": {
-    "HEAD": {
-      "refuse": true
-    }
-  }
-}
