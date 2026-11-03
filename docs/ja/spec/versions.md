@@ -59,7 +59,7 @@ description: バージョン ID、version.json の項目、固めたカタログ
       "url": "https://example.org/population-2025.csv"
     }
   ],
-  "extensions": {}
+  "annotations": {}
 }
 ```
 
@@ -78,7 +78,7 @@ description: バージョン ID、version.json の項目、固めたカタログ
 | `files` | may | カタログの隣の `files.json` を書いたときの、そのファイル名、大きさ、sha256（[files.json](#filesjson)） |
 | `changes` | may | 親との列の違い。`breaking` は、親に向けて書いた SQL が失敗しうるか（列の削除・改名・作り直し） |
 | `inputs` | may | 使った元のファイル。`source_id` の付け方は書き手が決める |
-| `extensions` | may | ホスト固有の項目。ホストの名前をキーにする |
+| `annotations` | may | 形式が解釈しない情報。読む側（ホストやツール）の名前をキーにする |
 
 読み手は、知らない項目を無視しなければなりません。
 
@@ -175,7 +175,7 @@ DuckLake を使わずに Parquet ファイルを読む読み手は、`deletes` �
       ]
     }
   ],
-  "extensions": {}
+  "annotations": {}
 }
 ```
 
@@ -183,8 +183,10 @@ DuckLake を使わずに Parquet ファイルを読む読み手は、`deletes` �
 - 書き手は説明を YAML（`dataset.yml`）で持ってもよく、テーブルごとに別のファイル（`<name>.table.yml`、`tables` の 1 項目）に分けてもよい。バージョンには常に説明全体が 1 つの JSON で入る
 - `licenses` の各要素は SPDX の識別子か、`id` に書き手が足したいもの（`spdx`・`url`・`title`）を添えたオブジェクト
 - `tables` には、カタログの最後のスナップショットにある表をすべて並べる。書き手が説明しなかった表は、書き手のツールがカタログから分かることで足す。カタログに無い表や列を説明していたら断る
+- カタログのビューは表のあとに `"kind": "view"` を付けて並べ、`sql` はカタログのものを入れる。カタログはビューの列を記録しないので、ビューの `fields` は書き手が書いたままで、`type`・`nullable`・`rows` を持たない。表には `kind` を付けない
 - カタログから取るもの: 表ごとの `rows`、列ごとの `type`（DuckLake の型名）と `nullable`。書き手が `description` を書かなかったところには、カタログのコメント（`COMMENT ON`）を使う
-- この仕様が決めていないキーは断る。ホストや書き手が独自に足す項目は、最上位・表・列それぞれの `extensions` に、自分の名前をキーにして置く
+- この仕様が決めていないキーは断る。形式が解釈しない情報は、最上位・表・列それぞれの `annotations` に、読む側の名前をキーにして置く。書き手は書かれたまま残す
+- `annotations` という名前になる前のバージョンは、同じものを `extensions` に持つ。読み手は `extensions` を `annotations` として読む
 - ライセンスや出典に書いたことは書き手の主張で、ホストは公開する前に確かめてよい
 
 ## ほかの形式のカタログ

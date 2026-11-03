@@ -116,7 +116,7 @@ def commit(
     author: dict,
     message: str,
     inputs: tuple[dict, ...] = (),
-    extensions: dict | None = None,
+    annotations: dict | None = None,
     dataset: dict | None = None,
     allow_empty: bool = True,
 ) -> Version:
@@ -164,7 +164,7 @@ def commit(
             author=author,
             message=message,
             inputs=inputs,
-            extensions=extensions,
+            annotations=annotations,
             dataset=dataset,
         )
     finally:
@@ -248,7 +248,7 @@ def record(
     author: dict,
     message: str,
     inputs: tuple[dict, ...] = (),
-    extensions: dict | None = None,
+    annotations: dict | None = None,
     dataset: dict | None = None,
 ) -> Version:
     """Make a version out of a catalog that is already frozen.
@@ -294,7 +294,7 @@ def record(
             ducklake=DuckLake(format=recorded, snapshot_id=last, snapshots=(first, last)),
             files=indexed,
             inputs=tuple(inputs),
-            extensions=dict(extensions or {}),
+            annotations=dict(annotations or {}),
             dataset=described,
         )
         (target / layout.VERSION_RECORD).write_bytes(version.to_json())

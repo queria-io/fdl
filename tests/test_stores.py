@@ -51,3 +51,38 @@ def test_open_store(tmp_path) -> None:
     assert isinstance(open_store("https://example.org/lake/"), HttpStore)
     with pytest.raises(StoreError):
         open_store("ftp://example.org/lake/")
+
+
+@pytest.fixture
+def helper(tmp_path, monkeypatch):
+    """fdl's config with a helper for data.example.org/towns/ only."""
+    script = tmp_path / "helper.sh"
+    script.write_text(
+        "#!/bin/sh\n"
+        '[ "$1" = get ] || exit 0\n'
+        "input=$(cat)\n"
+        'case "$input" in *host=data.example.org*) printf "username=x\\npassword=tok-1\\n";; esac\n'
+    )
+    script.chmod(0o755)
+    config = tmp_path / "config.toml"
+    config.write_text(f'[credential."https://data.example.org/towns"]\nhelper = "{script}"\n')
+    monkeypatch.setenv("FDL_CONFIG", str(config))
+    monkeypatch.delenv("FDL_TOKEN", raising=False)
+
+
+def test_a_token_comes_from_the_helper_in_fdls_config(helper) -> None:
+    assert HttpStore("https://data.example.org/towns/").token == "tok-1"
+    # Another host or another path has no helper, and nobody is asked.
+    assert HttpStore("https://other.example.org/towns/").token is None
+    assert HttpStore("https://data.example.org/townsfolk/").token is None
+
+
+def test_fdl_token_wins_over_the_helper(helper, monkeypatch) -> None:
+    monkeypatch.setenv("FDL_TOKEN", "from-env")
+    assert HttpStore("https://data.example.org/towns/").token == "from-env"
+
+
+def test_no_config_means_no_token(tmp_path, monkeypatch) -> None:
+    monkeypatch.setenv("FDL_CONFIG", str(tmp_path / "missing.toml"))
+    monkeypatch.delenv("FDL_TOKEN", raising=False)
+    assert HttpStore("https://data.example.org/towns/").token is None

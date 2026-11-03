@@ -49,13 +49,13 @@ repo.checkout(store, working, *, ref="HEAD") -> Version | None
 Make a working catalog at `working` from the version `ref` holds. Returns that version, or `None` before the first one.
 
 ```python
-repo.commit(working, out_dir, *, parent, data_path, author, message, inputs=(), extensions=None, dataset=None) -> Version
+repo.commit(working, out_dir, *, parent, data_path, author, message, inputs=(), annotations=None, dataset=None) -> Version
 ```
 
 Freeze the working catalog into `out_dir/<ID>/`, with `dataset` (the parsed `dataset.json`) checked against the catalog and completed from it. `data_path` is `repo.data_url(store)`. Nothing is uploaded.
 
 ```python
-repo.record(frozen, out_dir, *, parent, author, message, inputs=(), extensions=None, dataset=None) -> Version
+repo.record(frozen, out_dir, *, parent, author, message, inputs=(), annotations=None, dataset=None) -> Version
 ```
 
 Make a version around a catalog that is already frozen, for a writer that freezes it itself.

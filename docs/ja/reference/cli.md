@@ -3,15 +3,23 @@ title: コマンドライン
 description: fdl のコマンド、オプション、断られるとき。
 ---
 
-`<remote>` はリポジトリで、`s3://bucket/prefix/`、`https://host/path/`、またはフォルダです。S3 の認証情報とエンドポイントは boto3 の通常の場所から読みます（`AWS_*` の環境変数、R2 などの S3 互換ストレージには `AWS_ENDPOINT_URL`）。HTTP のリポジトリには、`fdl login` で保存したトークンか `FDL_TOKEN` を使います。
+`<remote>` はリポジトリで、`s3://bucket/prefix/`、`https://host/path/`、またはフォルダです。S3 の認証情報とエンドポイントは boto3 の通常の場所から読みます（`AWS_*` の環境変数、R2 などの S3 互換ストレージには `AWS_ENDPOINT_URL`）。HTTP のリポジトリには、`FDL_TOKEN` か credential helper でトークンを渡します（[HTTP のトークン](#http-のトークン)）。
 
-## fdl login
+## HTTP のトークン
 
-```bash
-fdl login <host>
+fdl はトークンを保存せず、ログインのコマンドもありません。HTTP のリポジトリには、次の順に見つけたトークンを `Authorization: Bearer` で送ります。
+
+1. `FDL_TOKEN` があればそれ（CI 向け）
+2. 無ければ、fdl の設定でリポジトリの URL に設定した credential helper が答えたもの。helper が無ければトークンを送りません
+
+設定は `~/.config/fdl/config.toml`（`$XDG_CONFIG_HOME/fdl/config.toml`、または `FDL_CONFIG` で指定したファイル）です。helper は URL の前方一致で設定し、パスが一番長く一致したものを使います。
+
+```toml
+[credential."https://data.example.org"]
+helper = "example-cli fdl-credential"
 ```
 
-ホストから受け取ったトークンを尋ね、ホストごとに `~/.config/fdl/credentials.json` に保存します。`FDL_TOKEN` があればそちらを優先します（CI 向け）。
+fdl は `<helper> get` を実行し、標準入力に `protocol=`・`host=`・`path=` の行と空行を渡して、出力の `password=` の行を読みます。何も出さないか、エラーで終わったら、トークンは無いものとします。トークンの保存と helper の書き込みは、ホストの側の道具が行います。
 
 ## fdl init
 

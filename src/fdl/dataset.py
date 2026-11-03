@@ -9,6 +9,7 @@ part of the version, beside the catalog.
 from __future__ import annotations
 
 import json
+import sys
 from pathlib import Path
 from typing import Any
 
@@ -23,14 +24,16 @@ DEFAULT_FILES = (layout.DATASET, "dataset.yml", "dataset.yaml")
 DATASET_KEYS = {
     "name", "title", "description", "keywords", "language", "homepage", "issued",
     "update_frequency", "licenses", "sources", "contributors", "temporal_coverage",
-    "spatial_coverage", "schemas", "tables", "extensions",
+    "spatial_coverage", "schemas", "tables", "annotations",
 }
 TABLE_KEYS = {
     "schema", "name", "title", "description", "keywords", "sql", "depends_on",
     "primary_key", "licenses", "sources", "temporal_coverage", "spatial_coverage",
-    "fields", "rows", "extensions",
+    "fields", "rows", "kind", "annotations",
 }
-FIELD_KEYS = {"name", "title", "description", "type", "nullable", "extensions"}
+FIELD_KEYS = {"name", "title", "description", "type", "nullable", "annotations"}
+#: What `annotations` was called before fdl 0.17. Still read, as `annotations`.
+OLD_ANNOTATIONS = "extensions"
 
 
 class DatasetError(ValueError):
@@ -96,22 +99,95 @@ def describe(declared: dict[str, Any], frozen: Path) -> dict[str, Any]:
     catalog is refused, and a table in the catalog but not described is listed
     with what the catalog says about it.
     """
+    declared = _renamed(declared)
     _check_keys(declared, DATASET_KEYS, "dataset.json")
     for key in ("name", "title"):
         if not isinstance(declared.get(key), str) or not declared[key].strip():
             raise DatasetError(f"dataset.json needs a {key}")
     found = _catalog_tables(frozen)
+    views = _catalog_views(frozen)
     described: dict[tuple[str, str], dict[str, Any]] = {}
     for table in declared.get("tables", []):
         _check_keys(table, TABLE_KEYS, "a table")
         key = (table.get("schema"), table.get("name"))
-        if key not in found:
+        if key not in found and key not in views:
             raise DatasetError(f"{key[0]}.{key[1]} is described but not in the catalog")
         if key in described:
             raise DatasetError(f"{key[0]}.{key[1]} is described twice")
         described[key] = table
     tables = [_merge(described.get(key, {}), physical) for key, physical in found.items()]
+    tables += [_merge_view(described.get(key, {}), view) for key, view in views.items()]
     return {**declared, "tables": tables}
+
+
+def _renamed(declared: dict[str, Any]) -> dict[str, Any]:
+    """``declared`` with `extensions`, the old name of `annotations`, renamed."""
+    found = []
+
+    def rename(record: Any) -> Any:
+        if not isinstance(record, dict) or OLD_ANNOTATIONS not in record:
+            return record
+        if "annotations" in record:
+            raise DatasetError("annotations and extensions are the same thing: keep annotations")
+        found.append(record)
+        return {
+            ("annotations" if key == OLD_ANNOTATIONS else key): value
+            for key, value in record.items()
+        }
+
+    def table(record: Any) -> Any:
+        record = rename(record)
+        if isinstance(record, dict) and isinstance(record.get("fields"), list):
+            return {**record, "fields": [rename(field) for field in record["fields"]]}
+        return record
+
+    renamed = rename(declared)
+    if isinstance(renamed, dict) and isinstance(renamed.get("tables"), list):
+        renamed = {**renamed, "tables": [table(record) for record in renamed["tables"]]}
+    if found:
+        print("fdl: extensions is now called annotations; rename it in the description", file=sys.stderr)
+    return renamed
+
+
+def _merge_view(table: dict[str, Any], view: dict[str, Any]) -> dict[str, Any]:
+    """A view: its SQL from the catalog, and the fields as the writer describes them.
+
+    The catalog records no columns for a view, so its fields are not checked
+    and carry no type, and a view has no rows to count.
+    """
+    for field in table.get("fields", []):
+        _check_keys(field, FIELD_KEYS, "a field")
+    return {
+        **_drop_none({"description": view["comment"]}),
+        **{key: value for key, value in table.items() if key != "rows"},
+        "schema": view["schema"],
+        "name": view["name"],
+        "kind": "view",
+        "sql": view["sql"],
+    }
+
+
+def _catalog_views(frozen: Path) -> dict[tuple[str, str], dict[str, Any]]:
+    """The live views of a frozen catalog."""
+    con = duckdb.connect(str(frozen), read_only=True)
+    try:
+        rows = con.execute(
+            """
+            SELECT s.schema_name, v.view_name, v.sql,
+                   (SELECT value FROM ducklake_tag g WHERE g.object_id = v.view_id
+                      AND g.key = 'comment' AND g.end_snapshot IS NULL)
+            FROM ducklake_view v
+            JOIN ducklake_schema s ON s.schema_id = v.schema_id AND s.end_snapshot IS NULL
+            WHERE v.end_snapshot IS NULL
+            ORDER BY s.schema_name, v.view_name
+            """
+        ).fetchall()
+    finally:
+        con.close()
+    return {
+        (schema, name): {"schema": schema, "name": name, "sql": sql, "comment": comment}
+        for schema, name, sql, comment in rows
+    }
 
 
 def to_json(description: dict[str, Any]) -> bytes:
@@ -126,7 +202,7 @@ def _check_keys(record: Any, allowed: set[str], what: str) -> None:
     if unknown:
         raise DatasetError(
             f"{what} has keys the format does not define: {', '.join(unknown)} "
-            f"(put them under extensions.<your name>)"
+            f"(put them under annotations.<your name>)"
         )
 
 
@@ -151,7 +227,8 @@ def _merge(table: dict[str, Any], physical: dict[str, Any]) -> dict[str, Any]:
     ]
     return {
         **_drop_none({"description": physical["comment"]}),
-        **table,
+        # `kind` is the catalog's to say, and a table carries none.
+        **{key: value for key, value in table.items() if key != "kind"},
         "schema": physical["schema"],
         "name": physical["name"],
         "rows": physical["rows"],

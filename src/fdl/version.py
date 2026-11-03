@@ -75,7 +75,7 @@ class Version:
     ducklake: DuckLake
     changes: tuple[dict, ...] = ()
     inputs: tuple[dict, ...] = ()
-    extensions: dict = field(default_factory=dict)
+    annotations: dict = field(default_factory=dict)
     #: The version's `files.json`, the index of each table's files. Optional.
     files: File | None = None
     #: The version's `dataset.json`. None only in versions written before it was required.
@@ -126,7 +126,7 @@ class Version:
             ),
             "changes": list(self.changes),
             "inputs": list(self.inputs),
-            "extensions": self.extensions,
+            "annotations": self.annotations,
         }
         return (json.dumps(record, ensure_ascii=False, indent=2) + "\n").encode()
 
@@ -164,7 +164,7 @@ def parse(data: bytes, *, expected_id: str | None = None) -> Version:
             ),
             changes=tuple(record.get("changes", ())),
             inputs=tuple(record.get("inputs", ())),
-            extensions=dict(record.get("extensions", {})),
+            annotations=dict(record.get("annotations", record.get("extensions", {}))),
             files=_file(record.get("files")),
             dataset=(
                 File(path=dataset["path"], bytes=int(dataset["bytes"]), sha256=dataset["sha256"])

@@ -48,13 +48,37 @@ def test_what_the_catalog_lacks_is_refused(frozen: Path) -> None:
         )
 
 
-def test_keys_outside_the_format_go_under_extensions(frozen: Path) -> None:
+def test_keys_outside_the_format_go_under_annotations(frozen: Path) -> None:
     with pytest.raises(DatasetError, match="title_kana"):
         describe({"name": "t", "title": "T", "title_kana": "ティー"}, frozen)
     with pytest.raises(DatasetError, match="needs a title"):
         describe({"name": "t"}, frozen)
-    described = describe({"name": "t", "title": "T", "extensions": {"queria": {"themes": ["x"]}}}, frozen)
-    assert described["extensions"] == {"queria": {"themes": ["x"]}}
+    described = describe({"name": "t", "title": "T", "annotations": {"queria": {"themes": ["x"]}}}, frozen)
+    assert described["annotations"] == {"queria": {"themes": ["x"]}}
+
+
+def test_extensions_is_read_as_annotations(frozen: Path) -> None:
+    described = describe(
+        {
+            "name": "t",
+            "title": "T",
+            "extensions": {"queria": {"themes": ["x"]}},
+            "tables": [
+                {
+                    "schema": "main",
+                    "name": "towns",
+                    "extensions": {"queria": {"published": False}},
+                    "fields": [{"name": "code", "extensions": {"queria": {"semantic": {}}}}],
+                }
+            ],
+        },
+        frozen,
+    )
+    towns = described["tables"][0]
+    assert described["annotations"] == {"queria": {"themes": ["x"]}}
+    assert towns["annotations"] == {"queria": {"published": False}}
+    assert towns["fields"][0]["annotations"] == {"queria": {"semantic": {}}}
+    assert "extensions" not in described and "extensions" not in towns
 
 
 def test_a_description_can_be_yaml(tmp_path: Path, frozen: Path) -> None:
@@ -100,3 +124,27 @@ def test_rows_are_what_a_reader_counts(frozen: Path, sql: str, rows: int) -> Non
 
     (table,) = describe({"name": "towns", "title": "Towns"}, frozen)["tables"]
     assert table["rows"] == rows
+
+
+def test_views_are_listed_with_their_sql(frozen: Path) -> None:
+    con = duckdb.connect()
+    con.execute("INSTALL ducklake; LOAD ducklake;")
+    con.execute(f"ATTACH 'ducklake:{frozen}' AS lake")
+    con.execute("CREATE VIEW lake.main.named AS SELECT code FROM lake.main.towns WHERE name IS NOT NULL")
+    con.execute("CREATE VIEW lake.main.plain AS SELECT 1 AS one")
+    con.execute("COMMENT ON VIEW lake.main.plain IS 'Just one'")
+    con.close()
+
+    declared = {
+        "name": "t",
+        "title": "T",
+        "tables": [{"schema": "main", "name": "named", "title": "Named towns", "fields": [{"name": "code", "title": "Code"}]}],
+    }
+    tables = {t["name"]: t for t in describe(declared, frozen)["tables"]}
+    assert "kind" not in tables["towns"]
+    named = tables["named"]
+    assert named["kind"] == "view" and named["title"] == "Named towns"
+    assert "WHERE" in named["sql"] and "rows" not in named
+    assert named["fields"] == [{"name": "code", "title": "Code"}]
+    assert tables["plain"]["kind"] == "view"
+    assert tables["plain"]["description"] == "Just one"

@@ -3,15 +3,23 @@ title: Command line
 description: The fdl commands, their options and when they refuse.
 ---
 
-`<remote>` is a repository: `s3://bucket/prefix/`, `https://host/path/` or a folder. Credentials and the endpoint for S3 come from boto3's usual places (`AWS_*` environment variables, `AWS_ENDPOINT_URL` for R2 and other S3-compatible stores). A repository over HTTP takes the token saved by `fdl login`, or `FDL_TOKEN`.
+`<remote>` is a repository: `s3://bucket/prefix/`, `https://host/path/` or a folder. Credentials and the endpoint for S3 come from boto3's usual places (`AWS_*` environment variables, `AWS_ENDPOINT_URL` for R2 and other S3-compatible stores). A repository over HTTP takes a token from `FDL_TOKEN` or a credential helper (see [Tokens for HTTP](#tokens-for-http)).
 
-## fdl login
+## Tokens for HTTP
 
-```bash
-fdl login <host>
+fdl keeps no tokens and has no login. For a repository over HTTP it sends, as `Authorization: Bearer`:
+
+1. `FDL_TOKEN`, when set (for CI)
+2. Otherwise what the credential helper set for the repository's URL in fdl's config answers. With no helper set, fdl sends no token
+
+The config is `~/.config/fdl/config.toml` (`$XDG_CONFIG_HOME/fdl/config.toml`, or the file `FDL_CONFIG` names). A helper is set per URL prefix; the one with the longest matching path wins:
+
+```toml
+[credential."https://data.example.org"]
+helper = "example-cli fdl-credential"
 ```
 
-Asks for the token the host gave you and keeps it in `~/.config/fdl/credentials.json`, one per host. `FDL_TOKEN` takes precedence (for CI).
+fdl runs `<helper> get`, writes `protocol=`, `host=` and `path=` lines and a blank line to its stdin, and reads the `password=` line it prints. A helper that prints nothing, or exits with an error, means no token. The host's own tool stores the token and writes its helper here.
 
 ## fdl init
 

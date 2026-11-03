@@ -49,13 +49,13 @@ repo.checkout(store, working, *, ref="HEAD") -> Version | None
 `ref` が指すバージョンから、`working` に作業カタログを作ります。そのバージョンを返し、最初のバージョンの前は `None` を返します。
 
 ```python
-repo.commit(working, out_dir, *, parent, data_path, author, message, inputs=(), extensions=None, dataset=None) -> Version
+repo.commit(working, out_dir, *, parent, data_path, author, message, inputs=(), annotations=None, dataset=None) -> Version
 ```
 
 作業カタログを `out_dir/<ID>/` に固めます。`dataset`（読み込んだ `dataset.json`）をカタログと照らし合わせ、カタログから書き足します。`data_path` は `repo.data_url(store)` です。アップロードはしません。
 
 ```python
-repo.record(frozen, out_dir, *, parent, author, message, inputs=(), extensions=None, dataset=None) -> Version
+repo.record(frozen, out_dir, *, parent, author, message, inputs=(), annotations=None, dataset=None) -> Version
 ```
 
 固め終えたカタログからバージョンを作ります。自分でカタログを固める書き手向けです。

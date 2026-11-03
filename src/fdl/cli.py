@@ -16,7 +16,7 @@ from pathlib import Path
 import typer
 
 from . import catalog, dataset, layout, refs, repo
-from .stores import StoreError, open_store, save_credentials
+from .stores import StoreError, open_store
 from .version import VersionError
 
 app = typer.Typer(no_args_is_help=True, pretty_exceptions_short=True)
@@ -193,16 +193,6 @@ def expire(
     except ERRORS as exc:
         raise _fail(exc) from exc
     typer.echo(f"Expired {len(expired)} version(s).")
-
-
-@app.command()
-def login(
-    host: str = typer.Argument(help="The host of a repository over HTTP, such as data.example.org"),
-    token: str = typer.Option(..., prompt=True, hide_input=True, help="The token the host gave you"),
-) -> None:
-    """Keep a token for a host, sent with every request to a repository there."""
-    path = save_credentials(host, token)
-    typer.echo(f"Saved for {host} in {path}")
 
 
 def main() -> None:

@@ -43,7 +43,7 @@ A scheduled import or a form in a web app writes the same way a person does: che
 What a host adds goes outside the fields FDL defines:
 
 - extra files in a version folder (a preview), which readers ignore
-- `extensions` in `version.json` and `dataset.json`, keyed by the host's name
+- `annotations` in `version.json` and `dataset.json`, keyed by the host's name
 - its own ID for the dataset in `fdl.json`'s `id`, written at `init` and never changed
 
 Access rules, approvals and billing stay in the host's own database. A repository copied off the host still reads correctly, with nothing in it that only the host understands.
