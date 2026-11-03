@@ -33,6 +33,7 @@ for version in repo.log(store):
 | `head(key)` | オブジェクトのヘッダー（`ETag` を含む）か `None` |
 | `list(prefix)` | プレフィックスの下のキー |
 | `delete(keys)` | 消す。既に無いキーはエラーにしない |
+| `put_files(files, *, content_type)` | 任意。一度だけ書く `(key, path)` の組を書く。HTTP の置き場はホストにアップロード用の URL を求め（[batch](/ja/spec/http#ストレージへ直接アップロードする)）、ストレージへ直接送る |
 
 ## fdl.repo
 
@@ -81,6 +82,27 @@ repo.prune(store, newest, *, keep=1, since=None, reason="retention") -> list[str
 
 バージョン 1 つの保持期間を終わらせるか、`newest` より古く保持期間から外れるバージョンをまとめて終わらせます。ref が指すバージョンは残します。
 
+```python
+repo.tag(store, name, version_id) -> None
+repo.delete_tag(store, name) -> None
+repo.tags(store) -> dict[str, str]
+```
+
+バージョンに `refs/tags/<name>` を作る、消す、タグと指すバージョンを並べる、の 3 つです。タグは動かしません。同じ名前のタグが別のバージョンにあれば、`tag` は `RepoError` を出します。
+
+```python
+repo.update_refs_index(store) -> None
+```
+
+ref を読み直して `refs.json` を書き直します。`push`・`tag`・`delete_tag` は ref を動かしたあとにこれを呼びます。`refs.json` を自分で書くホストが 403 で断ったときは、済んだものとして扱います。
+
+```python
+repo.plan_withdrawal(store, version_ids) -> Withdrawal
+repo.withdraw(store, version_ids, *, plan=None) -> Withdrawal
+```
+
+公開してはいけないデータを持つバージョンを取り下げます。`plan_withdrawal` は何も変えずに、消すタグ、消すデータファイル、残すバージョンが読むので残すファイルを返します。`withdraw` はタグ、データファイル、カタログの順に消します。ブランチかリクエストが該当するバージョンを指しているあいだは、どちらも `RepoError` を出します。
+
 ## fdl.refs
 
 ```python
@@ -89,3 +111,10 @@ refs.write(store, name, version_id, *, expected) -> str
 ```
 
 `read` は、動かすときに渡す ETag を付けて ref を返します。`write` は、`expected` が `None` なら ref を作り、そうでなければ動かします。条件が合わなければ `RefConflict` を出します。
+
+```python
+refs.listed(store) -> dict[str, str]
+refs.write_index(store) -> dict
+```
+
+`listed` はブランチとタグをすべて読み直します。`write_index` はそれと `HEAD` から `refs.json` を書きます。

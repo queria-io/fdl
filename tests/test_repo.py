@@ -293,3 +293,103 @@ def test_the_index_leaves_out_dropped_tables_and_marks_renames(tmp_path: Path, r
     assert sorted(tables) == ["main.moved", "main.towns"]
     assert tables["main.moved"]["renamed_columns"] is True
     assert "renamed_columns" not in tables["main.towns"]
+
+
+def pushed(tmp_path: Path, store, parent=None, sql="CREATE TABLE lake.main.towns AS SELECT 1 AS id"):
+    build(tmp_path / "work.sqlite", store, sql)
+    version = commit(tmp_path, store, parent=parent)
+    repo.push(store, tmp_path / "local" / version.id, version)
+    return version
+
+
+def test_push_and_tags_keep_refs_json(tmp_path: Path, remote) -> None:
+    first = pushed(tmp_path, remote)
+    assert json.loads(remote.get(layout.REFS_INDEX)) == {
+        "head": "refs/heads/main",
+        "refs": {"refs/heads/main": first.id},
+    }
+
+    repo.tag(remote, "2025-final", first.id)
+    second = pushed(tmp_path, remote, parent=first, sql="INSERT INTO lake.main.towns VALUES (2)")
+    assert json.loads(remote.get(layout.REFS_INDEX))["refs"] == {
+        "refs/heads/main": second.id,
+        "refs/tags/2025-final": first.id,
+    }
+    assert repo.tags(remote) == {"2025-final": first.id}
+    assert repo.head(remote, "refs/tags/2025-final") == first
+
+    repo.delete_tag(remote, "2025-final")
+    assert repo.tags(remote) == {}
+    assert json.loads(remote.get(layout.REFS_INDEX))["refs"] == {"refs/heads/main": second.id}
+
+
+def test_a_tag_is_never_moved(tmp_path: Path, remote) -> None:
+    first = pushed(tmp_path, remote)
+    second = pushed(tmp_path, remote, parent=first, sql="INSERT INTO lake.main.towns VALUES (2)")
+    repo.tag(remote, "v1", first.id)
+    repo.tag(remote, "v1", first.id)  # a retry is the same tag
+    with pytest.raises(repo.RepoError, match="already there"):
+        repo.tag(remote, "v1", second.id)
+
+
+def test_a_tag_needs_a_version_in_retention(tmp_path: Path, remote) -> None:
+    first = pushed(tmp_path, remote)
+    pushed(tmp_path, remote, parent=first, sql="INSERT INTO lake.main.towns VALUES (2)")
+    repo.expire(remote, first.id)
+    with pytest.raises(repo.RepoError, match="out of retention"):
+        repo.tag(remote, "old", first.id)
+    with pytest.raises(layout.LayoutError):
+        repo.tag(remote, "Not ASCII ü", first.id)
+
+
+def test_a_host_that_keeps_refs_json_itself_does_not_fail_the_push(tmp_path: Path, remote) -> None:
+    class Refused(Exception):
+        status = 403
+
+    class Host(LocalStore):
+        def put(self, key, data, **kwargs):
+            if key == layout.REFS_INDEX:
+                raise Refused()
+            return super().put(key, data, **kwargs)
+
+    host = Host(remote.root)
+    version = pushed(tmp_path, host)
+    assert repo.head(host) == version
+    assert host.head(layout.REFS_INDEX) is None
+
+
+def test_withdraw_removes_the_data_from_live_versions(tmp_path: Path, remote) -> None:
+    first = pushed(tmp_path, remote)
+    leaked = set(remote.list("data/"))
+    build(tmp_path / "work.sqlite", remote, "CREATE TABLE lake.main.kept AS SELECT 1 AS id")
+    second = commit(tmp_path, remote, parent=first)
+    repo.push(remote, tmp_path / "local" / second.id, second)
+    repo.tag(remote, "v2", second.id)
+
+    with pytest.raises(repo.RepoError, match="refs/heads/main"):
+        repo.plan_withdrawal(remote, [first.id, second.id])
+
+    build(tmp_path / "work.sqlite", remote, "DROP TABLE lake.main.towns")
+    clean = commit(tmp_path, remote, parent=second)
+    repo.push(remote, tmp_path / "local" / clean.id, clean)
+    kept = set(remote.list("data/")) - leaked
+    assert kept
+
+    plan = repo.withdraw(remote, [first.id, second.id])
+    assert plan.tags == ("refs/tags/v2",)
+    assert set(plan.deleted) == leaked and set(plan.still_read) == kept
+    assert set(remote.list("data/")) == kept
+    assert repo.tags(remote) == {}
+    for version_id in (first.id, second.id):
+        assert json.loads(remote.get(layout.version_expired(version_id)))["reason"] == "withdrawn"
+        assert remote.head(layout.version_catalog(version_id)) is None
+        assert remote.head(layout.version_record(version_id)) is not None
+    assert repo.head(remote) == clean
+
+
+def test_a_file_a_kept_version_still_reads_is_not_deleted(tmp_path: Path, remote) -> None:
+    first = pushed(tmp_path, remote)
+    second = pushed(tmp_path, remote, parent=first, sql="INSERT INTO lake.main.towns VALUES (2)")
+    plan = repo.plan_withdrawal(remote, [first.id])
+    assert plan.deleted == () and len(plan.still_read) == 1
+    assert repo.head(remote) == second

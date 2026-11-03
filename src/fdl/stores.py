@@ -13,8 +13,10 @@ import json
 import os
 import subprocess
 import sys
+import time
 import urllib.error
 import urllib.request
+from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
 from typing import Iterator, Sequence
 from urllib.parse import quote, urlencode, urlparse
@@ -305,6 +307,104 @@ class HttpStore:
         headers = {**headers, "Content-Type": "application/json"}
         with self._request("POST", key, query={"upload": upload}, data=body, headers=headers) as answer:
             return answer.headers.get("ETag", "")
+
+    #: Objects asked about in one batch, as Git LFS suggests.
+    BATCH_SIZE = 100
+    #: Uploads to storage running at once.
+    UPLOADS_AT_ONCE = 8
+
+    def put_files(self, files: Sequence[tuple[str, Path]], *, content_type: str | None = None) -> None:
+        """Write files that are written once (data files, a version's files).
+
+        Asks the host for upload URLs in batches (``POST ?batch``, after Git
+        LFS's batch API) and sends each file straight to storage. Files already
+        there are skipped. A host without batches, or a file it will not sign
+        for, goes up through the host as `put_file` would.
+        """
+        for start in range(0, len(files), self.BATCH_SIZE):
+            chunk = list(files[start : start + self.BATCH_SIZE])
+            try:
+                answered = self._batch(chunk)
+            except StoreError as exc:
+                if exc.status not in (404, 405, 501):
+                    raise
+                answered = [(key, path, None) for key, path in chunk]
+            with ThreadPoolExecutor(self.UPLOADS_AT_ONCE) as pool:
+                list(pool.map(lambda item: self._send_one(*item, content_type), answered))
+
+    #: Ask again for a URL that has less than this many seconds left.
+    URL_MARGIN = 60
+
+    def _batch(self, files: list[tuple[str, Path]]) -> list[tuple[str, Path, dict | None]]:
+        """Each file with the host's upload action, ``{}`` when it is already
+        there, or ``None`` to send it through the host.
+
+        An action with ``expires_in`` gets ``_until``: the monotonic time it
+        stops being usable."""
+        asked_at = time.monotonic()
+        body = {
+            "operation": "upload",
+            "objects": [{"key": key, "size": path.stat().st_size} for key, path in files],
+        }
+        headers = {"Content-Type": "application/json"}
+        with self._request("POST", "", query={"batch": ""}, data=json.dumps(body).encode(), headers=headers) as answer:
+            objects = {item["key"]: item for item in json.load(answer)["objects"]}
+        answered = []
+        for key, path in files:
+            item = objects.get(key)
+            if item is None:
+                raise StoreError(f"the host's batch answer leaves out {key}")
+            error = item.get("error")
+            if error is not None and error.get("code") != 413:
+                raise StoreError(f"{key}: {error.get('code')} {error.get('message', '')}", status=error.get("code"))
+            action = None if error else dict(item.get("actions", {}).get("upload", {}))
+            if action and "expires_in" in action:
+                action["_until"] = asked_at + float(action["expires_in"])
+            answered.append((key, path, action))
+        return answered
+
+    def _send_one(self, key: str, path: Path, action: dict | None, content_type: str | None) -> None:
+        if action is None:
+            try:
+                self.put_file(key, path, content_type=content_type, if_none_match="*")
+            except StoreError as exc:
+                if exc.status != 412:
+                    raise
+            return
+        if not action:
+            return
+        if "_until" in action and time.monotonic() > action["_until"] - self.URL_MARGIN:
+            # Uploads ahead of this one in the batch took the URL's lifetime.
+            [(key, path, action)] = self._batch([(key, path)])
+            # Sent at once, so the fresh URL is not checked again.
+            action = action if action is None else {k: v for k, v in action.items() if k != "_until"}
+            self._send_one(key, path, action, content_type)
+            return
+        try:
+            with path.open("rb") as body:
+                request = urllib.request.Request(
+                    action["href"],
+                    data=body,
+                    method="PUT",
+                    # Only the headers the host gave: the repository's token
+                    # is not for the storage the URL points at.
+                    # Without a Content-Type urllib sends a form's, which
+                    # storage keeps as the object's type.
+                    headers={
+                        "User-Agent": USER_AGENT,
+                        "Content-Length": str(path.stat().st_size),
+                        **({"Content-Type": content_type} if content_type else {}),
+                        **action.get("header", {}),
+                    },
+                )
+                urllib.request.urlopen(request).close()
+        except urllib.error.HTTPError as exc:
+            # Written once: one already there is this one.
+            if exc.code != 412:
+                detail = exc.read().decode(errors="replace").strip()
+                raise StoreError(f"PUT {key} to storage: {exc.code} {detail or exc.reason}", status=exc.code) from exc
+        except urllib.error.URLError as exc:
+            raise StoreError(f"PUT {key} to storage: {exc.reason}") from exc
 
     def get(self, key: str) -> bytes:
         with self._request("GET", key) as answer:

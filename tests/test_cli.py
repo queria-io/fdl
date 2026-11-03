@@ -168,3 +168,36 @@ def test_values_that_hash_alike_still_count_as_changed(tmp_path: Path) -> None:
         "CREATE OR REPLACE TABLE lake.main.towns AS SELECT * FROM (VALUES (1, []::INTEGER[]), (2, NULL::INTEGER[])) v(id, tags)",
     )
     assert "version 2" in run("commit", working, "-m", "swapped", "--author", "t")
+
+
+def test_tags(tmp_path: Path) -> None:
+    remote, working = tmp_path / "remote", tmp_path / "work" / "lake.sqlite"
+    store = LocalStore(remote)
+    run("init", remote)
+    run("checkout", remote, working)
+    write(working, store, "CREATE TABLE lake.main.towns AS SELECT 1 AS id")
+    run("commit", working, "-m", "first", "--author", "tester")
+    version = repo.head(store)
+
+    assert f"refs/tags/v1 -> {version.id}" in run("tag", remote, "v1")
+    assert run("tag", remote, "v2", version.id).strip().endswith(version.id)
+    assert run("tag", remote).splitlines() == [f"v1  {version.id}", f"v2  {version.id}"]
+    run("tag", remote, "v1", "-d")
+    assert repo.tags(store) == {"v2": version.id}
+
+
+def test_withdraw_says_what_it_would_do_until_told_yes(tmp_path: Path) -> None:
+    remote, working = tmp_path / "remote", tmp_path / "work" / "lake.sqlite"
+    store = LocalStore(remote)
+    run("init", remote)
+    run("checkout", remote, working)
+    write(working, store, "CREATE TABLE lake.main.towns AS SELECT 1 AS id")
+    run("commit", working, "-m", "leak", "--author", "tester")
+    leak = repo.head(store)
+    write(working, store, "DROP TABLE lake.main.towns; CREATE TABLE lake.main.ok AS SELECT 1 AS id")
+    run("commit", working, "-m", "clean", "--author", "tester")
+
+    assert "Nothing was changed" in run("withdraw", remote, leak.id)
+    assert repo.is_expired(store, leak.id) is False
+    assert "Withdrew 1 version(s) and deleted 1 file(s)" in run("withdraw", remote, leak.id, "--yes")
+    assert repo.is_expired(store, leak.id)

@@ -11,10 +11,12 @@ import hashlib
 import itertools
 import json
 import shutil
+import tempfile
 import uuid
+import warnings
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Iterator
+from typing import Iterable, Iterator
 
 from . import catalog, layout, refs
 from . import dataset as dataset_json
@@ -361,9 +363,51 @@ def push(
         # A write sent again after a lost answer is refused by its own first
         # attempt. That moved the ref to this version, which is what was asked.
         now = refs.read(store, ref)
-        if now is not None and now.target == version.id:
+        if now is None or now.target != version.id:
+            raise NotFastForward(f"{ref} moved during the push. Pull and build again.") from exc
+    update_refs_index(store)
+
+
+def tag(store: Store, name: str, version_id: str) -> None:
+    """Create ``refs/tags/<name>`` at a version. Tags are created, never moved."""
+    ref = layout.check_ref(f"refs/tags/{name}")
+    read_version(store, version_id)
+    if is_expired(store, version_id):
+        raise RepoError(f"{version_id} is out of retention, so it cannot be tagged")
+    try:
+        refs.write(store, ref, version_id, expected=None)
+    except refs.RefConflict as exc:
+        now = refs.read(store, ref)
+        # A retry whose first answer was lost is not a second tag.
+        if now is None or now.target != version_id:
+            raise RepoError(f"{ref} is already there, at {now.target if now else '?'}") from exc
+    update_refs_index(store)
+
+
+def delete_tag(store: Store, name: str) -> None:
+    """Delete ``refs/tags/<name>``. One already gone is not an error."""
+    refs.delete(store, f"refs/tags/{name}")
+    update_refs_index(store)
+
+
+def tags(store: Store) -> dict[str, str]:
+    """Each tag's name (after ``refs/tags/``) and the version it holds."""
+    prefix = "refs/tags/"
+    return {name[len(prefix) :]: target for name, target in refs.listed(store).items() if name.startswith(prefix)}
+
+
+def update_refs_index(store: Store) -> None:
+    """Rewrite `refs.json` after moving a ref.
+
+    A host that checks pushes and moves refs itself keeps `refs.json` too, and
+    may refuse a writer's (403). That is not an error: the ref has moved.
+    """
+    try:
+        refs.write_index(store)
+    except Exception as exc:  # noqa: BLE001 - stores raise their own types
+        if getattr(exc, "status", None) == 403:
             return
-        raise NotFastForward(f"{ref} moved during the push. Pull and build again.") from exc
+        warnings.warn(f"the ref moved, but refs.json was not rewritten: {exc}", stacklevel=2)
 
 
 def upload(store: Store, local: Path, version: Version) -> None:
@@ -436,6 +480,11 @@ def expire(store: Store, version_id: str, *, reason: str = "retention") -> None:
     except Exception as exc:  # noqa: BLE001 - stores raise their own types
         if not is_conflict(exc):
             raise
+        # A version already out of retention that is withdrawn says so, for
+        # mirrors to delete what the origin deleted.
+        mark = layout.version_expired(version_id)
+        if reason == "withdrawn" and json.loads(store.get(mark)).get("reason") != reason:
+            store.put(mark, (json.dumps(record) + "\n").encode(), content_type="application/json")
     store.delete(
         [
             layout.version_catalog(version_id),
@@ -444,6 +493,135 @@ def expire(store: Store, version_id: str, *, reason: str = "retention") -> None:
             *store.list(layout.version_dir(version_id) + layout.CATALOGS_DIR),
         ]
     )
+
+
+@dataclass(frozen=True)
+class Withdrawal:
+    """What withdrawing versions does, worked out before anything is changed."""
+
+    versions: tuple[str, ...]
+    #: Tags that point at the versions, deleted first.
+    tags: tuple[str, ...]
+    #: Data files the versions' catalogs name and no version kept reads.
+    deleted: tuple[str, ...]
+    #: Data files the versions name that a kept version still reads. Kept: if
+    #: they hold the data, the version that reads them has to be withdrawn too.
+    still_read: tuple[str, ...]
+
+
+def plan_withdrawal(store: Store, version_ids: Iterable[str]) -> Withdrawal:
+    """Work out a withdrawal (see `withdraw`) without changing anything.
+
+    Refused while a branch or a request still points at one of the versions:
+    the first step, a new version without the data, is the writer's.
+    """
+    config = read_config(store)
+    affected = tuple(dict.fromkeys(version_ids))
+    for version_id in affected:
+        read_version(store, version_id)
+    tags: list[str] = []
+    for name in store.list("refs/"):
+        try:
+            ref = refs.read(store, name)
+        except (refs.RefError, layout.LayoutError):
+            continue
+        if ref is None or ref.target not in affected:
+            continue
+        if not name.startswith("refs/tags/"):
+            raise RepoError(
+                f"{name} points at {ref.target}. Move it to a version without the data first"
+            )
+        tags.append(name)
+
+    candidates: set[str] = set()
+    kept: set[str] = set()
+    with tempfile.TemporaryDirectory(prefix="fdl-") as tmp:
+        for version_id in _version_ids(store):
+            if version_id in affected:
+                local = _fetch_catalog(store, version_id, Path(tmp))
+                if local is not None:
+                    # Every file the catalog has ever named: earlier snapshots
+                    # in it may hold the data too.
+                    candidates.update(catalog.data_files(local))
+                    local.unlink()
+                continue
+            if is_expired(store, version_id):
+                continue
+            version = read_version(store, version_id)
+            # files.json lists what the version reads, without its catalog.
+            indexed = _indexed_files(store, version)
+            if indexed is not None:
+                kept.update(indexed)
+                continue
+            local = _fetch_catalog(store, version_id, Path(tmp))
+            if local is not None:
+                kept.update(_read_files(local, version))
+                local.unlink()
+    return Withdrawal(
+        versions=affected,
+        tags=tuple(tags),
+        deleted=tuple(config.data_dir + key for key in sorted(candidates - kept)),
+        still_read=tuple(config.data_dir + key for key in sorted(candidates & kept)),
+    )
+
+
+def withdraw(store: Store, version_ids: Iterable[str], *, plan: Withdrawal | None = None) -> Withdrawal:
+    """Remove versions that hold data that must not be published.
+
+    Unlike retention it takes live versions and deletes their data files at
+    once. In the spec's order, except that the data files go before the
+    catalogs, so a run that stops half way can be run again while the
+    catalogs still say which files they are. `version.json` stays.
+    """
+    plan = plan or plan_withdrawal(store, version_ids)
+    for name in plan.tags:
+        refs.delete(store, name)
+    if plan.tags:
+        update_refs_index(store)
+    store.delete(list(plan.deleted))
+    for version_id in plan.versions:
+        expire(store, version_id, reason="withdrawn")
+    return plan
+
+
+def _version_ids(store: Store) -> list[str]:
+    suffix = "/" + layout.VERSION_RECORD
+    return [key[len("versions/") : -len(suffix)] for key in store.list("versions/") if key.endswith(suffix)]
+
+
+def _fetch_catalog(store: Store, version_id: str, tmp: Path) -> Path | None:
+    """The version's catalog in ``tmp``, or ``None`` when it is gone."""
+    local = tmp / f"{version_id}.duckdb"
+    try:
+        local.write_bytes(store.get(layout.version_catalog(version_id)))
+    except Exception as exc:  # noqa: BLE001 - stores raise their own types
+        if is_missing(exc):
+            return None
+        raise
+    return local
+
+
+def _indexed_files(store: Store, version: Version) -> set[str] | None:
+    """What the version's `files.json` says it reads, or ``None`` without one."""
+    if version.files is None:
+        return None
+    try:
+        index = json.loads(store.get(layout.version_dir(version.id) + version.files.path))
+    except Exception as exc:  # noqa: BLE001 - stores raise their own types
+        if is_missing(exc):
+            return None
+        raise
+    return _paths_of(index["tables"].values())
+
+
+def _read_files(local: Path, version: Version) -> set[str]:
+    """The data and delete files a reader of the version reads, at its snapshot."""
+    return _paths_of(catalog.table_files(local, version.ducklake.snapshot_id).values())
+
+
+def _paths_of(tables: Iterable[dict]) -> set[str]:
+    files = [file for table in tables for file in table["files"]]
+    return {file["path"] for file in files} | {file["deletes"]["path"] for file in files if "deletes" in file}
 
 
 def prune(
@@ -520,10 +698,17 @@ def _missing_data_files(store: Store, config: Config, frozen: Path) -> list[str]
 
 
 def _upload_data_files(store: Store, config: Config, frozen: Path, local_data: Path) -> None:
-    for key in _missing_data_files(store, config, frozen):
-        path = local_data / key[len(config.data_dir) :]
-        if not path.is_file():
-            continue
+    files = [
+        (key, local_data / key[len(config.data_dir) :])
+        for key in _missing_data_files(store, config, frozen)
+    ]
+    files = [(key, path) for key, path in files if path.is_file()]
+    # A host that hands out upload URLs takes them straight to storage.
+    put_files = getattr(store, "put_files", None)
+    if put_files is not None:
+        put_files(files, content_type="application/octet-stream")
+        return
+    for key, path in files:
         try:
             store.put_file(key, path, content_type="application/octet-stream", if_none_match="*")
         except Exception as exc:  # noqa: BLE001 - stores raise their own types

@@ -123,3 +123,37 @@ def test_requests_name_fdl(monkeypatch) -> None:
     with pytest.raises(StoreError):
         HttpStore("https://example.invalid/repo/").get("fdl.json")
     assert sent[0].get_header("User-agent").startswith("fdl/")
+
+
+def test_data_files_go_straight_to_storage_when_the_host_signs_urls(tmp_path: Path, monkeypatch) -> None:
+    local = LocalStore(tmp_path / "signed")
+    repo.init(local)
+    server = serve(local, batch=True)
+    monkeypatch.setenv("FDL_TOKEN", TOKEN)
+    url = f"http://127.0.0.1:{server.server_address[1]}/"
+    working = tmp_path / "work" / "lake.sqlite"
+    run("checkout", url, working)
+    write(working, "CREATE TABLE lake.main.towns AS SELECT 1 AS id")
+    run("commit", working, "-m", "first", "--author", "tester")
+    server.shutdown()
+
+    data_puts = [key for method, key in server.requests if method == "PUT" and ".parquet" in key]
+    assert data_puts and all(key.startswith("storage/") for key in data_puts)
+    assert [v.message for v in repo.log(local)] == ["first"]
+
+
+def test_a_file_the_host_will_not_sign_goes_through_the_host(tmp_path: Path) -> None:
+    local = LocalStore(tmp_path / "signed")
+    server = serve(local, batch=True, sign_up_to=3)
+    store = HttpStore(f"http://127.0.0.1:{server.server_address[1]}/", token=TOKEN)
+    small, large, there = (tmp_path / name for name in ("small", "large", "there"))
+    small.write_bytes(b"ab")
+    large.write_bytes(b"abcdef")
+    there.write_bytes(b"xy")
+    local.put("data/there.parquet", b"xy")
+    store.put_files([("data/small.parquet", small), ("data/large.parquet", large), ("data/there.parquet", there)])
+    server.shutdown()
+
+    assert local.get("data/small.parquet") == b"ab" and local.get("data/large.parquet") == b"abcdef"
+    puts = [key for method, key in server.requests if method == "PUT"]
+    assert puts == ["storage/data/small.parquet", "data/large.parquet"]

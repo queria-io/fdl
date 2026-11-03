@@ -13,6 +13,8 @@ FDL_VERSION = "0.1"
 
 CONFIG = "fdl.json"
 HEAD = "HEAD"
+#: The list of refs, for readers that cannot list the store.
+REFS_INDEX = "refs.json"
 DEFAULT_BRANCH = "refs/heads/main"
 DEFAULT_DATA_DIR = "data/"
 
@@ -31,6 +33,8 @@ SYMBOLIC = "ref: "
 
 _REF_PART = re.compile(r"[a-z0-9][a-z0-9._-]*")
 _REF_KINDS = ("heads", "tags", "requests")
+#: The kinds `refs.json` lists. Requests are the host's own.
+LISTED_REFS = ("refs/heads/", "refs/tags/")
 _REF_MAX = 128
 
 

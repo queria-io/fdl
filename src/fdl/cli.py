@@ -17,7 +17,7 @@ import typer
 
 from . import catalog, dataset, layout, refs, repo
 from .stores import StoreError, open_store
-from .version import VersionError
+from .version import VersionError, is_id
 
 app = typer.Typer(no_args_is_help=True, pretty_exceptions_short=True)
 
@@ -176,6 +176,33 @@ def url(remote: str = Remote, ref: str = typer.Option(layout.HEAD)) -> None:
 
 
 @app.command()
+def tag(
+    remote: str = Remote,
+    name: str | None = typer.Argument(None, help="The tag, without refs/tags/. Omit to list the tags"),
+    target: str = typer.Argument(layout.HEAD, help="A version ID, or the ref whose version to tag"),
+    delete: bool = typer.Option(False, "-d", "--delete", help="Delete the tag"),
+) -> None:
+    """List tags, tag a version, or delete a tag. Tags never move."""
+    store = open_store(remote)
+    try:
+        if name is None:
+            for tag_name, version_id in repo.tags(store).items():
+                typer.echo(f"{tag_name}  {version_id}")
+            return
+        if delete:
+            repo.delete_tag(store, name)
+            typer.echo(f"Deleted refs/tags/{name}")
+            return
+        version_id = target if is_id(target) else refs.resolve(store, target)[1]
+        if version_id is None:
+            raise repo.RepoError(f"{target} holds no version yet")
+        repo.tag(store, name, version_id)
+    except ERRORS as exc:
+        raise _fail(exc) from exc
+    typer.echo(f"refs/tags/{name} -> {version_id}")
+
+
+@app.command()
 def expire(
     remote: str = Remote,
     keep: int = typer.Option(1, help="How many of the newest versions to keep"),
@@ -193,6 +220,38 @@ def expire(
     except ERRORS as exc:
         raise _fail(exc) from exc
     typer.echo(f"Expired {len(expired)} version(s).")
+
+
+@app.command()
+def withdraw(
+    remote: str = Remote,
+    versions: list[str] = typer.Argument(..., help="The versions that hold the data"),
+    yes: bool = typer.Option(False, "--yes", help="Do it. Without this, only say what would be done"),
+) -> None:
+    """Remove versions that hold data that must not be published.
+
+    Move every branch to a version without the data first. This deletes the
+    tags that point at the versions, the data files no kept version reads,
+    and the versions' catalogs, at once. Their version.json stays.
+    """
+    store = open_store(remote)
+    try:
+        plan = repo.plan_withdrawal(store, versions)
+        for name in plan.tags:
+            typer.echo(f"delete tag   {name}")
+        for key in plan.deleted:
+            typer.echo(f"delete file  {key}")
+        for version_id in plan.versions:
+            typer.echo(f"withdraw     {version_id}")
+        for key in plan.still_read:
+            typer.echo(f"keep file    {key} (a kept version reads it)")
+        if not yes:
+            typer.echo("Nothing was changed. Run again with --yes to do this.")
+            return
+        repo.withdraw(store, versions, plan=plan)
+    except ERRORS as exc:
+        raise _fail(exc) from exc
+    typer.echo(f"Withdrew {len(plan.versions)} version(s) and deleted {len(plan.deleted)} file(s).")
 
 
 def main() -> None:

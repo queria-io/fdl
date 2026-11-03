@@ -77,6 +77,26 @@ fdl url <remote> [--ref HEAD]
 
 Prints the URL of the catalog of the version the ref holds, to `ATTACH` read-only.
 
+## fdl tag
+
+```bash
+fdl tag <remote>                       # list the tags
+fdl tag <remote> <name> [<version>]    # tag a version (default: the one HEAD holds)
+fdl tag <remote> <name> --delete
+```
+
+`<version>` is a version ID or a ref such as `refs/heads/main`. A tag is created once and never moved: tagging a name that is already there at another version is refused. A version past retention cannot be tagged. Creating or deleting a tag rewrites `refs.json`, as `fdl commit` does after moving a branch.
+
+## fdl withdraw
+
+```bash
+fdl withdraw <remote> <version>... [--yes]
+```
+
+Removes versions that hold data that must not be published, such as personal data published by mistake (see [Withdrawal](/spec/data-files#withdrawal)). First commit a version without the data, so that no branch points at an affected version. The command then deletes the tags that point at the versions, the data files their catalogs name that no kept version reads, and their catalogs, and puts `expired.json` with `"reason": "withdrawn"`. `version.json` stays.
+
+Without `--yes` it only prints what it would delete. Files a kept version still reads are listed as kept; if they hold the data, withdraw that version too. Refused while a branch or a request points at one of the versions.
+
 ## fdl expire
 
 ```bash
