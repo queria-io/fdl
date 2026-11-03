@@ -127,6 +127,7 @@ def commit(
                 message=message,
                 dataset=declared,
                 allow_empty=allow_empty,
+                working_data=Path(state["data"]).resolve().as_posix() + "/" if state.get("data") else None,
             )
 
         try:

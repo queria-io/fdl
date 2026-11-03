@@ -659,8 +659,12 @@ def last_snapshot(working: Path) -> int:
         con.close()
 
 
-def same_contents(working: Path, since: int) -> bool:
+def same_contents(working: Path, since: int, *, data_path: str | None = None) -> bool:
     """Whether the working catalog's last snapshot holds what snapshot ``since`` held.
+
+    ``data_path`` is where the working catalog's new data files are, when not
+    where it records (a working catalog of a repository over HTTP writes them
+    to a folder on this machine).
 
     The same tables and views, each table with the same columns and the same
     rows, in any order. A table rebuilt from the same input is written to new
@@ -677,7 +681,10 @@ def same_contents(working: Path, since: int) -> bool:
     con = duckdb.connect()
     try:
         for statement in attach_sql(
-            working, alias="lake", data_path=_working_data_path(working), read_only=True
+            working,
+            alias="lake",
+            data_path=data_path or _working_data_path(working),
+            read_only=True,
         ):
             if statement:
                 con.execute(statement)

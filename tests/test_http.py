@@ -157,3 +157,26 @@ def test_a_file_the_host_will_not_sign_goes_through_the_host(tmp_path: Path) -> 
     assert local.get("data/small.parquet") == b"ab" and local.get("data/large.parquet") == b"abcdef"
     puts = [key for method, key in server.requests if method == "PUT"]
     assert puts == ["storage/data/small.parquet", "data/large.parquet"]
+
+
+def test_a_rebuild_of_the_same_rows_over_http_is_nothing_to_commit(served, tmp_path: Path) -> None:
+    local, url, _ = served
+    working = tmp_path / "work" / "lake.sqlite"
+    run("checkout", url, working)
+    write(working, "CREATE SCHEMA lake.s; CREATE TABLE lake.s.towns AS SELECT 1 AS id")
+    run("commit", working, "-m", "first", "--author", "tester")
+    # The way dbt rebuilds a table: a new table beside it, then renames.
+    again = tmp_path / "again" / "lake.sqlite"
+    run("checkout", url, again)
+    write(
+        again,
+        "CREATE TABLE lake.s.towns__dbt_tmp AS SELECT 1 AS id; "
+        "ALTER TABLE lake.s.towns RENAME TO towns__dbt_backup; "
+        "ALTER TABLE lake.s.towns__dbt_tmp RENAME TO towns; DROP TABLE lake.s.towns__dbt_backup",
+    )
+    working = again
+    result = runner.invoke(app, ["commit", str(working), "-m", "again", "--author", "tester"])
+    assert result.exit_code == 0, result.output
+    assert "Nothing to commit" in result.output
+    assert "could not tell" not in result.output
+    assert len(list(repo.log(local))) == 1
