@@ -33,6 +33,7 @@ for version in repo.log(store):
 | `head(key)` | The object's headers (with `ETag`), or `None` |
 | `list(prefix)` | Keys under a prefix |
 | `delete(keys)` | Remove. A key already gone is not an error |
+| `put_files(files, *, content_type)` | Optional. Write `(key, path)` pairs that are written once. The HTTP store asks the host for upload URLs ([batch](/spec/http#uploading-straight-to-storage)) and sends the files straight to storage |
 
 ## fdl.repo
 

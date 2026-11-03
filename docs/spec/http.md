@@ -12,6 +12,7 @@ A host can take pushes over HTTP, so a writer needs no keys to its storage. The 
 | `GET`, `HEAD` `<root>/<key>` | Read an object | 200 with an `ETag`, or 404 |
 | `PUT` `<root>/<key>` | Write an object, with `If-None-Match: *` or `If-Match: <ETag>` | 200 or 201 with the new `ETag`; 412 when the condition fails |
 | `GET` `<root>/?list&prefix=<p>[&after=<key>]` | List keys under a prefix | `{"keys": [...], "next": <key or null>}`; ask again with `after` while `next` is set |
+| `POST` `<root>/?batch` | Ask for upload URLs, optionally (see [below](#uploading-straight-to-storage)) | `{"objects": [...]}` |
 | `POST` `<root>/<key>?uploads` | Start an upload in parts, with the same conditions as `PUT` | `{"upload": "<id>"}` |
 | `PUT` `<root>/<key>?upload=<id>&part=<n>` | Send part `n` (from 1) | `{"etag": "<part tag>"}` |
 | `POST` `<root>/<key>?upload=<id>` | Finish it with `{"parts": [{"part": n, "etag": "…"}]}` in order | As `PUT` |
@@ -22,6 +23,42 @@ A host can take pushes over HTTP, so a writer needs no keys to its storage. The 
 - A host that moves refs itself after its checks keeps `refs.json` too, and may refuse a writer's write to it with 403. A writer treats that as done
 - Moving a ref is where a host checks a push: the version is there, it is a fast-forward, the catalog matches `version.json`, and every data file it names is in the repository. A refusal is 409 with the reason in the body
 - There is no `DELETE`. Retention and deletion are the host's
+
+## Uploading straight to storage
+
+A host may hand out upload URLs so that files go straight to its storage rather than through it, as Git LFS's batch API does. Only files that are written once (data files and the files of a version) go this way. Refs are always written through the host.
+
+`POST <root>/?batch` with the files a writer is about to upload:
+
+```json
+{ "operation": "upload", "objects": [{ "key": "data/main/towns/a.parquet", "size": 1048576 }] }
+```
+
+The answer has one entry per object, in any order:
+
+```json
+{
+  "objects": [
+    {
+      "key": "data/main/towns/a.parquet",
+      "size": 1048576,
+      "actions": {
+        "upload": { "href": "https://storage.example.org/…", "header": { "If-None-Match": "*" }, "expires_in": 3600 }
+      }
+    },
+    { "key": "data/main/towns/b.parquet", "size": 2048 },
+    { "key": "data/main/towns/c.parquet", "size": 9, "error": { "code": 413, "message": "Too large for one request" } }
+  ]
+}
+```
+
+- `actions.upload`: the writer sends `PUT <href>` with the file as the body and the headers in `header`, and nothing from the repository's own `Authorization`. 412 there means the object is already there
+- No `actions` and no `error`: the object is already there
+- `error` with code 413: the host will not sign this one. The writer uploads it through the host (`PUT`, or in parts)
+- Any other `error`: the upload is refused, with the code and the reason
+- A writer asks about at most 100 objects at a time
+- A host without batches answers 404, 405 or 501, and writers upload through the host
+- Uploading does not make a version. Moving a ref is still where the host checks the push
 
 ## Writing to it
 

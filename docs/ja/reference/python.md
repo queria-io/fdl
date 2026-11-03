@@ -33,6 +33,7 @@ for version in repo.log(store):
 | `head(key)` | オブジェクトのヘッダー（`ETag` を含む）か `None` |
 | `list(prefix)` | プレフィックスの下のキー |
 | `delete(keys)` | 消す。既に無いキーはエラーにしない |
+| `put_files(files, *, content_type)` | 任意。一度だけ書く `(key, path)` の組を書く。HTTP の置き場はホストにアップロード用の URL を求め（[batch](/ja/spec/http#ストレージへ直接アップロードする)）、ストレージへ直接送る |
 
 ## fdl.repo
 

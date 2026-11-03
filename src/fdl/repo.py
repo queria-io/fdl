@@ -666,10 +666,17 @@ def _missing_data_files(store: Store, config: Config, frozen: Path) -> list[str]
 
 
 def _upload_data_files(store: Store, config: Config, frozen: Path, local_data: Path) -> None:
-    for key in _missing_data_files(store, config, frozen):
-        path = local_data / key[len(config.data_dir) :]
-        if not path.is_file():
-            continue
+    files = [
+        (key, local_data / key[len(config.data_dir) :])
+        for key in _missing_data_files(store, config, frozen)
+    ]
+    files = [(key, path) for key, path in files if path.is_file()]
+    # A host that hands out upload URLs takes them straight to storage.
+    put_files = getattr(store, "put_files", None)
+    if put_files is not None:
+        put_files(files, content_type="application/octet-stream")
+        return
+    for key, path in files:
         try:
             store.put_file(key, path, content_type="application/octet-stream", if_none_match="*")
         except Exception as exc:  # noqa: BLE001 - stores raise their own types
