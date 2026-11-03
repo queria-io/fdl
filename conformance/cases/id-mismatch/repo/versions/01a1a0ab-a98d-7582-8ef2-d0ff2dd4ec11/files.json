@@ -1,0 +1,43 @@
+{
+  "tables": {
+    "geo.town": {
+      "files": [
+        {
+          "path": "geo/town/ducklake-01a1a0ab-9e45-7189-9dd2-7c2d436d30c5.parquet",
+          "rows": 10000,
+          "bytes": 41291,
+          "footer_bytes": 288
+        }
+      ]
+    },
+    "main.empty": {
+      "files": []
+    },
+    "main.gone": {
+      "files": [
+        {
+          "path": "main/gone/ducklake-01a1a0ab-9e83-7d75-8566-49c568939418.parquet",
+          "rows": 10,
+          "bytes": 273,
+          "footer_bytes": 173,
+          "deletes": {
+            "path": "main/gone/ducklake-01a1a0ab-a680-7daa-a72f-7433745344a5-delete.parquet",
+            "rows": 3,
+            "bytes": 947
+          }
+        }
+      ]
+    },
+    "main.renamed": {
+      "files": [
+        {
+          "path": "main/renamed/ducklake-01a1a0ab-9eba-7381-a689-6c9d583ec2f5.parquet",
+          "rows": 10,
+          "bytes": 273,
+          "footer_bytes": 173
+        }
+      ],
+      "renamed_columns": true
+    }
+  }
+}

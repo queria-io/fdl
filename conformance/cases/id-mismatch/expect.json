@@ -1,0 +1,8 @@
+{
+  "about": "version.json records another id than its folder.",
+  "reads": {
+    "HEAD": {
+      "refuse": true
+    }
+  }
+}

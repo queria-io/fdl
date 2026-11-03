@@ -1,0 +1,25 @@
+{
+  "about": "parents is a list of any length.",
+  "reads": {
+    "HEAD": {
+      "version": "01a1a0ab-750b-7bd7-bb24-0c29f9d1ac3a",
+      "seq": 2,
+      "tables": {
+        "geo.town": {
+          "rows": 10000
+        },
+        "main.empty": {
+          "rows": 0
+        },
+        "main.gone": {
+          "rows": 7,
+          "may_skip": true
+        },
+        "main.renamed": {
+          "rows": 10,
+          "may_skip": true
+        }
+      }
+    }
+  }
+}

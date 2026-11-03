@@ -1,0 +1,26 @@
+{
+  "about": "version.json is of a major version no reader knows.",
+  "reads": {
+    "HEAD": {
+      "refuse": true
+    },
+    "refs/tags/first": {
+      "version": "01a1a0ab-8f64-77df-9ae4-f883984a3dc4",
+      "seq": 1,
+      "tables": {
+        "geo.town": {
+          "rows": 10000
+        },
+        "main.empty": {
+          "rows": 0
+        },
+        "main.gone": {
+          "rows": 10
+        },
+        "main.renamed": {
+          "rows": 10
+        }
+      }
+    }
+  }
+}

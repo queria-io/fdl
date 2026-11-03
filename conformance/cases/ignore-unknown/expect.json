@@ -1,0 +1,25 @@
+{
+  "about": "Unknown fields and root files are ignored.",
+  "reads": {
+    "HEAD": {
+      "version": "01a1a0ab-6413-7d95-92e8-136d52f75c79",
+      "seq": 2,
+      "tables": {
+        "geo.town": {
+          "rows": 10000
+        },
+        "main.empty": {
+          "rows": 0
+        },
+        "main.gone": {
+          "rows": 7,
+          "may_skip": true
+        },
+        "main.renamed": {
+          "rows": 10,
+          "may_skip": true
+        }
+      }
+    }
+  }
+}

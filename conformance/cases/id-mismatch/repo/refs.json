@@ -1,0 +1,7 @@
+{
+  "head": "refs/heads/main",
+  "refs": {
+    "refs/heads/main": "01a1a0ab-a98d-7582-8ef2-d0ff2dd4ec11",
+    "refs/tags/first": "01a1a0ab-a1a3-73c8-81eb-4d92a3f237a4"
+  }
+}

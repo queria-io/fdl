@@ -1,0 +1,38 @@
+{
+  "fdl": "0.1",
+  "id": "01a1a0ab-b439-7706-9564-b8dafe83bfdd",
+  "seq": 1,
+  "parents": [],
+  "created_at": "2026-11-03T09:09:29Z",
+  "author": {
+    "name": "conformance"
+  },
+  "message": "First",
+  "catalog": {
+    "path": "ducklake.duckdb",
+    "storage": "duckdb-v1.5.0",
+    "bytes": 454656,
+    "sha256": "b00237ac6604a2ecc0a248150cbd038a54ab841aa68d81eaf45cde9ffd6eccc4"
+  },
+  "dataset": {
+    "path": "dataset.json",
+    "bytes": 971,
+    "sha256": "712301c86c56cb86d548dbfded6527c200a1df72e2869c0486b17750df609401"
+  },
+  "ducklake": {
+    "format": "1.0",
+    "snapshot_id": 5,
+    "snapshots": [
+      0,
+      5
+    ]
+  },
+  "files": {
+    "path": "files.json",
+    "bytes": 771,
+    "sha256": "0b3687ad26a51155fa39ce4ebb6057abdf15ffcc5b8d1d261c799ab9dee7f3ef"
+  },
+  "changes": [],
+  "inputs": [],
+  "annotations": {}
+}
