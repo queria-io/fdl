@@ -21,7 +21,7 @@ from typing import Iterable, Iterator
 from . import catalog, layout, refs
 from . import dataset as dataset_json
 from .store import Store, is_conflict, is_missing
-from .version import Catalog, DuckLake, File, Version, new_id, parse, utc_now
+from .version import Catalog, DuckLake, File, Version, VersionError, new_id, parse, utc_now
 
 
 class RepoError(RuntimeError):
@@ -107,6 +107,23 @@ def head(store: Store, name: str = layout.HEAD) -> Version | None:
     """The version a ref holds, or ``None`` before the first push."""
     _, version_id = refs.resolve(store, name)
     return read_version(store, version_id) if version_id else None
+
+
+def readable(store: Store, name: str = layout.HEAD) -> Version:
+    """The version a ref holds, checked the way a reader must (Reading, steps 1-3).
+
+    Raises `RepoError` before the first version, for a record of a format this
+    does not read, and for a version past retention or withdrawn.
+    """
+    try:
+        version = head(store, name)
+    except VersionError as exc:
+        raise RepoError(str(exc)) from exc
+    if version is None:
+        raise RepoError(f"{name} holds no version yet")
+    if is_expired(store, version.id):
+        raise RepoError(f"{version.id} is past retention or withdrawn and has no catalog")
+    return version
 
 
 def commit(

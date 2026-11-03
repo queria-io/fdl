@@ -76,6 +76,12 @@ repo.is_ancestor(store, ancestor_id, descendant) -> bool
 最初の親をたどる、ref が指すバージョンを読む、あるバージョンが別のバージョンより前にあるかを確かめる、の 3 つです。
 
 ```python
+repo.readable(store, name="HEAD") -> Version
+```
+
+ref が指すバージョンを、読み手がカタログを開く前に行う確認を済ませてから返します。最初のバージョンの前、読めない形式の `version.json`、保持期間を過ぎたか取り下げたバージョンでは `RepoError` を出します。`fdl url` はこれを使います。
+
+```python
 repo.expire(store, version_id, *, reason="retention") -> None
 repo.prune(store, newest, *, keep=1, since=None, reason="retention") -> list[str]
 ```
