@@ -121,6 +121,7 @@ def commit(
     annotations: dict | None = None,
     dataset: dict | None = None,
     allow_empty: bool = True,
+    working_data: str | None = None,
 ) -> Version:
     """Freeze the working catalog into a version under ``out_dir/<ID>/``.
 
@@ -136,6 +137,9 @@ def commit(
     data_dir), written into the frozen catalog. Every file reference must be
     relative to it, or the version would point readers at the writer's disk.
     Nothing is uploaded: that is `push`.
+
+    ``working_data`` is where the working catalog wrote its new data files,
+    when not where it records (see `checkout`): comparing reads them there.
     """
     Path(out_dir).mkdir(parents=True, exist_ok=True)
     frozen = Path(out_dir) / f".freezing-{new_id()}.duckdb"
@@ -154,7 +158,9 @@ def commit(
         # the contents can read every row of a rebuilt table.
         if not allow_empty and parent is not None and _same_description(frozen, dataset, parent):
             try:
-                unchanged = catalog.same_contents(working, parent.ducklake.snapshot_id)
+                unchanged = catalog.same_contents(
+                    working, parent.ducklake.snapshot_id, data_path=working_data
+                )
             except catalog.CatalogError as exc:
                 raise CannotCompare(str(exc)) from exc
             if unchanged:
