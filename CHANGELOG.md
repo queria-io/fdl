@@ -1,6 +1,15 @@
 # CHANGELOG
 
 
+## v0.18.2 (2026-11-03)
+
+### Bug Fixes
+
+- Refuse a version past retention in fdl url, and explain how FDL works
+  ([#35](https://github.com/queria-io/fdl/pull/35),
+  [`1130813`](https://github.com/queria-io/fdl/commit/1130813857d6dd5596c3b7fbb6ef3717b94c16f6))
+
+
 ## v0.18.1 (2026-11-03)
 
 ### Bug Fixes
