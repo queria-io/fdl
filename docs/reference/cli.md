@@ -75,7 +75,7 @@ Versions from the one the ref holds back to the first, by first parent. Each sho
 fdl url <remote> [--ref HEAD]
 ```
 
-Prints the URL of the catalog of the version the ref holds, to `ATTACH` read-only.
+Prints the URL of the catalog of the version the ref holds, to `ATTACH` read-only. A version past retention or withdrawn is refused, even where its catalog is still served.
 
 ## fdl tag
 

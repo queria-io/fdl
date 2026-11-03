@@ -168,11 +168,9 @@ def url(remote: str = Remote, ref: str = typer.Option(layout.HEAD)) -> None:
     """Where the catalog of the version a ref holds is, to ATTACH."""
     store = open_store(remote)
     try:
-        version = repo.head(store, ref)
+        version = repo.readable(store, ref)
     except ERRORS as exc:
         raise _fail(exc) from exc
-    if version is None:
-        raise _fail(repo.RepoError(f"{ref} holds no version yet"))
     typer.echo(store.url.rstrip("/") + "/" + layout.version_catalog(version.id))
 
 
