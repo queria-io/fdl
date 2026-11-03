@@ -356,3 +356,40 @@ def test_a_host_that_keeps_refs_json_itself_does_not_fail_the_push(tmp_path: Pat
     version = pushed(tmp_path, host)
     assert repo.head(host) == version
     assert host.head(layout.REFS_INDEX) is None
+
+
+def test_withdraw_removes_the_data_from_live_versions(tmp_path: Path, remote) -> None:
+    first = pushed(tmp_path, remote)
+    leaked = set(remote.list("data/"))
+    build(tmp_path / "work.sqlite", remote, "CREATE TABLE lake.main.kept AS SELECT 1 AS id")
+    second = commit(tmp_path, remote, parent=first)
+    repo.push(remote, tmp_path / "local" / second.id, second)
+    repo.tag(remote, "v2", second.id)
+
+    with pytest.raises(repo.RepoError, match="refs/heads/main"):
+        repo.plan_withdrawal(remote, [first.id, second.id])
+
+    build(tmp_path / "work.sqlite", remote, "DROP TABLE lake.main.towns")
+    clean = commit(tmp_path, remote, parent=second)
+    repo.push(remote, tmp_path / "local" / clean.id, clean)
+    kept = set(remote.list("data/")) - leaked
+    assert kept
+
+    plan = repo.withdraw(remote, [first.id, second.id])
+    assert plan.tags == ("refs/tags/v2",)
+    assert set(plan.deleted) == leaked and set(plan.still_read) == kept
+    assert set(remote.list("data/")) == kept
+    assert repo.tags(remote) == {}
+    for version_id in (first.id, second.id):
+        assert json.loads(remote.get(layout.version_expired(version_id)))["reason"] == "withdrawn"
+        assert remote.head(layout.version_catalog(version_id)) is None
+        assert remote.head(layout.version_record(version_id)) is not None
+    assert repo.head(remote) == clean
+
+
+def test_a_file_a_kept_version_still_reads_is_not_deleted(tmp_path: Path, remote) -> None:
+    first = pushed(tmp_path, remote)
+    second = pushed(tmp_path, remote, parent=first, sql="INSERT INTO lake.main.towns VALUES (2)")
+    plan = repo.plan_withdrawal(remote, [first.id])
+    assert plan.deleted == () and len(plan.still_read) == 1
+    assert repo.head(remote) == second

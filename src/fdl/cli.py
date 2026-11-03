@@ -222,5 +222,37 @@ def expire(
     typer.echo(f"Expired {len(expired)} version(s).")
 
 
+@app.command()
+def withdraw(
+    remote: str = Remote,
+    versions: list[str] = typer.Argument(..., help="The versions that hold the data"),
+    yes: bool = typer.Option(False, "--yes", help="Do it. Without this, only say what would be done"),
+) -> None:
+    """Remove versions that hold data that must not be published.
+
+    Move every branch to a version without the data first. This deletes the
+    tags that point at the versions, the data files no kept version reads,
+    and the versions' catalogs, at once. Their version.json stays.
+    """
+    store = open_store(remote)
+    try:
+        plan = repo.plan_withdrawal(store, versions)
+        for name in plan.tags:
+            typer.echo(f"delete tag   {name}")
+        for key in plan.deleted:
+            typer.echo(f"delete file  {key}")
+        for version_id in plan.versions:
+            typer.echo(f"withdraw     {version_id}")
+        for key in plan.still_read:
+            typer.echo(f"keep file    {key} (a kept version reads it)")
+        if not yes:
+            typer.echo("Nothing was changed. Run again with --yes to do this.")
+            return
+        repo.withdraw(store, versions, plan=plan)
+    except ERRORS as exc:
+        raise _fail(exc) from exc
+    typer.echo(f"Withdrew {len(plan.versions)} version(s) and deleted {len(plan.deleted)} file(s).")
+
+
 def main() -> None:
     app()

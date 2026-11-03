@@ -41,8 +41,10 @@ Withdrawal removes data that must not be published, such as personal data publis
 
 1. Make a new version without the data and move every branch that holds an affected version to it. This is a forward move: the new version's parent is the current one
 2. Delete the tags that point at affected versions
-3. For every affected version, put `expired.json` with `"reason": "withdrawn"` and delete its catalogs
-4. Delete the data files that hold the data, at once
+3. Delete the data files that hold the data, at once: those the affected versions' catalogs name and no version kept reads at its snapshot
+4. For every affected version, put `expired.json` with `"reason": "withdrawn"` and delete its catalogs
+
+The data files go before the catalogs, so a withdrawal that stops half way can be run again: the catalogs still say which files hold the data.
 
 ```json expired.json
 { "expired_at": "2026-12-01T00:00:00Z", "reason": "withdrawn" }

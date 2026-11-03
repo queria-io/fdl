@@ -95,6 +95,13 @@ repo.update_refs_index(store) -> None
 
 ref を読み直して `refs.json` を書き直します。`push`・`tag`・`delete_tag` は ref を動かしたあとにこれを呼びます。`refs.json` を自分で書くホストが 403 で断ったときは、済んだものとして扱います。
 
+```python
+repo.plan_withdrawal(store, version_ids) -> Withdrawal
+repo.withdraw(store, version_ids, *, plan=None) -> Withdrawal
+```
+
+公開してはいけないデータを持つバージョンを取り下げます。`plan_withdrawal` は何も変えずに、消すタグ、消すデータファイル、残すバージョンが読むので残すファイルを返します。`withdraw` はタグ、データファイル、カタログの順に消します。ブランチかリクエストが該当するバージョンを指しているあいだは、どちらも `RepoError` を出します。
+
 ## fdl.refs
 
 ```python

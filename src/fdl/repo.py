@@ -11,11 +11,12 @@ import hashlib
 import itertools
 import json
 import shutil
+import tempfile
 import uuid
 import warnings
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Iterator
+from typing import Iterable, Iterator
 
 from . import catalog, layout, refs
 from . import dataset as dataset_json
@@ -479,6 +480,11 @@ def expire(store: Store, version_id: str, *, reason: str = "retention") -> None:
     except Exception as exc:  # noqa: BLE001 - stores raise their own types
         if not is_conflict(exc):
             raise
+        # A version already out of retention that is withdrawn says so, for
+        # mirrors to delete what the origin deleted.
+        mark = layout.version_expired(version_id)
+        if reason == "withdrawn" and json.loads(store.get(mark)).get("reason") != reason:
+            store.put(mark, (json.dumps(record) + "\n").encode(), content_type="application/json")
     store.delete(
         [
             layout.version_catalog(version_id),
@@ -487,6 +493,103 @@ def expire(store: Store, version_id: str, *, reason: str = "retention") -> None:
             *store.list(layout.version_dir(version_id) + layout.CATALOGS_DIR),
         ]
     )
+
+
+@dataclass(frozen=True)
+class Withdrawal:
+    """What withdrawing versions does, worked out before anything is changed."""
+
+    versions: tuple[str, ...]
+    #: Tags that point at the versions, deleted first.
+    tags: tuple[str, ...]
+    #: Data files the versions' catalogs name and no version kept reads.
+    deleted: tuple[str, ...]
+    #: Data files the versions name that a kept version still reads. Kept: if
+    #: they hold the data, the version that reads them has to be withdrawn too.
+    still_read: tuple[str, ...]
+
+
+def plan_withdrawal(store: Store, version_ids: Iterable[str]) -> Withdrawal:
+    """Work out a withdrawal (see `withdraw`) without changing anything.
+
+    Refused while a branch or a request still points at one of the versions:
+    the first step, a new version without the data, is the writer's.
+    """
+    config = read_config(store)
+    affected = tuple(dict.fromkeys(version_ids))
+    for version_id in affected:
+        read_version(store, version_id)
+    tags: list[str] = []
+    for name in store.list("refs/"):
+        try:
+            ref = refs.read(store, name)
+        except (refs.RefError, layout.LayoutError):
+            continue
+        if ref is None or ref.target not in affected:
+            continue
+        if not name.startswith("refs/tags/"):
+            raise RepoError(
+                f"{name} points at {ref.target}. Move it to a version without the data first"
+            )
+        tags.append(name)
+
+    candidates: set[str] = set()
+    kept: set[str] = set()
+    with tempfile.TemporaryDirectory(prefix="fdl-") as tmp:
+        for version_id in _version_ids(store):
+            if version_id not in affected and is_expired(store, version_id):
+                continue
+            local = Path(tmp) / f"{version_id}.duckdb"
+            try:
+                local.write_bytes(store.get(layout.version_catalog(version_id)))
+            except Exception as exc:  # noqa: BLE001 - stores raise their own types
+                if is_missing(exc):
+                    continue
+                raise
+            if version_id in affected:
+                # Every file the catalog has ever named: earlier snapshots in
+                # it may hold the data too.
+                candidates.update(catalog.data_files(local))
+            else:
+                kept.update(_read_files(local, read_version(store, version_id)))
+            local.unlink()
+    return Withdrawal(
+        versions=affected,
+        tags=tuple(tags),
+        deleted=tuple(config.data_dir + key for key in sorted(candidates - kept)),
+        still_read=tuple(config.data_dir + key for key in sorted(candidates & kept)),
+    )
+
+
+def withdraw(store: Store, version_ids: Iterable[str], *, plan: Withdrawal | None = None) -> Withdrawal:
+    """Remove versions that hold data that must not be published.
+
+    Unlike retention it takes live versions and deletes their data files at
+    once. In the spec's order, except that the data files go before the
+    catalogs, so a run that stops half way can be run again while the
+    catalogs still say which files they are. `version.json` stays.
+    """
+    plan = plan or plan_withdrawal(store, version_ids)
+    for name in plan.tags:
+        refs.delete(store, name)
+    if plan.tags:
+        update_refs_index(store)
+    store.delete(list(plan.deleted))
+    for version_id in plan.versions:
+        expire(store, version_id, reason="withdrawn")
+    return plan
+
+
+def _version_ids(store: Store) -> list[str]:
+    suffix = "/" + layout.VERSION_RECORD
+    return [key[len("versions/") : -len(suffix)] for key in store.list("versions/") if key.endswith(suffix)]
+
+
+def _read_files(local: Path, version: Version) -> set[str]:
+    """The data and delete files a reader of the version reads, at its snapshot."""
+    tables = catalog.table_files(local, version.ducklake.snapshot_id).values()
+    files = [file for table in tables for file in table["files"]]
+    return {file["path"] for file in files} | {file["deletes"]["path"] for file in files if "deletes" in file}
 
 
 def prune(

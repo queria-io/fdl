@@ -95,6 +95,13 @@ repo.update_refs_index(store) -> None
 
 Rewrite `refs.json` from the refs. `push`, `tag` and `delete_tag` call it after moving a ref. A 403 from a host that keeps `refs.json` itself is taken as done.
 
+```python
+repo.plan_withdrawal(store, version_ids) -> Withdrawal
+repo.withdraw(store, version_ids, *, plan=None) -> Withdrawal
+```
+
+Withdraw versions that hold data that must not be published. `plan_withdrawal` changes nothing and returns the tags, the data files to delete, and the files kept because a kept version reads them. `withdraw` deletes the tags, the data files and the catalogs, in that order. Both raise `RepoError` while a branch or a request points at one of the versions.
+
 ## fdl.refs
 
 ```python
