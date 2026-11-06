@@ -206,7 +206,7 @@ A dataset can carry longer text than `description`, with images, as files: a doc
 - `description` stays a short plain text. A reader that does not read documents still has it, and lists show it
 - A reader checks a file's sha256 before it shows it, and shows a link that names no attachment as broken
 - A writer keeps documents and images as files beside its YAML and names them by path. Its tool uploads them and writes `attachments`
-- Attachments are what `dataset.json` lists. Files that the rows of a table point at, such as images or PDFs collected as data, are not covered by this specification yet
+- Attachments are what `dataset.json` lists. Files that the rows of a table point at, such as images or PDFs collected as data, are not attachments: a column holds their URL, and the files may be stored anywhere. FDL does not manage them. A `sha256` column beside the URL lets a reader check the file and find it again if the URL changes
 
 ## Catalogs in other formats
 
