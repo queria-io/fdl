@@ -175,3 +175,37 @@ def test_media_type_does_not_depend_on_the_machine(path: str, expected: str) -> 
 def test_asset_columns_that_cannot_be_read_are_an_object_error(tmp_path: Path) -> None:
     with pytest.raises(objects.ObjectError, match="could not read the asset columns"):
         objects.asset_values(tmp_path / "missing.ducklake", [("main", "t", "c")], data_path=str(tmp_path) + "/")
+
+
+def test_withdrawal_deletes_the_assets_only_the_withdrawn_versions_reach(tmp_path: Path, repository) -> None:
+    store, working = repository
+    folder = tmp_path / "files"
+    folder.mkdir()
+    (folder / "kept.pdf").write_bytes(b"%PDF-kept")
+    (folder / "leak.pdf").write_bytes(b"%PDF-leak")
+    (tmp_path / "files.csv").write_text(run("assets", folder))
+    (tmp_path / "README.md").write_text("# Reports\n")
+    (tmp_path / "dataset.yml").write_text(
+        "name: reports\ntitle: Reports\ntables:\n"
+        "  - schema: main\n    name: reports\n    fields:\n      - name: sha256\n        asset: true\n"
+    )
+    write(
+        working,
+        store,
+        f"CREATE TABLE lake.main.reports AS SELECT path, sha256 FROM read_csv('{tmp_path / 'files.csv'}', all_varchar = true)",
+    )
+    run("commit", working, "-m", "leak", "--author", "t", "--assets", folder)
+    leaked = repo.head(store, "refs/heads/main")
+    write(working, store, "DELETE FROM lake.main.reports WHERE path = 'leak.pdf'")
+    run("commit", working, "-m", "clean", "--author", "t")
+    rows = {row["path"]: row["sha256"] for row in csv.DictReader(io.StringIO(run("assets", folder)))}
+    readme = objects.asset_key(objects.sha256_of(tmp_path / "README.md"))
+
+    plan = repo.plan_withdrawal(store, [leaked.id])
+    assert objects.asset_key(rows["leak.pdf"]) in plan.deleted
+    assert {objects.asset_key(rows["kept.pdf"]), readme} <= set(plan.still_read)
+
+    run("withdraw", store.root, leaked.id, "--yes")
+    assert store.head(objects.asset_key(rows["leak.pdf"])) is None
+    assert store.head(objects.asset_key(rows["kept.pdf"])) is not None
+    assert store.head(readme) is not None

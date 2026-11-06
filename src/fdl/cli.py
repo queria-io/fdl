@@ -294,14 +294,14 @@ def withdraw(
     """Remove versions that hold data that must not be published.
 
     Move every branch to a version without the data first. This deletes the
-    tags that point at the versions, the data files no kept version reads,
-    and the versions' catalogs, at once. Their version.json stays. A version
-    already past retention has no catalog, so then every data file no live
-    version reads is deleted.
+    tags that point at the versions, the data files and assets no kept version
+    reaches, and the versions' catalogs, at once. Their version.json stays. A
+    version already past retention has no catalog, so then every data file and
+    asset no live version reaches is deleted.
     """
     store = open_store(remote)
     try:
-        plan = repo.plan_withdrawal(store, versions)
+        plan = repo.plan_withdrawal(store, versions, setup=_read_setup(store))
         for name in plan.tags:
             typer.echo(f"delete tag   {name}")
         for key in plan.deleted:
@@ -309,7 +309,7 @@ def withdraw(
         for version_id in plan.versions:
             typer.echo(f"withdraw     {version_id}")
         for key in plan.still_read:
-            typer.echo(f"keep file    {key} (a kept version reads it)")
+            typer.echo(f"keep file    {key} (a kept version reaches it)")
         if not yes:
             typer.echo("Nothing was changed. Run again with --yes to do this.")
             return

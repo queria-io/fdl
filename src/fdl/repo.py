@@ -622,18 +622,23 @@ class Withdrawal:
     versions: tuple[str, ...]
     #: Tags that point at the versions, deleted first.
     tags: tuple[str, ...]
-    #: Data files the versions' catalogs name and no version kept reads.
+    #: Shared objects (data files and assets) the versions reach and no kept
+    #: version reaches, as store keys.
     deleted: tuple[str, ...]
-    #: Data files the versions name that a kept version still reads. Kept: if
-    #: they hold the data, the version that reads them has to be withdrawn too.
+    #: Shared objects the versions reach that a kept version still reaches. Kept:
+    #: if they hold the data, the version that reaches them has to be withdrawn too.
     still_read: tuple[str, ...]
 
 
-def plan_withdrawal(store: Store, version_ids: Iterable[str]) -> Withdrawal:
+def plan_withdrawal(store: Store, version_ids: Iterable[str], *, setup: Iterable[str] = ()) -> Withdrawal:
     """Work out a withdrawal (see `withdraw`) without changing anything.
 
     Refused while a branch or a request still points at one of the versions:
     the first step, a new version without the data, is the writer's.
+
+    Shared objects are data files and assets. ``setup`` runs before a
+    catalog is attached to read its asset columns: a ``CREATE SECRET`` for
+    data files in private storage, say.
     """
     config = read_config(store)
     affected = tuple(dict.fromkeys(version_ids))
@@ -653,17 +658,28 @@ def plan_withdrawal(store: Store, version_ids: Iterable[str]) -> Withdrawal:
             )
         tags.append(name)
 
+    setup = list(setup)
+    # Store keys: data files under the data directory, assets under assets/.
     candidates: set[str] = set()
     kept: set[str] = set()
     catalogless = False
     with tempfile.TemporaryDirectory(prefix="fdl-") as tmp:
         for version_id in _version_ids(store):
             if version_id in affected:
+                version = read_version(store, version_id)
                 local = _fetch_catalog(store, version_id, Path(tmp))
                 if local is not None:
                     # Every file the catalog has ever named: earlier snapshots
                     # in it may hold the data too.
-                    candidates.update(catalog.data_files(local))
+                    candidates.update(config.data_dir + key for key in catalog.data_files(local))
+                    try:
+                        candidates.update(_reached_assets(store, version, local, setup))
+                    except objects.ObjectError:
+                        # A run stopped half way may have deleted the data
+                        # files that held its asset columns: then, as for a
+                        # version without a catalog, every asset no live
+                        # version reaches goes.
+                        catalogless = True
                     local.unlink()
                 else:
                     catalogless = True
@@ -673,40 +689,79 @@ def plan_withdrawal(store: Store, version_ids: Iterable[str]) -> Withdrawal:
             version = read_version(store, version_id)
             # files.json lists what the version reads, without its catalog.
             indexed = _indexed_files(store, version)
+            local = None
+            if indexed is None or _asset_columns(store, version):
+                local = _fetch_catalog(store, version_id, Path(tmp))
             if indexed is not None:
-                kept.update(indexed)
-                continue
-            local = _fetch_catalog(store, version_id, Path(tmp))
+                kept.update(config.data_dir + key for key in indexed)
+            elif local is not None:
+                kept.update(config.data_dir + key for key in _read_files(local, version))
+            kept.update(_reached_assets(store, version, local, setup))
             if local is not None:
-                kept.update(_read_files(local, version))
                 local.unlink()
     if catalogless:
-        # A version already past retention no longer says which files it
-        # named. Those no live version reads are waiting for the grace period
-        # anyway, so all of them go now.
-        candidates.update(key[len(config.data_dir) :] for key in store.list(config.data_dir))
+        # A version already past retention no longer says which objects it
+        # reached. Those no live version reaches are waiting for the grace
+        # period anyway, so all of them go now.
+        candidates.update(store.list(config.data_dir))
+        candidates.update(store.list(layout.ASSETS_DIR))
     return Withdrawal(
         versions=affected,
         tags=tuple(tags),
-        deleted=tuple(config.data_dir + key for key in sorted(candidates - kept)),
-        still_read=tuple(config.data_dir + key for key in sorted(candidates & kept)),
+        deleted=tuple(sorted(candidates - kept)),
+        still_read=tuple(sorted(candidates & kept)),
     )
+
+
+def _asset_columns(store: Store, version: Version) -> list[tuple[str, str, str]]:
+    """The asset columns the version's `dataset.json` marks."""
+    if version.dataset is None:
+        return []
+    try:
+        described = json.loads(store.get(layout.version_dir(version.id) + version.dataset.path))
+    except Exception as exc:  # noqa: BLE001 - stores raise their own types
+        if is_missing(exc):
+            return []
+        raise
+    return objects.asset_columns(described)
+
+
+def _reached_assets(store: Store, version: Version, local: Path | None, setup: list[str]) -> set[str]:
+    """The asset keys the version reaches: its `tree.json` and its asset columns."""
+    reached: set[str] = set()
+    if version.tree is not None:
+        try:
+            listed = json.loads(store.get(layout.version_dir(version.id) + version.tree.path))
+        except Exception as exc:  # noqa: BLE001 - stores raise their own types
+            if not is_missing(exc):
+                raise
+        else:
+            reached.update(objects.asset_key(item["sha256"]) for item in listed["entries"])
+    columns = _asset_columns(store, version)
+    if columns and local is not None:
+        values = objects.asset_values(local, columns, data_path=data_url(store), setup=setup)
+        reached.update(objects.asset_key(sha256) for sha256 in values)
+    return reached
 
 
 def withdraw(store: Store, version_ids: Iterable[str], *, plan: Withdrawal | None = None) -> Withdrawal:
     """Remove versions that hold data that must not be published.
 
-    Unlike retention it takes live versions and deletes their data files at
-    once. In the spec's order, except that the data files go before the
+    Unlike retention it takes live versions and deletes their data files and
+    assets at once. In the spec's order: the shared objects go before the
     catalogs, so a run that stops half way can be run again while the
-    catalogs still say which files they are. `version.json` stays.
+    catalogs still say which objects they are. `version.json` stays.
     """
     plan = plan or plan_withdrawal(store, version_ids)
     for name in plan.tags:
         refs.delete(store, name)
     if plan.tags:
         update_refs_index(store)
-    store.delete(list(plan.deleted))
+    # Assets first: the data files are what says which assets the versions'
+    # rows reach, so a run that stops half way can still work them out.
+    assets = [key for key in plan.deleted if key.startswith(layout.ASSETS_DIR)]
+    store.delete(assets)
+    store.delete([key for key in plan.deleted if not key.startswith(layout.ASSETS_DIR)])
     for version_id in plan.versions:
         expire(store, version_id, reason="withdrawn")
     return plan
