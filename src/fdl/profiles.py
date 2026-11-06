@@ -113,13 +113,29 @@ def build(working: Path, wanted: Iterable[dict[str, Any]], *, data_path: str, se
 
 
 def reusable(previous: bytes, table: dict[str, Any]) -> bool:
-    """Whether a parent's profile describes ``table`` as it is: the same columns and types."""
+    """Whether a parent's profile describes ``table`` as it is and as this writer would.
+
+    The same columns and types, and `values` listed by the current `ALL_VALUES`:
+    a profile written under another limit is made again rather than carried forward.
+    """
     try:
         held = json.loads(previous).get("columns", [])
     except ValueError:
         return False
-    return [{"name": c.get("name"), "type": c.get("type")} for c in held] == columns_of(table)
+    if [{"name": c.get("name"), "type": c.get("type")} for c in held] != columns_of(table):
+        return False
+    return all(_listed_as_now(c) for c in held)
 
+
+def _listed_as_now(column: dict[str, Any]) -> bool:
+    values, distinct = column.get("values"), column.get("distinct_count")
+    if values is None:
+        return True
+    if not isinstance(values, list) or not isinstance(distinct, int):
+        return False
+    if len(values) == distinct:
+        return distinct <= ALL_VALUES
+    return distinct > ALL_VALUES and len(values) <= TOP_VALUES
 
 
 def _load_spatial(con) -> bool:

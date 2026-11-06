@@ -196,7 +196,7 @@ Each table's profile is at `versions/<ID>/profiles/<schema>/<table>.json`. A tab
 - `head` holds the first rows the table returns, as JSON objects, leaving out geometry and columns whose values have no JSON form
 - `geometry` describes the first geometry column, when the writer could read it: how many rows have a shape, the `bbox` of all of them (`[xmin, ymin, xmax, ymax]` in the column's coordinates), the geometry types present, and a GeoJSON `FeatureCollection` of a random sample of simplified shapes for drawing a map
 - A writer may leave out any key it cannot compute. A reader ignores keys it does not know
-- A writer reuses its parent's profile for a table whose data files (in `files.json`) and columns are the parent's, so a commit reads only the tables that changed
+- A writer reuses its parent's profile for a table whose data files (in `files.json`) and columns are the parent's, so a commit reads only the tables that changed. It makes the profile again when the parent's `values` follow another limit than its own
 - Profiles are part of the version and do not change with it. They are deleted with the catalogs when the version is taken out of retention
 
 ## The frozen catalog
