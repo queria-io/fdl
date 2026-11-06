@@ -55,7 +55,7 @@ Withdrawal removes data that must not be published, such as personal data publis
 
 1. Make a new version without the data and move every branch that holds an affected version to it. This is a forward move: the new version's parent is the current one
 2. Delete the tags that point at affected versions
-3. Delete the shared objects that hold the data, at once, such as a data file with personal data or a screenshot showing it: those an affected version reaches and no version kept reaches. Every version that reaches such an object is an affected version
+3. Delete the shared objects that hold the data, at once, such as a data file with personal data or a screenshot showing it: those an affected version reaches and no version kept reaches. Every version that reaches such an object is an affected version. An affected version already past retention has no catalog to say which objects it reached, so when there is one, every shared object no live version reaches is deleted at once too
 4. For every affected version, put `expired.json` with `"reason": "withdrawn"` and delete its catalogs
 
 The shared objects go before the catalogs, so a withdrawal that stops half way can be run again: the catalogs still say which files hold the data.

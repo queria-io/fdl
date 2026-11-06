@@ -295,7 +295,9 @@ def withdraw(
 
     Move every branch to a version without the data first. This deletes the
     tags that point at the versions, the data files no kept version reads,
-    and the versions' catalogs, at once. Their version.json stays.
+    and the versions' catalogs, at once. Their version.json stays. A version
+    already past retention has no catalog, so then every data file no live
+    version reads is deleted.
     """
     store = open_store(remote)
     try:

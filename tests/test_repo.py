@@ -387,6 +387,23 @@ def test_withdraw_removes_the_data_from_live_versions(tmp_path: Path, remote) ->
     assert repo.head(remote) == clean
 
 
+def test_withdrawing_a_version_past_retention_deletes_unread_files_at_once(tmp_path: Path, remote) -> None:
+    first = pushed(tmp_path, remote)
+    leaked = set(remote.list("data/"))
+    build(tmp_path / "work.sqlite", remote, "DROP TABLE lake.main.towns; CREATE TABLE lake.main.kept AS SELECT 1 AS id")
+    second = commit(tmp_path, remote, parent=first)
+    repo.push(remote, tmp_path / "local" / second.id, second)
+    kept = set(remote.list("data/")) - leaked
+    repo.expire(remote, first.id)
+    assert leaked <= set(remote.list("data/"))  # waiting for the grace period
+
+    plan = repo.withdraw(remote, [first.id])
+    assert set(plan.deleted) == leaked
+    assert set(remote.list("data/")) == kept
+    assert json.loads(remote.get(layout.version_expired(first.id)))["reason"] == "withdrawn"
+    assert repo.head(remote) == second
+
+
 def test_a_file_a_kept_version_still_reads_is_not_deleted(tmp_path: Path, remote) -> None:
     first = pushed(tmp_path, remote)
     second = pushed(tmp_path, remote, parent=first, sql="INSERT INTO lake.main.towns VALUES (2)")
