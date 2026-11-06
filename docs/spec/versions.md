@@ -149,6 +149,7 @@ The writer describes; the writer's tool checks the description against the froze
   "name": "population",
   "title": "Population by town",
   "description": "Census population of each town, by age and sex",
+  "document": "docs/README.md",
   "keywords": ["population", "census"],
   "language": "en",
   "homepage": "https://example.org/population",
@@ -166,6 +167,7 @@ The writer describes; the writer's tool checks the description against the froze
       "name": "population",
       "title": "Population",
       "description": "One row per town, age group and sex",
+      "document": "docs/population.md",
       "primary_key": ["town_code", "age_group", "sex"],
       "depends_on": [],
       "sql": "SELECT …",
@@ -174,6 +176,11 @@ The writer describes; the writer's tool checks the description against the froze
         { "name": "town_code", "title": "Town code", "description": "…", "type": "varchar", "nullable": false }
       ]
     }
+  ],
+  "attachments": [
+    { "path": "docs/README.md", "sha256": "5e88…", "bytes": 3120, "media_type": "text/markdown" },
+    { "path": "docs/population.md", "sha256": "a41f…", "bytes": 1804, "media_type": "text/markdown" },
+    { "path": "docs/images/towns.png", "sha256": "c9d2…", "bytes": 48211, "media_type": "image/png" }
   ],
   "annotations": {}
 }
@@ -188,6 +195,18 @@ The writer describes; the writer's tool checks the description against the froze
 - Keys this specification does not define are refused. What the format does not interpret goes under `annotations`, keyed by the name of whoever reads it, at the top, in a table or in a field. Writers keep it as written
 - Versions written before `annotations` had its name carry it as `extensions`. A reader reads `extensions` as `annotations`
 - What a license or a source says is the writer's claim. A host may check it before it publishes
+
+### Documents and attachments
+
+A dataset can carry longer text than `description`, with images, as files: a document for the dataset and one for each table. They are published with the version and do not change with it. Their history is kept where the writer edits them, such as a Git repository; FDL keeps only what was published.
+
+- `attachments` lists the files: the path the writer gave, and the file's sha256, size and media type. Paths are relative, separated by `/`, and unique within the list
+- Each file is stored at `attachments/<sha256>` at the root (see [Layout](/spec/layout#paths)). The same content is stored once, and versions share it
+- `document`, at the top or in a table, is the path of an attachment in Markdown (`text/markdown`). A link or image in it with a relative URL refers to another attachment, resolved against the document's own path
+- `description` stays a short plain text. A reader that does not read documents still has it, and lists show it
+- A reader checks a file's sha256 before it shows it, and shows a link that names no attachment as broken
+- A writer keeps documents and images as files beside its YAML and names them by path. Its tool uploads them and writes `attachments`
+- Many files that belong to the rows of a table, such as images or PDFs collected as data, are not attachments. They go into the table, for example as a `BLOB` column
 
 ## Catalogs in other formats
 

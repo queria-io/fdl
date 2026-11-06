@@ -27,6 +27,7 @@ description: リポジトリのファイル、そのパス、fdl.json の中身�
     <others>                       ホストが足すファイル（プレビューなど）
   <data_dir><schema>/<table>/ducklake-<uuid>.parquet   データファイル（共有、変えない）
   sources/<sha256>                 元のファイル（任意、非公開でもよい）
+  attachments/<sha256>             バージョンの dataset.json が並べるドキュメントと画像（共有、変更しない）
 ```
 
 `HEAD` と `refs/` の下のファイルには、Git と同じく拡張子を付けません。中身は UTF-8 のテキストです。

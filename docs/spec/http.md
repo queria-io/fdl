@@ -26,7 +26,7 @@ A host can take pushes over HTTP, so a writer needs no keys to its storage. The 
 
 ## Uploading straight to storage
 
-A host may hand out upload URLs so that files go straight to its storage rather than through it, as Git LFS's batch API does. Only files that are written once (data files and the files of a version) go this way. Refs are always written through the host.
+A host may hand out upload URLs so that files go straight to its storage rather than through it, as Git LFS's batch API does. Only files that are written once (data files, attachments and the files of a version) go this way. Refs are always written through the host.
 
 `POST <root>/?batch` with the files a writer is about to upload:
 

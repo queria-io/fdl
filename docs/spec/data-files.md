@@ -1,6 +1,6 @@
 ---
 title: Data files
-description: Rules for data files and source files, when a data file may be deleted, and how a version is taken out of retention.
+description: Rules for data files, attachments and source files, when a data file may be deleted, and how a version is taken out of retention.
 ---
 
 ## Data files
@@ -41,7 +41,7 @@ Withdrawal removes data that must not be published, such as personal data publis
 
 1. Make a new version without the data and move every branch that holds an affected version to it. This is a forward move: the new version's parent is the current one
 2. Delete the tags that point at affected versions
-3. Delete the data files that hold the data, at once: those the affected versions' catalogs name and no version kept reads at its snapshot
+3. Delete the data files that hold the data, at once: those the affected versions' catalogs name and no version kept reads at its snapshot, and the attachments that hold it, such as a screenshot showing personal data
 4. For every affected version, put `expired.json` with `"reason": "withdrawn"` and delete its catalogs
 
 The data files go before the catalogs, so a withdrawal that stops half way can be run again: the catalogs still say which files hold the data.
@@ -52,6 +52,13 @@ The data files go before the catalogs, so a withdrawal that stops half way can b
 
 - `version.json` stays, as with retention. If the record itself holds the data (in `message` or `inputs`), it is deleted too, and the history shows a missing parent at that point
 - Mirrors keep their own copies. A mirror that copies `expired.json` with `"reason": "withdrawn"` deletes the catalogs and the data files the origin deleted. The origin cannot force this; the host tells the mirrors it knows of
+
+## Attachments
+
+- `attachments/<sha256>`, named by the lower-case hex sha256 of the content, and listed in a version's `dataset.json` (see [Versions](/spec/versions#documents-and-attachments))
+- Never overwritten. Several versions may list the same file
+- Deleted on the same conditions as a data file: no `dataset.json` of a live version lists it, and it was placed longer ago than the grace period.
+- Withdrawal deletes an attachment at once, like a data file, when it holds data that must not be published
 
 ## Source files
 

@@ -38,7 +38,7 @@ A table rebuilt from the same input is written to new data files, so comparing f
 
 ## Order of writes
 
-1. Data files
+1. Data files and attachments
 2. `versions/<ID>/ducklake.duckdb` (and any `catalogs/`)
 3. `versions/<ID>/dataset.json` and `versions/<ID>/files.json`
 4. `versions/<ID>/version.json`

@@ -149,6 +149,7 @@ DuckLake を使わずに Parquet ファイルを読む読み手は、`deletes` �
   "name": "population",
   "title": "Population by town",
   "description": "Census population of each town, by age and sex",
+  "document": "docs/README.md",
   "keywords": ["population", "census"],
   "language": "en",
   "homepage": "https://example.org/population",
@@ -166,6 +167,7 @@ DuckLake を使わずに Parquet ファイルを読む読み手は、`deletes` �
       "name": "population",
       "title": "Population",
       "description": "One row per town, age group and sex",
+      "document": "docs/population.md",
       "primary_key": ["town_code", "age_group", "sex"],
       "depends_on": [],
       "sql": "SELECT …",
@@ -174,6 +176,11 @@ DuckLake を使わずに Parquet ファイルを読む読み手は、`deletes` �
         { "name": "town_code", "title": "Town code", "description": "…", "type": "varchar", "nullable": false }
       ]
     }
+  ],
+  "attachments": [
+    { "path": "docs/README.md", "sha256": "5e88…", "bytes": 3120, "media_type": "text/markdown" },
+    { "path": "docs/population.md", "sha256": "a41f…", "bytes": 1804, "media_type": "text/markdown" },
+    { "path": "docs/images/towns.png", "sha256": "c9d2…", "bytes": 48211, "media_type": "image/png" }
   ],
   "annotations": {}
 }
@@ -188,6 +195,18 @@ DuckLake を使わずに Parquet ファイルを読む読み手は、`deletes` �
 - この仕様が決めていないキーは断る。形式が解釈しない情報は、最上位・表・列それぞれの `annotations` に、読む側の名前をキーにして置く。書き手は書かれたまま残す
 - `annotations` という名前になる前のバージョンは、同じものを `extensions` に持つ。読み手は `extensions` を `annotations` として読む
 - ライセンスや出典に書いたことは書き手の主張で、ホストは公開する前に確かめてよい
+
+### ドキュメントと添付ファイル
+
+データセットは、`description` より長い文章を画像と一緒にファイルとして持てる。データセット全体のドキュメントと、テーブルごとのドキュメントを置ける。これらはバージョンと一緒に公開し、そのバージョンの中では変わらない。履歴は書き手が編集する場所（Git のリポジトリなど）で持ち、FDL は公開したものだけを持つ。
+
+- `attachments` にファイルを並べる。書き手が付けたパスと、ファイルの sha256・大きさ・メディアタイプを持つ。パスは相対パスで `/` で区切り、一覧の中で重複しない
+- 各ファイルはルートの `attachments/<sha256>` に置く（[レイアウト](/ja/spec/layout#パス)）。同じ中身は 1 回だけ置き、複数のバージョンで共有する
+- 最上位とテーブルの `document` は、Markdown（`text/markdown`）の添付ファイルのパス。その中の相対 URL のリンクや画像は別の添付ファイルを指し、ドキュメント自身のパスを基準に解決する
+- `description` は短いテキストのまま残す。ドキュメントを読まない読み手もこれを持ち、一覧にはこれを表示する
+- 読み手は、ファイルを表示する前に sha256 を確認する。どの添付ファイルも指さないリンクは、リンク切れとして表示する
+- 書き手は、ドキュメントと画像を YAML の隣にファイルとして置き、パスで指す。書き手のツールがそれをアップロードし、`attachments` を書く
+- テーブルの行に属する大量のファイル（データとして集めた画像や PDF など）は添付ファイルにしない。`BLOB` の列などでテーブルに入れる
 
 ## ほかの形式のカタログ
 

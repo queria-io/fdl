@@ -27,6 +27,7 @@ Paths are relative to the root, lower case, and separated by `/`. The root is wh
     <others>                       files a host adds, such as previews
   <data_dir><schema>/<table>/ducklake-<uuid>.parquet   data files (shared, immutable)
   sources/<sha256>                 source files (optional, may be private)
+  attachments/<sha256>             documents and images a version's dataset.json lists (shared, immutable)
 ```
 
 `HEAD` and everything under `refs/` have no extension, as in Git. Their content is UTF-8 text.

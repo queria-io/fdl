@@ -38,7 +38,7 @@ description: チェックアウト、コミット、push。作業カタログ、
 
 ## 書き込みの順番
 
-1. データファイル
+1. データファイルと添付ファイル
 2. `versions/<ID>/ducklake.duckdb`（と `catalogs/`）
 3. `versions/<ID>/dataset.json` と `versions/<ID>/files.json`
 4. `versions/<ID>/version.json`
