@@ -29,6 +29,8 @@ EXPIRED = "expired.json"
 CATALOGS_DIR = "catalogs/"
 #: The other files of a version (its README, say), by path to the asset that holds each (optional).
 TREE = "tree.json"
+#: A summary of each table, made from the data, under the version (optional).
+PROFILES_DIR = "profiles/"
 #: Files the rows of a table point at, by sha256 (shared).
 ASSETS_DIR = "assets/"
 

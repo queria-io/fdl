@@ -174,9 +174,17 @@ def asset_columns(described: dict[str, Any]) -> list[tuple[str, str, str]]:
 
 
 def asset_values(
-    working: Path, columns: Iterable[tuple[str, str, str]], *, data_path: str
+    working: Path,
+    columns: Iterable[tuple[str, str, str]],
+    *,
+    data_path: str,
+    setup: Iterable[str] = (),
 ) -> set[str]:
-    """The sha256 the marked columns hold in the working catalog's last snapshot."""
+    """The sha256 the marked columns hold in the working catalog's last snapshot.
+
+    ``setup`` runs before the catalog is attached: a ``CREATE SECRET`` for data
+    files in private storage, say.
+    """
     import duckdb
 
     columns = list(columns)
@@ -189,6 +197,8 @@ def asset_values(
     found: set[str] = set()
     con = duckdb.connect()
     try:
+        for statement in setup:
+            con.execute(statement)
         for statement in catalog.attach_sql(Path(working), alias="lake", data_path=data_path, read_only=True):
             if statement:
                 con.execute(statement)

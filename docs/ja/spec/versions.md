@@ -154,6 +154,51 @@ DuckLake を使わずに Parquet ファイルを読む読み手は、`deletes` �
 - 書き手は、ファイルを編集する場所（Git のリポジトリの中の YAML の隣など）に置き、書き手のツールが `tree.json` を書く。書き手が手で書くものではない
 - `tree.json` はバージョンの一部で、そのバージョンの中では変わらない。保持期間から外すときはカタログと一緒に消す
 
+## profiles/
+
+profile は、`ducklake.snapshot_id` の時点の 1 つのテーブルの要約です。行数、列ごとの中身、先頭の行、図形の列を持つテーブルでは図形の範囲と見本を持ちます。読み手はこの小さなファイル 1 つで、カタログを開かずデータも読まずにテーブルを表示できます。ホストは検索の索引をこれから作れます。profile が持つのはデータから測った事実で、列が何を意味するかは書き手が `dataset.json` に書きます。`files.json` と同じくカタログとデータから作るもので、食い違うときはカタログとデータが正です。任意で、読み手は profile が無くても読めなければなりません。
+
+テーブルごとの profile は `versions/<ID>/profiles/<schema>/<table>.json` に置きます。スキーマ名かテーブル名が空・`.`・`..` のとき、または `/` を含むときは置きません。ビューには置きません。
+
+```json profiles/main/towns.json
+{
+  "rows": 1741,
+  "columns": [
+    { "name": "town_code", "type": "varchar", "null_count": 0, "distinct_count": 1741,
+      "values": [{ "value": "082201", "count": 1 }] },
+    { "name": "prefecture", "type": "varchar", "null_count": 0, "distinct_count": 2,
+      "values": [{ "value": "茨城県", "count": 1200 }, { "value": "栃木県", "count": 541 }] },
+    { "name": "population", "type": "int64", "null_count": 3, "distinct_count": 1650,
+      "min": 0, "max": 84211, "mean": 3120.5, "std": 4410.2, "q1": 420, "median": 1630, "q3": 3990,
+      "values": [{ "value": "0", "count": 12 }],
+      "histogram": [{ "start": 0, "end": 4210.55, "count": 1302 }] },
+    { "name": "surveyed_on", "type": "date", "null_count": 0, "distinct_count": 1,
+      "min": "2025-10-01", "max": "2025-10-01", "span_days": 0,
+      "values": [{ "value": "2025-10-01", "count": 1741 }] },
+    { "name": "coastal", "type": "boolean", "null_count": 0, "true_count": 210, "false_count": 1531 },
+    { "name": "geom", "type": "geometry" }
+  ],
+  "head": [{ "town_code": "082201", "prefecture": "茨城県", "population": 2210, "surveyed_on": "2025-10-01", "coastal": false }],
+  "geometry": {
+    "column": "geom",
+    "count": 1741,
+    "bbox": [139.69, 35.74, 140.85, 37.15],
+    "types": ["MULTIPOLYGON", "POLYGON"],
+    "sample": { "type": "FeatureCollection", "features": [] }
+  }
+}
+```
+
+- `rows` はテーブルの行数。`columns` にはカタログの順にすべての列を並べ、`name` と `type`（DuckLake の型名）は `dataset.json` と同じにする
+- 図形の列を除くすべての列が `null_count` を持つ。数値・テキスト・日付と時刻の列は `distinct_count` と `values` を持つ。大きなテーブルの `distinct_count` は推定値のことがある
+- `values` は、値（テキスト）とその値を持つ行の数を、多い順、同数なら値の順に並べる。列が持つ異なる値が 1,000 以下なら全部を並べ、そのとき `distinct_count` は正確な数になる。読み手は、`values` の長さが `distinct_count` と等しいことで全部の一覧だと判定する。それより多い列は上位 10 件だけを並べる。ホストは全部の一覧を、地域コードや名前などの値で検索できる
+- 数値の列は `min`・`max`・`mean`・`std`、四分位数の `q1`・`median`・`q3`、`min` から `max` までを等幅に区切った `histogram` を持つ。日付と時刻の列は `min` と `max` をテキストで持ち、日付とタイムスタンプは `span_days` も持つ。真偽値の列は `true_count` と `false_count` を持つ
+- `head` は、テーブルが返す先頭の行を JSON のオブジェクトで持つ。図形の列と、値を JSON で表せない列は入れない
+- `geometry` は、書き手が読めたときに、最初の図形の列を説明する。図形を持つ行の数、全体の `bbox`（列の座標で `[xmin, ymin, xmax, ymax]`）、含まれる図形の種類、地図を描くための、無作為に選んで簡略化した図形の GeoJSON `FeatureCollection` を持つ
+- 書き手は計算できないキーを省いてよい。読み手は知らないキーを無視する
+- 書き手は、データファイル（`files.json`）と列が親と同じテーブルには親の profile を使い回す。コミットで読むのは変わったテーブルだけになる
+- profile はバージョンの一部で、そのバージョンの中では変わらない。保持期間から外すときはカタログと一緒に消す
+
 ## 固めたカタログ
 
 `ducklake.duckdb` は、DuckDB のファイル形式の DuckLake カタログです。

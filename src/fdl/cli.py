@@ -148,12 +148,16 @@ def commit(
             typer.echo(f"warning: could not tell whether anything changed ({exc}); committing", err=True)
             version = make(True)
         local = Path(state["data"]) if state.get("data") else None
+        reading = Path(state["data"]).resolve().as_posix() + "/" if local else repo.data_url(store)
+        setup = _read_setup(store)
         described = json.loads((out / version.id / layout.DATASET).read_text(encoding="utf-8"))
         held = objects.asset_values(
-            working,
-            objects.asset_columns(described),
-            data_path=Path(state["data"]).resolve().as_posix() + "/" if local else repo.data_url(store),
+            working, objects.asset_columns(described), data_path=reading, setup=setup
         )
+        try:
+            repo.write_profiles(store, out / version.id, parent, working, data_path=reading, setup=setup)
+        except Exception as exc:  # noqa: BLE001 - a profile is never worth a failed commit
+            typer.echo(f"warning: tables were not profiled ({exc})", err=True)
         local_objects = objects.ByContent(
             {item["sha256"]: root / item["path"] for item in listed},
             assets_dir,
@@ -178,6 +182,16 @@ def commit(
         shutil.rmtree(out, ignore_errors=True)
     _write_state(working, {**state, "base": version.id})
     typer.echo(f"{state['ref']} -> {version.id} (version {version.seq})")
+
+
+def _read_setup(store) -> list[str]:
+    """What DuckDB needs to read the repository's data files: the token, over HTTP."""
+    token = getattr(store, "token", None)
+    if not token:
+        return []
+    scope = store.url.replace("'", "''")
+    secret = token.replace("'", "''")
+    return [f"CREATE SECRET fdl_remote (TYPE http, BEARER_TOKEN '{secret}', SCOPE '{scope}')"]
 
 
 @app.command()
