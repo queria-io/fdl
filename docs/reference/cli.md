@@ -108,7 +108,7 @@ fdl tag <remote> <name> --delete
 fdl withdraw <remote> <version>... [--yes]
 ```
 
-Removes versions that hold data that must not be published, such as personal data published by mistake (see [Withdrawal](/spec/data-files#withdrawal)). First commit a version without the data, so that no branch points at an affected version. The command then deletes the tags that point at the versions, the data files their catalogs name that no kept version reads, and their catalogs, and puts `expired.json` with `"reason": "withdrawn"`. `version.json` stays.
+Removes versions that hold data that must not be published, such as personal data published by mistake (see [Withdrawal](/spec/data-files#withdrawal)). First commit a version without the data, so that no branch points at an affected version. The command then deletes the tags that point at the versions, the data files their catalogs name that no kept version reads, and their catalogs, and puts `expired.json` with `"reason": "withdrawn"`. `version.json` stays. When one of the versions is already past retention, its catalog is gone, so every data file no live version reads is deleted at once, without waiting for the grace period.
 
 Assets are not deleted yet: delete those that hold the data from `assets/` by hand.
 

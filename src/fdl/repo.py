@@ -655,6 +655,7 @@ def plan_withdrawal(store: Store, version_ids: Iterable[str]) -> Withdrawal:
 
     candidates: set[str] = set()
     kept: set[str] = set()
+    catalogless = False
     with tempfile.TemporaryDirectory(prefix="fdl-") as tmp:
         for version_id in _version_ids(store):
             if version_id in affected:
@@ -664,6 +665,8 @@ def plan_withdrawal(store: Store, version_ids: Iterable[str]) -> Withdrawal:
                     # in it may hold the data too.
                     candidates.update(catalog.data_files(local))
                     local.unlink()
+                else:
+                    catalogless = True
                 continue
             if is_expired(store, version_id):
                 continue
@@ -677,6 +680,11 @@ def plan_withdrawal(store: Store, version_ids: Iterable[str]) -> Withdrawal:
             if local is not None:
                 kept.update(_read_files(local, version))
                 local.unlink()
+    if catalogless:
+        # A version already past retention no longer says which files it
+        # named. Those no live version reads are waiting for the grace period
+        # anyway, so all of them go now.
+        candidates.update(key[len(config.data_dir) :] for key in store.list(config.data_dir))
     return Withdrawal(
         versions=affected,
         tags=tuple(tags),
