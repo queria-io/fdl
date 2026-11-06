@@ -48,6 +48,11 @@ A version is the files under `versions/<version ID>/`. They must not change once
     "bytes": 1536,
     "sha256": "7a0e…"
   },
+  "tree": {
+    "path": "tree.json",
+    "bytes": 214,
+    "sha256": "3c5d…"
+  },
   "changes": [
     { "table": "main.population", "kind": "add_column", "column": "note", "breaking": false }
   ],
@@ -76,8 +81,9 @@ A version is the files under `versions/<version ID>/`. They must not change once
 | `dataset` | must | The `dataset.json` beside the catalog: its file name, size and sha256. Versions written before it was required lack it |
 | `ducklake` | must | The DuckLake format, the snapshot frozen, and the range of snapshots this version adds after its parent (first and last) |
 | `files` | may | The `files.json` beside the catalog, if written: its file name, size and sha256 ([files.json](#filesjson)) |
+| `tree` | may | The `tree.json` beside the catalog, if the version holds other files: its file name, size and sha256 ([tree.json](#treejson)) |
 | `changes` | may | Column differences from the parent. `breaking` says whether SQL written for the parent may fail (a column dropped, renamed or recreated) |
-| `inputs` | may | Source files used. How `source_id` is assigned is up to the writer |
+| `inputs` | may | Source files used: where each came from, when, and its sha256. FDL does not store them; a writer that keeps them makes them assets of a table. How `source_id` is assigned is up to the writer |
 | `annotations` | may | What the format does not interpret, keyed by the name of whoever reads it (a host, a tool) |
 
 A reader must ignore fields it does not know.
@@ -127,6 +133,71 @@ A reader can tell from `version.json` alone whether it can open a version.
 A reader that reads the Parquet files without DuckLake must not read a table whose files have `deletes`, or whose `renamed_columns` is `true`, unless it applies them as DuckLake does. Otherwise it returns deleted rows or misses renamed columns.
 
 When a version is taken out of retention, `files.json` is deleted with its catalogs.
+
+## tree.json
+
+`tree.json` lists the files a version holds beside its tables, such as a README and the images it shows, by path. It plays the part of Git's tree: each path names the sha256 of a file, and the file is stored as an asset at `assets/<sha256>`. The tables are not in it; the catalog is their tree.
+
+```json tree.json
+{
+  "entries": [
+    { "path": "README.md", "sha256": "5e88…", "bytes": 3120 },
+    { "path": "docs/images/towns.png", "sha256": "c9d2…", "bytes": 48211 }
+  ]
+}
+```
+
+- `entries` lists each file's path, sha256 (lower-case hex) and size, by path. Paths are relative, separated by `/`, have no empty, `.` or `..` segment, and are unique
+- Files are stored as written. A relative link in a Markdown file is resolved against the file's own path, percent-decoded, and looked up in `entries`, as GitHub resolves a link in a README through the commit's tree. A link to a path not in `entries` is broken
+- Readers commonly show `README.md` first. Which file to show, and where, is the reader's choice
+- `description` in `dataset.json` stays a short plain text. A reader that does not read the tree still has it, and lists show it
+- A writer keeps the files where it edits them, such as beside its YAML in a Git repository, and its tool writes `tree.json`. The writer does not write it by hand
+- `tree.json` is part of the version and does not change with it. It is deleted with the catalogs when the version is taken out of retention
+
+## profiles/
+
+A profile summarizes one table at `ducklake.snapshot_id`: its row count, what each column holds, its first rows and, for a table with a geometry column, the extent and a sample of its shapes. A reader can show a table, or a host can index it for search, from this one small file, without opening the catalog or reading the data. It holds what was measured from the data; what a column means is the writer's, in `dataset.json`. Like `files.json`, it is made from the catalog and the data, which win where the two differ, and it is optional: a reader must work without it.
+
+Each table's profile is at `versions/<ID>/profiles/<schema>/<table>.json`. A table whose schema or name is empty, `.`, `..` or holds `/` has none. Views have none.
+
+```json profiles/main/towns.json
+{
+  "rows": 1741,
+  "columns": [
+    { "name": "town_code", "type": "varchar", "null_count": 0, "distinct_count": 1741,
+      "values": [{ "value": "082201", "count": 1 }] },
+    { "name": "prefecture", "type": "varchar", "null_count": 0, "distinct_count": 2,
+      "values": [{ "value": "Ibaraki", "count": 1200 }, { "value": "Tochigi", "count": 541 }] },
+    { "name": "population", "type": "int64", "null_count": 3, "distinct_count": 1650,
+      "min": 0, "max": 84211, "mean": 3120.5, "std": 4410.2, "q1": 420, "median": 1630, "q3": 3990,
+      "values": [{ "value": "0", "count": 12 }],
+      "histogram": [{ "start": 0, "end": 4210.55, "count": 1302 }] },
+    { "name": "surveyed_on", "type": "date", "null_count": 0, "distinct_count": 1,
+      "min": "2025-10-01", "max": "2025-10-01", "span_days": 0,
+      "values": [{ "value": "2025-10-01", "count": 1741 }] },
+    { "name": "coastal", "type": "boolean", "null_count": 0, "true_count": 210, "false_count": 1531 },
+    { "name": "geom", "type": "geometry" }
+  ],
+  "head": [{ "town_code": "082201", "prefecture": "Ibaraki", "population": 2210, "surveyed_on": "2025-10-01", "coastal": false }],
+  "geometry": {
+    "column": "geom",
+    "count": 1741,
+    "bbox": [139.69, 35.74, 140.85, 37.15],
+    "types": ["MULTIPOLYGON", "POLYGON"],
+    "sample": { "type": "FeatureCollection", "features": [] }
+  }
+}
+```
+
+- `rows` is the table's row count. `columns` lists every column in the catalog's order, with `name` and `type` (DuckLake's type name) as in `dataset.json`
+- Every column but a geometry one has `null_count`. Numbers, text, dates and times have `distinct_count`, which may be estimated on a large table, and `values`
+- `values` lists each value, as text, with the number of rows that hold it, most common first and then by value. When the column holds at most 1,000 distinct values, it lists them all and `distinct_count` is exact: a reader tells a whole list by its length matching `distinct_count`. Otherwise it lists the 10 most common. A host can search a whole list by value, such as a town's code or name
+- Numbers have `min`, `max`, `mean`, `std`, the quartiles `q1`, `median` and `q3`, and a `histogram` of equal-width buckets between `min` and `max`. Dates and times have `min` and `max` as text, and dates and timestamps `span_days`. Booleans have `true_count` and `false_count`
+- `head` holds the first rows the table returns, as JSON objects, leaving out geometry and columns whose values have no JSON form
+- `geometry` describes the first geometry column, when the writer could read it: how many rows have a shape, the `bbox` of all of them (`[xmin, ymin, xmax, ymax]` in the column's coordinates), the geometry types present, and a GeoJSON `FeatureCollection` of a random sample of simplified shapes for drawing a map
+- A writer may leave out any key it cannot compute. A reader ignores keys it does not know
+- A writer reuses its parent's profile for a table whose data files (in `files.json`) and columns are the parent's, so a commit reads only the tables that changed
+- Profiles are part of the version and do not change with it. They are deleted with the catalogs when the version is taken out of retention
 
 ## The frozen catalog
 
@@ -188,6 +259,22 @@ The writer describes; the writer's tool checks the description against the froze
 - Keys this specification does not define are refused. What the format does not interpret goes under `annotations`, keyed by the name of whoever reads it, at the top, in a table or in a field. Writers keep it as written
 - Versions written before `annotations` had its name carry it as `extensions`. A reader reads `extensions` as `annotations`
 - What a license or a source says is the writer's claim. A host may check it before it publishes
+
+### Assets
+
+A table can point at files, such as the PDFs of a set of reports or the photos of a set of facilities, as Git LFS points at large files: the row holds the file's sha256, and the file is stored beside the data.
+
+```json
+{ "name": "sha256", "title": "PDF", "type": "varchar", "asset": true }
+```
+
+- A field with `"asset": true` holds, in each row, the lower-case hex sha256 of a file, or null. Its type is `varchar`
+- Each file is stored at `assets/<sha256>` at the root (see [Layout](/spec/layout#paths)). The same content is stored once, and versions share it
+- The file's name, size and media type are columns of the same table, as the writer names them. A writer should keep at least the media type, so a reader can tell how to show the file before it gets it
+- To change a file, a writer stores the new content and puts its sha256 in the row. Older versions keep pointing at the old content
+- A writer uploads a file with its media type as `Content-Type`. Every asset a version's rows hold must be in the repository before the version is written
+- A reader finds a file at `<root>assets/<sha256>`, wherever it reads the repository from, and checks its sha256 before it shows it. A row whose file is missing is shown as broken
+- A file that is not in the repository, such as one on the publisher's site, is held as a URL in an ordinary column. It is not an asset, and FDL does not manage it
 
 ## Catalogs in other formats
 

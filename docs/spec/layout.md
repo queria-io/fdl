@@ -22,11 +22,13 @@ Paths are relative to the root, lower case, and separated by `/`. The root is wh
     ducklake.duckdb                the frozen catalog
     dataset.json                   what the version holds, described
     files.json                     each table's data files, indexed from the catalog (optional)
+    tree.json                      the other files of the version, such as a README, by path (optional)
+    profiles/<schema>/<table>.json a summary of each table, measured from the data (optional)
     catalogs/<format>.duckdb       the catalog in another DuckLake format (optional)
     expired.json                   the past-retention mark (only once expired)
-    <others>                       files a host adds, such as previews
+    <others>                       files a host adds
   <data_dir><schema>/<table>/ducklake-<uuid>.parquet   data files (shared, immutable)
-  sources/<sha256>                 source files (optional, may be private)
+  assets/<sha256>                  files the rows of a table or a version's tree.json point at (shared, immutable)
 ```
 
 `HEAD` and everything under `refs/` have no extension, as in Git. Their content is UTF-8 text.

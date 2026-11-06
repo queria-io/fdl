@@ -44,12 +44,18 @@ HTTP のリポジトリでは、新しいデータファイルは `<working.sqli
 ## fdl commit
 
 ```bash
-fdl commit <working.sqlite> -m "What changed" --author alice [--dataset dataset.json] [--allow-empty]
+fdl commit <working.sqlite> -m "What changed" --author alice [--dataset dataset.json] [--allow-empty] [--assets files/]
 ```
 
 作業カタログを、チェックアウトしたバージョンを親とする新しいバージョンに固め、アップロードし、条件付きでブランチを動かします。ブランチ、新しいバージョン ID、`seq` を表示します。
 
 バージョンはそれぞれ `dataset.json`（[バージョン](/ja/spec/versions#datasetjson)を参照）で説明します。`--dataset` で指定したファイルか、なければいまのディレクトリの `dataset.json` か `dataset.yml` から読みます。そのフォルダより下にある `*.table.yml`（または `*.table.json`）のテーブルの説明も合わせて読みます。隠しフォルダの中は読みません。コマンドはそれをカタログと照らし合わせ、列の型、行数、カタログのコメントを書き足します。
+
+コマンドは、説明の隣の `README.md` と、そこにある `docs/` より下のファイル（隠しファイルを除く）をバージョンの tree に入れます。そのフォルダからのパスで `tree.json` を書き、リポジトリに無いものを書いたままの中身で `assets/<sha256>` にアップロードします（[tree.json](/ja/spec/versions#treejson)）。
+
+あわせてテーブルごとの profile を書きます（[profiles/](/ja/spec/versions#profiles)）。読むのは、データファイルか列が親から変わったテーブルだけです。読めなかったテーブルには profile を書かず、警告を出してコミットを続けます。
+
+`asset: true` の印を付けた列は、ファイルの sha256 を持ちます（[アセット](/ja/spec/versions#アセット)）。コマンドはその列の値を読み、リポジトリに無いファイルを `--assets` のフォルダから `assets/<sha256>` にアップロードします。ファイルは中身で照合するので、フォルダの中のファイル名は問いません。
 
 親と同じ中身になるとき（[変更がないとき](/ja/spec/writing#変更がないとき)）は `Nothing to commit` と表示し、ブランチを動かさずに終了コード 0 で終わります。同じ行を新しいファイルに書き直しただけの作り直しも、変更なしとみなします。`--allow-empty` を付けると、それでもバージョンを作ります。行を読めず判定できないときは、警告を出してバージョンを作ります。
 
@@ -59,7 +65,16 @@ fdl commit <working.sqlite> -m "What changed" --author alice [--dataset dataset.
 - チェックアウトのあとにブランチが動いたとき。チェックアウトし直して作業をやり直す
 - 作業カタログが行をカタログの中に持っているとき
 - カタログが参照するデータファイルがリポジトリに無いとき
+- アセットの列が `varchar` でないとき、sha256 でない値を持つとき、リポジトリにも `--assets` にも無いファイルを指すとき
 - データファイルが、データディレクトリの外を指す絶対パスで記録されているとき
+
+## fdl assets
+
+```bash
+fdl assets <folder> > files.csv
+```
+
+フォルダより下のファイル（隠しファイルを除く）を、`path`・`sha256`・`bytes`・`media_type` の CSV で表示します。これを DuckDB の `read_csv` などでファイルを指すテーブルに読み込み、`sha256` の列に `asset: true` の印を付けて、`--assets <folder>` を付けてコミットします。ファイルの sha256 はここで 1 回だけ計算し、SQL でファイルを読む必要はありません。
 
 ## fdl log
 
@@ -94,6 +109,8 @@ fdl withdraw <remote> <version>... [--yes]
 ```
 
 間違って公開した個人データなど、公開してはいけないデータを持つバージョンを取り下げます（[取り下げ](/ja/spec/data-files#取り下げ)）。先にそのデータを除いたバージョンをコミットし、該当するバージョンを指すブランチが無い状態にします。そのうえでこのコマンドが、該当するバージョンを指すタグ、そのカタログが参照し残すバージョンが読まないデータファイル、カタログを消し、`"reason": "withdrawn"` の `expired.json` を置きます。`version.json` は残します。
+
+アセットは、まだ消しません。データを持つものは `assets/` から手で消してください。
 
 `--yes` を付けないと、消すものを表示するだけです。残すバージョンが読んでいるファイルは残すものとして表示します。それがそのデータを持つなら、そのバージョンも取り下げます。ブランチかリクエストが該当するバージョンを指しているあいだは断られます。
 

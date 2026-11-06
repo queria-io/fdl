@@ -22,11 +22,13 @@ description: リポジトリのファイル、そのパス、fdl.json の中身�
     ducklake.duckdb                固めたカタログ
     dataset.json                   バージョンの中身の説明
     files.json                     カタログから作った、表ごとのデータファイルの索引（任意）
+    tree.json                      README など、バージョンのほかのファイルのパスの一覧（任意）
+    profiles/<schema>/<table>.json データから測ったテーブルごとの要約（任意）
     catalogs/<format>.duckdb       別の DuckLake 形式のカタログ（任意）
     expired.json                   保持期間を過ぎた印（過ぎたときだけ）
-    <others>                       ホストが足すファイル（プレビューなど）
+    <others>                       ホストが足すファイル
   <data_dir><schema>/<table>/ducklake-<uuid>.parquet   データファイル（共有、変えない）
-  sources/<sha256>                 元のファイル（任意、非公開でもよい）
+  assets/<sha256>                  テーブルの行やバージョンの tree.json が指すファイル（共有、変更しない）
 ```
 
 `HEAD` と `refs/` の下のファイルには、Git と同じく拡張子を付けません。中身は UTF-8 のテキストです。

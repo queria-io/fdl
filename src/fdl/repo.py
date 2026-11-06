@@ -16,9 +16,9 @@ import uuid
 import warnings
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Iterable, Iterator
+from typing import Iterable, Iterator, Mapping
 
-from . import catalog, layout, refs
+from . import catalog, layout, objects, profiles, refs
 from . import dataset as dataset_json
 from .store import Store, is_conflict, is_missing
 from .version import Catalog, DuckLake, File, Version, VersionError, new_id, parse, utc_now
@@ -137,13 +137,15 @@ def commit(
     inputs: tuple[dict, ...] = (),
     annotations: dict | None = None,
     dataset: dict | None = None,
+    tree: list[dict] | None = None,
     allow_empty: bool = True,
     working_data: str | None = None,
 ) -> Version:
     """Freeze the working catalog into a version under ``out_dir/<ID>/``.
 
     ``dataset`` is the writer's description (`dataset.json`), checked against
-    the frozen catalog and completed from it.
+    the frozen catalog and completed from it. ``tree`` lists the version's
+    other files (`tree.json`: path, sha256, bytes), such as its README.
 
     ``allow_empty=False`` refuses a version that would hold what ``parent``
     holds: the same tables, columns, rows and views, and the same
@@ -173,7 +175,12 @@ def commit(
             )
         # The description first: it reads the catalog alone, while comparing
         # the contents can read every row of a rebuilt table.
-        if not allow_empty and parent is not None and _same_description(frozen, dataset, parent):
+        if (
+            not allow_empty
+            and parent is not None
+            and _same_description(frozen, dataset, parent)
+            and _same_tree(tree, parent)
+        ):
             try:
                 unchanged = catalog.same_contents(
                     working, parent.ducklake.snapshot_id, data_path=working_data
@@ -191,6 +198,7 @@ def commit(
             inputs=inputs,
             annotations=annotations,
             dataset=dataset,
+            tree=tree,
         )
     finally:
         frozen.unlink(missing_ok=True)
@@ -201,6 +209,18 @@ def _same_description(frozen: Path, dataset: dict | None, parent: Version) -> bo
         return dataset is None and parent.dataset is None
     written = dataset_json.to_json(dataset_json.describe(dataset, frozen))
     return hashlib.sha256(written).hexdigest() == parent.dataset.sha256
+
+
+def _same_tree(tree: list[dict] | None, parent: Version) -> bool:
+    if not tree or parent.tree is None:
+        return not tree and parent.tree is None
+    return hashlib.sha256(_tree_json(tree)).hexdigest() == parent.tree.sha256
+
+
+def _tree_json(tree: list[dict]) -> bytes:
+    objects.check_tree(tree)
+    entries = sorted(tree, key=lambda item: item["path"])
+    return (json.dumps({"entries": entries}, ensure_ascii=False, indent=2) + "\n").encode()
 
 
 def checkout(
@@ -275,6 +295,7 @@ def record(
     inputs: tuple[dict, ...] = (),
     annotations: dict | None = None,
     dataset: dict | None = None,
+    tree: list[dict] | None = None,
 ) -> Version:
     """Make a version out of a catalog that is already frozen.
 
@@ -303,6 +324,11 @@ def record(
                 path=layout.DATASET, bytes=written.stat().st_size, sha256=_sha256(written)
             )
         indexed = _write_files_index(target, copied, last)
+        listed = None
+        if tree:
+            written = target / layout.TREE
+            written.write_bytes(_tree_json(tree))
+            listed = File(path=layout.TREE, bytes=written.stat().st_size, sha256=_sha256(written))
         version = Version(
             id=version_id,
             seq=parent.seq + 1 if parent else 1,
@@ -321,6 +347,7 @@ def record(
             inputs=tuple(inputs),
             annotations=dict(annotations or {}),
             dataset=described,
+            tree=listed,
         )
         (target / layout.VERSION_RECORD).write_bytes(version.to_json())
     except BaseException:
@@ -347,6 +374,8 @@ def push(
     ref: str = layout.DEFAULT_BRANCH,
     move_ref: bool = True,
     local_data: Path | None = None,
+    assets: Iterable[str] = (),
+    local_objects: Mapping[str, Path] | None = None,
 ) -> None:
     """Upload a committed version, then move ``ref`` to it.
 
@@ -359,6 +388,12 @@ def push(
 
     ``local_data`` is the folder a working catalog wrote new data files to
     (see `checkout`). Those the repository lacks are uploaded first.
+
+    ``assets`` are the sha256 the version's asset columns hold (see
+    `objects.asset_values`). They and the files its `tree.json` lists must
+    be in the repository; those it lacks are uploaded from
+    ``local_objects`` (sha256 to a file with that content), and a push that
+    still lacks one is refused.
     """
     config = read_config(store)
     current_ref = refs.read(store, layout.check_ref(ref))
@@ -377,6 +412,7 @@ def push(
             f"repository (first: {missing[0]}). Rebuild from the working "
             f"catalog and commit again."
         )
+    _upload_objects(store, _needed_objects(Path(local), version, assets), local_objects or {})
     upload(store, local, version)
     if not move_ref:
         return
@@ -433,6 +469,58 @@ def update_refs_index(store: Store) -> None:
         warnings.warn(f"the ref moved, but refs.json was not rewritten: {exc}", stacklevel=2)
 
 
+def write_profiles(
+    store: Store,
+    local: Path,
+    parent: Version | None,
+    working: Path,
+    *,
+    data_path: str,
+    setup: Iterable[str] = (),
+) -> int:
+    """Write a profile of each table of a committed version under ``local/profiles/``.
+
+    A table whose data files and columns are the parent's keeps the parent's
+    profile, so a commit reads only the tables that changed. Returns how many
+    were made from the data.
+    """
+    local = Path(local)
+    described_path = local / layout.DATASET
+    if not described_path.is_file():
+        return 0
+    described = json.loads(described_path.read_text(encoding="utf-8"))
+    files_now = json.loads((local / layout.FILES).read_text(encoding="utf-8")).get("tables", {})
+    files_before: dict = {}
+    if parent is not None and parent.files is not None:
+        try:
+            files_before = json.loads(store.get(layout.version_dir(parent.id) + parent.files.path)).get("tables", {})
+        except Exception as exc:  # noqa: BLE001 - stores raise their own types
+            if not is_missing(exc):
+                raise
+    kept: dict[str, bytes] = {}
+    pending = []
+    for table in profiles.tables(described):
+        key = f"{table['schema']}.{table['name']}"
+        relative = profiles.path(table["schema"], table["name"])
+        previous = None
+        if parent is not None and key in files_before and files_before[key] == files_now.get(key):
+            try:
+                previous = store.get(layout.version_dir(parent.id) + relative)
+            except Exception as exc:  # noqa: BLE001
+                if not is_missing(exc):
+                    raise
+        if previous is not None and profiles.reusable(previous, table):
+            kept[relative] = previous
+        else:
+            pending.append(table)
+    made = profiles.build(working, pending, data_path=data_path, setup=setup)
+    for relative, content in {**kept, **made}.items():
+        target = local / relative
+        target.parent.mkdir(parents=True, exist_ok=True)
+        target.write_bytes(content)
+    return len(made)
+
+
 def upload(store: Store, local: Path, version: Version) -> None:
     """Put a committed version's files, catalog first and the record last.
 
@@ -445,6 +533,13 @@ def upload(store: Store, local: Path, version: Version) -> None:
         _put_once(store, layout.version_dir(version.id) + version.dataset.path, local / version.dataset.path)
     if version.files is not None:
         _put_once(store, layout.version_dir(version.id) + version.files.path, local / version.files.path)
+    if version.tree is not None:
+        _put_once(store, layout.version_dir(version.id) + version.tree.path, local / version.tree.path)
+    profiled = local / layout.PROFILES_DIR
+    if profiled.is_dir():
+        for written in sorted(profiled.rglob("*.json")):
+            relative = written.relative_to(local).as_posix()
+            _put_once(store, layout.version_dir(version.id) + relative, written)
     _put_once(store, layout.version_record(version.id), local / layout.VERSION_RECORD)
 
 
@@ -513,7 +608,9 @@ def expire(store: Store, version_id: str, *, reason: str = "retention") -> None:
             layout.version_catalog(version_id),
             # The index names files the grace period may delete.
             layout.version_dir(version_id) + layout.FILES,
+            layout.version_dir(version_id) + layout.TREE,
             *store.list(layout.version_dir(version_id) + layout.CATALOGS_DIR),
+            *store.list(layout.version_dir(version_id) + layout.PROFILES_DIR),
         ]
     )
 
@@ -738,6 +835,50 @@ def _upload_data_files(store: Store, config: Config, frozen: Path, local_data: P
             # Data files are never rewritten: one already there is this one.
             if not is_conflict(exc):
                 raise
+
+
+def _needed_objects(local: Path, version: Version, assets: Iterable[str]) -> dict[str, str]:
+    """The assets a version reaches: store key to media type, where it is known."""
+    needed: dict[str, str] = {}
+    if version.tree is not None:
+        listed = json.loads((local / version.tree.path).read_text(encoding="utf-8"))
+        for item in listed["entries"]:
+            needed[objects.asset_key(item["sha256"])] = objects.media_type(item["path"])
+    for sha256 in assets:
+        needed.setdefault(objects.asset_key(sha256), "")
+    return needed
+
+
+def _upload_objects(store: Store, needed: dict[str, str], local: Mapping[str, Path]) -> None:
+    """Put the assets the repository lacks, or refuse the push."""
+    if not needed:
+        return
+    present = set(store.list(layout.ASSETS_DIR))
+    lacking = [key for key in needed if key not in present]
+    unknown = [key for key in lacking if key.rsplit("/", 1)[1] not in local]
+    if unknown:
+        raise RepoError(
+            f"{len(unknown)} file(s) the version points at are neither in the repository "
+            f"nor given to upload (first: {unknown[0]})"
+        )
+    by_type: dict[str, list[tuple[str, Path]]] = {}
+    for key in lacking:
+        path = Path(local[key.rsplit("/", 1)[1]])
+        if objects.sha256_of(path) != key.rsplit("/", 1)[1]:
+            raise RepoError(f"{path} changed since its sha256 was taken")
+        by_type.setdefault(needed[key] or objects.media_type(path.name), []).append((key, path))
+    put_files = getattr(store, "put_files", None)
+    for content_type, files in by_type.items():
+        if put_files is not None:
+            put_files(files, content_type=content_type)
+            continue
+        for key, path in files:
+            try:
+                store.put_file(key, path, content_type=content_type, if_none_match="*")
+            except Exception as exc:  # noqa: BLE001 - stores raise their own types
+                # Named by their content: one already there is this one.
+                if not is_conflict(exc):
+                    raise
 
 
 def _put_once(store: Store, key: str, path: Path) -> None:

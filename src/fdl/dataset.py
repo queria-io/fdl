@@ -31,7 +31,7 @@ TABLE_KEYS = {
     "primary_key", "licenses", "sources", "temporal_coverage", "spatial_coverage",
     "fields", "rows", "kind", "annotations",
 }
-FIELD_KEYS = {"name", "title", "description", "type", "nullable", "annotations"}
+FIELD_KEYS = {"name", "title", "description", "type", "nullable", "asset", "annotations"}
 #: What `annotations` was called before fdl 0.17. Still read, as `annotations`.
 OLD_ANNOTATIONS = "extensions"
 
@@ -213,6 +213,13 @@ def _merge(table: dict[str, Any], physical: dict[str, Any]) -> dict[str, Any]:
         if field.get("name") not in physical["columns"]:
             raise DatasetError(
                 f"{physical['schema']}.{physical['name']} has no column {field.get('name')!r}"
+            )
+        if "asset" in field and not isinstance(field["asset"], bool):
+            raise DatasetError(f"{field['name']}: asset is true or false")
+        if field.get("asset") and physical["columns"][field["name"]]["type"].lower() != "varchar":
+            raise DatasetError(
+                f"{physical['schema']}.{physical['name']}.{field['name']} is an asset column, "
+                f"so its type has to be varchar (a sha256 in hex)"
             )
         written[field["name"]] = field
     fields = [

@@ -1,6 +1,22 @@
 # CHANGELOG
 
 
+## v0.19.0 (2026-11-06)
+
+### Features
+
+- Keep the files rows point at and a version's other files as assets, listed in tree.json
+  ([#38](https://github.com/queria-io/fdl/pull/38),
+  [`8c49933`](https://github.com/queria-io/fdl/commit/8c49933158f31f8c40d267ee76a6ed8e331b548b))
+
+A column marked asset holds the sha256 of a file stored at assets/<sha256>. A version's other files
+  (README.md and docs/) go in versions/<ID>/tree.json, path to sha256, as Git's tree does; they are
+  stored as written and links are resolved through the tree. fdl commit uploads both, --assets gives
+  the folder of the files rows point at, and fdl assets lists a folder as CSV.
+
+Co-authored-by: Claude <noreply@anthropic.com>
+
+
 ## v0.18.2 (2026-11-03)
 
 ### Bug Fixes

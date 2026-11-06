@@ -48,6 +48,11 @@ description: バージョン ID、version.json の項目、固めたカタログ
     "bytes": 1536,
     "sha256": "7a0e…"
   },
+  "tree": {
+    "path": "tree.json",
+    "bytes": 214,
+    "sha256": "3c5d…"
+  },
   "changes": [
     { "table": "main.population", "kind": "add_column", "column": "note", "breaking": false }
   ],
@@ -76,8 +81,9 @@ description: バージョン ID、version.json の項目、固めたカタログ
 | `dataset` | must | カタログの隣の `dataset.json` のファイル名、大きさ、sha256。必須になる前に書かれたバージョンには無い |
 | `ducklake` | must | DuckLake の形式、固めたスナップショット、親から足したスナップショットの範囲（最初と最後） |
 | `files` | may | カタログの隣の `files.json` を書いたときの、そのファイル名、大きさ、sha256（[files.json](#filesjson)） |
+| `tree` | may | バージョンがほかのファイルを持つときの、カタログの隣の `tree.json` のファイル名、大きさ、sha256（[tree.json](#treejson)） |
 | `changes` | may | 親との列の違い。`breaking` は、親に向けて書いた SQL が失敗しうるか（列の削除・改名・作り直し） |
-| `inputs` | may | 使った元のファイル。`source_id` の付け方は書き手が決める |
+| `inputs` | may | 使った元のファイル。それぞれの取得元・取得日時・sha256 を書く。FDL はファイル自体を置かない。残したい書き手は、テーブルのアセットにする。`source_id` の付け方は書き手が決める |
 | `annotations` | may | 形式が解釈しない情報。読む側（ホストやツール）の名前をキーにする |
 
 読み手は、知らない項目を無視しなければなりません。
@@ -127,6 +133,71 @@ FDL 0.1 では、書き手が書く親は多くても 1 つです。`parents` �
 DuckLake を使わずに Parquet ファイルを読む読み手は、`deletes` を持つファイルがある表や、`renamed_columns` が `true` の表を読んではいけません。DuckLake と同じように削除と改名を当てはめる場合は読んでかまいません。当てはめずに読むと、消した行が返ったり、名前を変えた列が欠けたりします。
 
 保持期間から外すとき、`files.json` はカタログと一緒に消します。
+
+## tree.json
+
+`tree.json` は、バージョンがテーブルのほかに持つファイル（README とそこに表示する画像など）をパスで並べた一覧です。Git の tree に当たります。パスごとにファイルの sha256 を持ち、ファイル自体はアセットとして `assets/<sha256>` に置きます。テーブルはここに入れません。テーブルの tree はカタログです。
+
+```json tree.json
+{
+  "entries": [
+    { "path": "README.md", "sha256": "5e88…", "bytes": 3120 },
+    { "path": "docs/images/towns.png", "sha256": "c9d2…", "bytes": 48211 }
+  ]
+}
+```
+
+- `entries` に、ファイルのパス・sha256（小文字の 16 進）・大きさを、パスの順に並べる。パスは相対パスで `/` で区切り、空・`.`・`..` のセグメントを含まず、重複しない
+- ファイルは書いたままの中身で置く。Markdown のファイルの中の相対リンクは、そのファイル自身のパスを基準に解決し、パーセントエンコーディングをデコードしてから `entries` で引く。GitHub が README のリンクをコミットの tree で解決するのと同じである。`entries` に無いパスへのリンクはリンク切れとして扱う
+- 多くの読み手は `README.md` を最初に表示する。どのファイルをどこに表示するかは読み手が決める
+- `dataset.json` の `description` は短いテキストのまま残す。tree を読まない読み手もこれを持ち、一覧にはこれを表示する
+- 書き手は、ファイルを編集する場所（Git のリポジトリの中の YAML の隣など）に置き、書き手のツールが `tree.json` を書く。書き手が手で書くものではない
+- `tree.json` はバージョンの一部で、そのバージョンの中では変わらない。保持期間から外すときはカタログと一緒に消す
+
+## profiles/
+
+profile は、`ducklake.snapshot_id` の時点の 1 つのテーブルの要約です。行数、列ごとの中身、先頭の行、図形の列を持つテーブルでは図形の範囲と見本を持ちます。読み手はこの小さなファイル 1 つで、カタログを開かずデータも読まずにテーブルを表示できます。ホストは検索の索引をこれから作れます。profile が持つのはデータから測った事実で、列が何を意味するかは書き手が `dataset.json` に書きます。`files.json` と同じくカタログとデータから作るもので、食い違うときはカタログとデータが正です。任意で、読み手は profile が無くても読めなければなりません。
+
+テーブルごとの profile は `versions/<ID>/profiles/<schema>/<table>.json` に置きます。スキーマ名かテーブル名が空・`.`・`..` のとき、または `/` を含むときは置きません。ビューには置きません。
+
+```json profiles/main/towns.json
+{
+  "rows": 1741,
+  "columns": [
+    { "name": "town_code", "type": "varchar", "null_count": 0, "distinct_count": 1741,
+      "values": [{ "value": "082201", "count": 1 }] },
+    { "name": "prefecture", "type": "varchar", "null_count": 0, "distinct_count": 2,
+      "values": [{ "value": "茨城県", "count": 1200 }, { "value": "栃木県", "count": 541 }] },
+    { "name": "population", "type": "int64", "null_count": 3, "distinct_count": 1650,
+      "min": 0, "max": 84211, "mean": 3120.5, "std": 4410.2, "q1": 420, "median": 1630, "q3": 3990,
+      "values": [{ "value": "0", "count": 12 }],
+      "histogram": [{ "start": 0, "end": 4210.55, "count": 1302 }] },
+    { "name": "surveyed_on", "type": "date", "null_count": 0, "distinct_count": 1,
+      "min": "2025-10-01", "max": "2025-10-01", "span_days": 0,
+      "values": [{ "value": "2025-10-01", "count": 1741 }] },
+    { "name": "coastal", "type": "boolean", "null_count": 0, "true_count": 210, "false_count": 1531 },
+    { "name": "geom", "type": "geometry" }
+  ],
+  "head": [{ "town_code": "082201", "prefecture": "茨城県", "population": 2210, "surveyed_on": "2025-10-01", "coastal": false }],
+  "geometry": {
+    "column": "geom",
+    "count": 1741,
+    "bbox": [139.69, 35.74, 140.85, 37.15],
+    "types": ["MULTIPOLYGON", "POLYGON"],
+    "sample": { "type": "FeatureCollection", "features": [] }
+  }
+}
+```
+
+- `rows` はテーブルの行数。`columns` にはカタログの順にすべての列を並べ、`name` と `type`（DuckLake の型名）は `dataset.json` と同じにする
+- 図形の列を除くすべての列が `null_count` を持つ。数値・テキスト・日付と時刻の列は `distinct_count` と `values` を持つ。大きなテーブルの `distinct_count` は推定値のことがある
+- `values` は、値（テキスト）とその値を持つ行の数を、多い順、同数なら値の順に並べる。列が持つ異なる値が 1,000 以下なら全部を並べ、そのとき `distinct_count` は正確な数になる。読み手は、`values` の長さが `distinct_count` と等しいことで全部の一覧だと判定する。それより多い列は上位 10 件だけを並べる。ホストは全部の一覧を、地域コードや名前などの値で検索できる
+- 数値の列は `min`・`max`・`mean`・`std`、四分位数の `q1`・`median`・`q3`、`min` から `max` までを等幅に区切った `histogram` を持つ。日付と時刻の列は `min` と `max` をテキストで持ち、日付とタイムスタンプは `span_days` も持つ。真偽値の列は `true_count` と `false_count` を持つ
+- `head` は、テーブルが返す先頭の行を JSON のオブジェクトで持つ。図形の列と、値を JSON で表せない列は入れない
+- `geometry` は、書き手が読めたときに、最初の図形の列を説明する。図形を持つ行の数、全体の `bbox`（列の座標で `[xmin, ymin, xmax, ymax]`）、含まれる図形の種類、地図を描くための、無作為に選んで簡略化した図形の GeoJSON `FeatureCollection` を持つ
+- 書き手は計算できないキーを省いてよい。読み手は知らないキーを無視する
+- 書き手は、データファイル（`files.json`）と列が親と同じテーブルには親の profile を使い回す。コミットで読むのは変わったテーブルだけになる
+- profile はバージョンの一部で、そのバージョンの中では変わらない。保持期間から外すときはカタログと一緒に消す
 
 ## 固めたカタログ
 
@@ -188,6 +259,22 @@ DuckLake を使わずに Parquet ファイルを読む読み手は、`deletes` �
 - この仕様が決めていないキーは断る。形式が解釈しない情報は、最上位・表・列それぞれの `annotations` に、読む側の名前をキーにして置く。書き手は書かれたまま残す
 - `annotations` という名前になる前のバージョンは、同じものを `extensions` に持つ。読み手は `extensions` を `annotations` として読む
 - ライセンスや出典に書いたことは書き手の主張で、ホストは公開する前に確かめてよい
+
+### アセット
+
+テーブルは、報告書の PDF や施設の写真などのファイルを指せます。Git LFS が大きなファイルを指すのと同じ形で、行にはファイルの sha256 を持ち、ファイルはデータと同じリポジトリに置きます。
+
+```json
+{ "name": "sha256", "title": "PDF", "type": "varchar", "asset": true }
+```
+
+- `"asset": true` の列は、各行にファイルの sha256（小文字の 16 進）か null を持つ。型は `varchar`
+- 各ファイルはルートの `assets/<sha256>` に置く（[レイアウト](/ja/spec/layout#パス)）。同じ中身は 1 回だけ置き、複数のバージョンで共有する
+- ファイルの名前・大きさ・メディアタイプは、同じテーブルの列として持つ。列名は書き手が決める。読み手がファイルを取得する前に表示方法を判定できるよう、少なくともメディアタイプの列を持つのがよい
+- ファイルを差し替えるときは、新しい中身を置き、その sha256 を行に入れる。古いバージョンは古い中身を指したまま残る
+- 書き手は、ファイルのメディアタイプを `Content-Type` に付けてアップロードする。バージョンの行が持つアセットは、そのバージョンを書く前にすべてリポジトリに置く
+- 読み手は、リポジトリを読んでいる場所の `<root>assets/<sha256>` でファイルを取得し、表示する前に sha256 を確認する。ファイルが無い行は、リンク切れとして表示する
+- 提供元のサイトにあるファイルなど、リポジトリの外のファイルは、普通の列に URL で持つ。これはアセットではなく、FDL は管理しない
 
 ## ほかの形式のカタログ
 
