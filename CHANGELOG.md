@@ -1,6 +1,15 @@
 # CHANGELOG
 
 
+## v0.20.1 (2026-11-06)
+
+### Bug Fixes
+
+- Withdraw a version already past retention by deleting unread files at once
+  ([#40](https://github.com/queria-io/fdl/pull/40),
+  [`d9e3788`](https://github.com/queria-io/fdl/commit/d9e3788b6ffb429a9d301491a5e2a73eca8d891f))
+
+
 ## v0.20.0 (2026-11-06)
 
 ### Documentation
