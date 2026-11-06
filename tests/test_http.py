@@ -156,7 +156,8 @@ def test_a_file_the_host_will_not_sign_goes_through_the_host(tmp_path: Path) -> 
 
     assert local.get("data/small.parquet") == b"ab" and local.get("data/large.parquet") == b"abcdef"
     puts = [key for method, key in server.requests if method == "PUT"]
-    assert puts == ["storage/data/small.parquet", "data/large.parquet"]
+    # Uploads run at once, so they may arrive in any order.
+    assert sorted(puts) == ["data/large.parquet", "storage/data/small.parquet"]
 
 
 def test_a_rebuild_of_the_same_rows_over_http_is_nothing_to_commit(served, tmp_path: Path) -> None:
