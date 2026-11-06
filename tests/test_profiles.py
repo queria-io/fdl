@@ -76,6 +76,33 @@ def test_many_values_list_only_the_most_common(repository) -> None:
     assert code["distinct_count"] > profiles.ALL_VALUES
 
 
+def test_a_column_at_the_limit_lists_every_value(repository) -> None:
+    store, working = repository
+    write(working, store, f"CREATE TABLE lake.main.towns AS SELECT 'v' || i AS code FROM range({profiles.ALL_VALUES}) t(i)")
+    run("commit", working, "-m", "m", "--author", "t")
+    code = profile_of(store)["columns"][0]
+    assert len(code["values"]) == code["distinct_count"] == profiles.ALL_VALUES
+
+
+@pytest.mark.parametrize(
+    ("values", "distinct", "kept"),
+    [
+        (3, 3, True),
+        (profiles.TOP_VALUES, profiles.ALL_VALUES + 1, True),
+        # Written under a lower limit: a short list of a column now listed whole.
+        (profiles.TOP_VALUES, profiles.ALL_VALUES - 1, False),
+        # Written under a higher limit: a whole list longer than now allowed.
+        (profiles.ALL_VALUES + 1, profiles.ALL_VALUES + 1, False),
+    ],
+)
+def test_a_profile_written_under_another_limit_is_made_again(values: int, distinct: int, kept: bool) -> None:
+    table = {"fields": [{"name": "code", "type": "VARCHAR"}]}
+    column = {"name": "code", "type": "VARCHAR", "distinct_count": distinct}
+    column["values"] = [{"value": f"v{i}", "count": 1} for i in range(values)]
+    previous = json.dumps({"rows": distinct, "columns": [column]}).encode()
+    assert profiles.reusable(previous, table) is kept
+
+
 def test_an_unchanged_table_keeps_its_parents_profile(repository, monkeypatch) -> None:
     store, working = repository
     write(working, store, "CREATE TABLE lake.main.towns AS SELECT 1 AS id")

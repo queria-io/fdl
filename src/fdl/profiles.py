@@ -25,8 +25,9 @@ GEOMETRY_SAMPLE = 500
 #: Vertex tolerance of the sampled shapes, in the column's units (about 11 m in degrees).
 SIMPLIFY_TOLERANCE = 0.0001
 HISTOGRAM_BUCKETS = 20
-#: A column with at most this many distinct values lists them all in `values`.
-ALL_VALUES = 1000
+#: A column with at most this many distinct values lists them all in `values`: enough for
+#: a column of codes or names that covers a whole country, such as its municipalities.
+ALL_VALUES = 2000
 #: Otherwise `values` lists the most common.
 TOP_VALUES = 10
 #: Above this many rows, distinct values are estimated rather than counted.
@@ -112,13 +113,29 @@ def build(working: Path, wanted: Iterable[dict[str, Any]], *, data_path: str, se
 
 
 def reusable(previous: bytes, table: dict[str, Any]) -> bool:
-    """Whether a parent's profile describes ``table`` as it is: the same columns and types."""
+    """Whether a parent's profile describes ``table`` as it is and as this writer would.
+
+    The same columns and types, and `values` listed by the current `ALL_VALUES`:
+    a profile written under another limit is made again rather than carried forward.
+    """
     try:
         held = json.loads(previous).get("columns", [])
     except ValueError:
         return False
-    return [{"name": c.get("name"), "type": c.get("type")} for c in held] == columns_of(table)
+    if [{"name": c.get("name"), "type": c.get("type")} for c in held] != columns_of(table):
+        return False
+    return all(_listed_as_now(c) for c in held)
 
+
+def _listed_as_now(column: dict[str, Any]) -> bool:
+    values, distinct = column.get("values"), column.get("distinct_count")
+    if values is None:
+        return True
+    if not isinstance(values, list) or not isinstance(distinct, int):
+        return False
+    if len(values) == distinct:
+        return distinct <= ALL_VALUES
+    return distinct > ALL_VALUES and len(values) <= TOP_VALUES
 
 
 def _load_spatial(con) -> bool:
