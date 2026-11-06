@@ -149,7 +149,6 @@ The writer describes; the writer's tool checks the description against the froze
   "name": "population",
   "title": "Population by town",
   "description": "Census population of each town, by age and sex",
-  "document": "docs/README.md",
   "keywords": ["population", "census"],
   "language": "en",
   "homepage": "https://example.org/population",
@@ -167,7 +166,6 @@ The writer describes; the writer's tool checks the description against the froze
       "name": "population",
       "title": "Population",
       "description": "One row per town, age group and sex",
-      "document": "docs/population.md",
       "primary_key": ["town_code", "age_group", "sex"],
       "depends_on": [],
       "sql": "SELECT …",
@@ -198,12 +196,13 @@ The writer describes; the writer's tool checks the description against the froze
 
 ### Documents and attachments
 
-A dataset can carry longer text than `description`, with images, as files: a document for the dataset and one for each table. They are published with the version and do not change with it. Their history is kept where the writer edits them, such as a Git repository; FDL keeps only what was published.
+A dataset can carry longer text than `description`, with images, as files. They are published with the version and do not change with it. Their history is kept where the writer edits them, such as a Git repository; FDL keeps only what was published.
 
 - `attachments` lists the files: the path the writer gave, and the file's sha256, size and media type. Paths are relative, separated by `/`, have no empty, `.` or `..` segment, and are unique within the list
 - Each file is stored at `attachments/<sha256>` at the root (see [Layout](/spec/layout#paths)). The same content is stored once, and versions share it
-- `document`, at the top or in a table, is the path of an attachment in Markdown (`text/markdown`). A link or image in it with a relative URL refers to another attachment: the URL is resolved against the document's own path and then percent-decoded
-- `description` stays a short plain text. A reader that does not read documents still has it, and lists show it
+- A link or image with a relative URL in a Markdown attachment (`text/markdown`) refers to another attachment: the URL is resolved against the attachment's own path and then percent-decoded
+- Which attachment a reader shows, and where, is up to the reader. Readers commonly show `README.md` first
+- `description` stays a short plain text. A reader that does not read attachments still has it, and lists show it
 - A reader checks a file's sha256 before it shows it, and shows a link that names no attachment as broken
 - A writer keeps documents and images as files beside its YAML and names them by path. Its tool uploads them and writes `attachments`
 - Attachments are what `dataset.json` lists. Files that the rows of a table point at, such as images or PDFs collected as data, are not attachments; a separate, optional convention covers them

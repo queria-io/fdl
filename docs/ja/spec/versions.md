@@ -149,7 +149,6 @@ DuckLake を使わずに Parquet ファイルを読む読み手は、`deletes` �
   "name": "population",
   "title": "Population by town",
   "description": "Census population of each town, by age and sex",
-  "document": "docs/README.md",
   "keywords": ["population", "census"],
   "language": "en",
   "homepage": "https://example.org/population",
@@ -167,7 +166,6 @@ DuckLake を使わずに Parquet ファイルを読む読み手は、`deletes` �
       "name": "population",
       "title": "Population",
       "description": "One row per town, age group and sex",
-      "document": "docs/population.md",
       "primary_key": ["town_code", "age_group", "sex"],
       "depends_on": [],
       "sql": "SELECT …",
@@ -198,12 +196,13 @@ DuckLake を使わずに Parquet ファイルを読む読み手は、`deletes` �
 
 ### ドキュメントと添付ファイル
 
-データセットは、`description` より長い文章を画像と一緒にファイルとして持てます。データセット全体のドキュメントと、テーブルごとのドキュメントを置けます。これらはバージョンと一緒に公開し、そのバージョンの中では変わりません。履歴は書き手が編集する場所（Git のリポジトリなど）で持ち、FDL は公開したものだけを持ちます。
+データセットは、`description` より長い文章を画像と一緒にファイルとして持てます。これらはバージョンと一緒に公開し、そのバージョンの中では変わりません。履歴は書き手が編集する場所（Git のリポジトリなど）で持ち、FDL は公開したものだけを持ちます。
 
 - `attachments` にファイルを並べる。書き手が付けたパスと、ファイルの sha256・大きさ・メディアタイプを持つ。パスは相対パスで `/` で区切り、空・`.`・`..` のセグメントを含まず、一覧の中で重複しない
 - 各ファイルはルートの `attachments/<sha256>` に置く（[レイアウト](/ja/spec/layout#パス)）。同じ中身は 1 回だけ置き、複数のバージョンで共有する
-- 最上位とテーブルの `document` は、Markdown（`text/markdown`）の添付ファイルのパス。その中の相対 URL のリンクや画像は別の添付ファイルを指す。URL はドキュメント自身のパスを基準に解決してから、パーセントエンコーディングをデコードする
-- `description` は短いテキストのまま残す。ドキュメントを読まない読み手もこれを持ち、一覧にはこれを表示する
+- Markdown（`text/markdown`）の添付ファイルの中の相対 URL のリンクや画像は、別の添付ファイルを指す。URL はその添付ファイル自身のパスを基準に解決してから、パーセントエンコーディングをデコードする
+- どの添付ファイルをどこに表示するかは読み手が決める。多くの読み手は `README.md` を最初に表示する
+- `description` は短いテキストのまま残す。添付ファイルを読まない読み手もこれを持ち、一覧にはこれを表示する
 - 読み手は、ファイルを表示する前に sha256 を確認する。どの添付ファイルも指さないリンクは、リンク切れとして表示する
 - 書き手は、ドキュメントと画像を YAML の隣にファイルとして置き、パスで指す。書き手のツールがそれをアップロードし、`attachments` を書く
 - 添付ファイルは `dataset.json` が並べるものに限る。テーブルの行が指すファイル（データとして集めた画像や PDF など）は添付ファイルではなく、別の任意の規約で扱う
