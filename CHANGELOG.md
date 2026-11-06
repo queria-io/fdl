@@ -1,6 +1,25 @@
 # CHANGELOG
 
 
+## v0.21.0 (2026-11-06)
+
+### Bug Fixes
+
+- **withdraw**: Delete the assets only withdrawn versions reach
+  ([#41](https://github.com/queria-io/fdl/pull/41),
+  [`33a452e`](https://github.com/queria-io/fdl/commit/33a452e2de9ab0640a32a6550fd21851ba4dc038))
+
+A version reaches the assets its tree.json lists and those its asset columns hold. Withdrawal now
+  deletes those no kept version reaches, before the data files, so a run that stops half way can
+  still work them out.
+
+### Features
+
+- **profiles**: List every value of a column with up to 2,000 distinct values
+  ([#42](https://github.com/queria-io/fdl/pull/42),
+  [`50a9333`](https://github.com/queria-io/fdl/commit/50a9333fc7b1d2fae990d555ed1393d11d01328c))
+
+
 ## v0.20.1 (2026-11-06)
 
 ### Bug Fixes
