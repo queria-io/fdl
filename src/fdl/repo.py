@@ -18,7 +18,7 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Iterable, Iterator, Mapping
 
-from . import catalog, layout, objects, refs
+from . import catalog, layout, objects, profiles, refs
 from . import dataset as dataset_json
 from .store import Store, is_conflict, is_missing
 from .version import Catalog, DuckLake, File, Version, VersionError, new_id, parse, utc_now
@@ -469,6 +469,58 @@ def update_refs_index(store: Store) -> None:
         warnings.warn(f"the ref moved, but refs.json was not rewritten: {exc}", stacklevel=2)
 
 
+def write_profiles(
+    store: Store,
+    local: Path,
+    parent: Version | None,
+    working: Path,
+    *,
+    data_path: str,
+    setup: Iterable[str] = (),
+) -> int:
+    """Write a profile of each table of a committed version under ``local/profiles/``.
+
+    A table whose data files and columns are the parent's keeps the parent's
+    profile, so a commit reads only the tables that changed. Returns how many
+    were made from the data.
+    """
+    local = Path(local)
+    described_path = local / layout.DATASET
+    if not described_path.is_file():
+        return 0
+    described = json.loads(described_path.read_text(encoding="utf-8"))
+    files_now = json.loads((local / layout.FILES).read_text(encoding="utf-8")).get("tables", {})
+    files_before: dict = {}
+    if parent is not None and parent.files is not None:
+        try:
+            files_before = json.loads(store.get(layout.version_dir(parent.id) + parent.files.path)).get("tables", {})
+        except Exception as exc:  # noqa: BLE001 - stores raise their own types
+            if not is_missing(exc):
+                raise
+    kept: dict[str, bytes] = {}
+    pending = []
+    for table in profiles.tables(described):
+        key = f"{table['schema']}.{table['name']}"
+        relative = profiles.path(table["schema"], table["name"])
+        previous = None
+        if parent is not None and key in files_before and files_before[key] == files_now.get(key):
+            try:
+                previous = store.get(layout.version_dir(parent.id) + relative)
+            except Exception as exc:  # noqa: BLE001
+                if not is_missing(exc):
+                    raise
+        if previous is not None and profiles.reusable(previous, table):
+            kept[relative] = previous
+        else:
+            pending.append(table)
+    made = profiles.build(working, pending, data_path=data_path, setup=setup)
+    for relative, content in {**kept, **made}.items():
+        target = local / relative
+        target.parent.mkdir(parents=True, exist_ok=True)
+        target.write_bytes(content)
+    return len(made)
+
+
 def upload(store: Store, local: Path, version: Version) -> None:
     """Put a committed version's files, catalog first and the record last.
 
@@ -483,6 +535,11 @@ def upload(store: Store, local: Path, version: Version) -> None:
         _put_once(store, layout.version_dir(version.id) + version.files.path, local / version.files.path)
     if version.tree is not None:
         _put_once(store, layout.version_dir(version.id) + version.tree.path, local / version.tree.path)
+    profiled = local / layout.PROFILES_DIR
+    if profiled.is_dir():
+        for written in sorted(profiled.rglob("*.json")):
+            relative = written.relative_to(local).as_posix()
+            _put_once(store, layout.version_dir(version.id) + relative, written)
     _put_once(store, layout.version_record(version.id), local / layout.VERSION_RECORD)
 
 
@@ -553,6 +610,7 @@ def expire(store: Store, version_id: str, *, reason: str = "retention") -> None:
             layout.version_dir(version_id) + layout.FILES,
             layout.version_dir(version_id) + layout.TREE,
             *store.list(layout.version_dir(version_id) + layout.CATALOGS_DIR),
+            *store.list(layout.version_dir(version_id) + layout.PROFILES_DIR),
         ]
     )
 

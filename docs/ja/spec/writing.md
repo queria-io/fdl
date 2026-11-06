@@ -17,7 +17,7 @@ description: チェックアウト、コミット、push。作業カタログ、
 | --- | --- |
 | チェックアウト | ブランチのバージョンのカタログから作業カタログを作り、そのバージョンを覚える。最初のバージョンの前は空のものを作る |
 | コミット | 作業カタログの最後のスナップショットを新しいバージョンに固める。親は覚えておいたバージョン。中身を `dataset.json` で説明する |
-| push | データファイルを確かめ、カタログ、`dataset.json`・`files.json`・`tree.json`、`version.json` の順にアップロードし、条件付きで ref を動かす |
+| push | データファイルを確かめ、カタログ、`dataset.json`・`files.json`・`tree.json`・profile、`version.json` の順にアップロードし、条件付きで ref を動かす |
 
 チェックアウトでは、DuckLake の管理用の表を、固めたカタログから SQLite へそのまま写します。固めるときはその逆で、最後のスナップショットまでの行を残します。どちらもデータファイルは書き換えません。
 
@@ -40,7 +40,7 @@ description: チェックアウト、コミット、push。作業カタログ、
 
 1. データファイル・アセット
 2. `versions/<ID>/ducklake.duckdb`（と `catalogs/`）
-3. `versions/<ID>/dataset.json`・`versions/<ID>/files.json`・`versions/<ID>/tree.json`
+3. `versions/<ID>/dataset.json`・`versions/<ID>/files.json`・`versions/<ID>/tree.json`・`versions/<ID>/profiles/`
 4. `versions/<ID>/version.json`
 5. ref（条件付き）
 

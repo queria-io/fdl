@@ -53,6 +53,8 @@ fdl commit <working.sqlite> -m "What changed" --author alice [--dataset dataset.
 
 コマンドは、説明の隣の `README.md` と、そこにある `docs/` より下のファイル（隠しファイルを除く）をバージョンの tree に入れます。そのフォルダからのパスで `tree.json` を書き、リポジトリに無いものを書いたままの中身で `assets/<sha256>` にアップロードします（[tree.json](/ja/spec/versions#treejson)）。
 
+あわせてテーブルごとの profile を書きます（[profiles/](/ja/spec/versions#profiles)）。読むのは、データファイルか列が親から変わったテーブルだけです。読めなかったテーブルには profile を書かず、警告を出してコミットを続けます。
+
 `asset: true` の印を付けた列は、ファイルの sha256 を持ちます（[アセット](/ja/spec/versions#アセット)）。コマンドはその列の値を読み、リポジトリに無いファイルを `--assets` のフォルダから `assets/<sha256>` にアップロードします。ファイルは中身で照合するので、フォルダの中のファイル名は問いません。
 
 親と同じ中身になるとき（[変更がないとき](/ja/spec/writing#変更がないとき)）は `Nothing to commit` と表示し、ブランチを動かさずに終了コード 0 で終わります。同じ行を新しいファイルに書き直しただけの作り直しも、変更なしとみなします。`--allow-empty` を付けると、それでもバージョンを作ります。行を読めず判定できないときは、警告を出してバージョンを作ります。

@@ -23,9 +23,10 @@ description: リポジトリのファイル、そのパス、fdl.json の中身�
     dataset.json                   バージョンの中身の説明
     files.json                     カタログから作った、表ごとのデータファイルの索引（任意）
     tree.json                      README など、バージョンのほかのファイルのパスの一覧（任意）
+    profiles/<schema>/<table>.json データから測ったテーブルごとの要約（任意）
     catalogs/<format>.duckdb       別の DuckLake 形式のカタログ（任意）
     expired.json                   保持期間を過ぎた印（過ぎたときだけ）
-    <others>                       ホストが足すファイル（プレビューなど）
+    <others>                       ホストが足すファイル
   <data_dir><schema>/<table>/ducklake-<uuid>.parquet   データファイル（共有、変えない）
   assets/<sha256>                  テーブルの行やバージョンの tree.json が指すファイル（共有、変更しない）
 ```

@@ -53,6 +53,8 @@ Every version is described by a `dataset.json` (see [Versions](/spec/versions#da
 
 The command puts `README.md` beside the description and every file below `docs/` there (hidden ones left out) in the version's tree: it writes `tree.json` with their paths from that folder and uploads those the repository lacks to `assets/<sha256>`, as written (see [tree.json](/spec/versions#treejson)).
 
+It also writes a profile of each table (see [profiles/](/spec/versions#profiles)), reading only the tables whose data files or columns changed since the parent. A table it cannot read gets none, and the commit goes on with a warning.
+
 Columns marked `asset: true` hold the sha256 of files (see [Assets](/spec/versions#assets)). The command reads the values those columns hold and uploads the files the repository lacks from the `--assets` folder to `assets/<sha256>`, by their content: file names in the folder do not matter.
 
 When the version would hold what its parent holds (see [When nothing changed](/spec/writing#when-nothing-changed)), it prints `Nothing to commit`, leaves the branch where it is and exits 0. A rebuild that writes the same rows to new files counts as unchanged. `--allow-empty` makes the version anyway. If the rows cannot be read to tell, it warns and makes the version.

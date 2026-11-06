@@ -154,6 +154,51 @@ When a version is taken out of retention, `files.json` is deleted with its catal
 - A writer keeps the files where it edits them, such as beside its YAML in a Git repository, and its tool writes `tree.json`. The writer does not write it by hand
 - `tree.json` is part of the version and does not change with it. It is deleted with the catalogs when the version is taken out of retention
 
+## profiles/
+
+A profile summarizes one table at `ducklake.snapshot_id`: its row count, what each column holds, its first rows and, for a table with a geometry column, the extent and a sample of its shapes. A reader can show a table, or a host can index it for search, from this one small file, without opening the catalog or reading the data. It holds what was measured from the data; what a column means is the writer's, in `dataset.json`. Like `files.json`, it is made from the catalog and the data, which win where the two differ, and it is optional: a reader must work without it.
+
+Each table's profile is at `versions/<ID>/profiles/<schema>/<table>.json`. A table whose schema or name is empty, `.`, `..` or holds `/` has none. Views have none.
+
+```json profiles/main/towns.json
+{
+  "rows": 1741,
+  "columns": [
+    { "name": "town_code", "type": "varchar", "null_count": 0, "distinct_count": 1741,
+      "values": [{ "value": "082201", "count": 1 }] },
+    { "name": "prefecture", "type": "varchar", "null_count": 0, "distinct_count": 2,
+      "values": [{ "value": "Ibaraki", "count": 1200 }, { "value": "Tochigi", "count": 541 }] },
+    { "name": "population", "type": "int64", "null_count": 3, "distinct_count": 1650,
+      "min": 0, "max": 84211, "mean": 3120.5, "std": 4410.2, "q1": 420, "median": 1630, "q3": 3990,
+      "values": [{ "value": "0", "count": 12 }],
+      "histogram": [{ "start": 0, "end": 4210.55, "count": 1302 }] },
+    { "name": "surveyed_on", "type": "date", "null_count": 0, "distinct_count": 1,
+      "min": "2025-10-01", "max": "2025-10-01", "span_days": 0,
+      "values": [{ "value": "2025-10-01", "count": 1741 }] },
+    { "name": "coastal", "type": "boolean", "null_count": 0, "true_count": 210, "false_count": 1531 },
+    { "name": "geom", "type": "geometry" }
+  ],
+  "head": [{ "town_code": "082201", "prefecture": "Ibaraki", "population": 2210, "surveyed_on": "2025-10-01", "coastal": false }],
+  "geometry": {
+    "column": "geom",
+    "count": 1741,
+    "bbox": [139.69, 35.74, 140.85, 37.15],
+    "types": ["MULTIPOLYGON", "POLYGON"],
+    "sample": { "type": "FeatureCollection", "features": [] }
+  }
+}
+```
+
+- `rows` is the table's row count. `columns` lists every column in the catalog's order, with `name` and `type` (DuckLake's type name) as in `dataset.json`
+- Every column but a geometry one has `null_count`. Numbers, text, dates and times have `distinct_count`, which may be estimated on a large table, and `values`
+- `values` lists each value, as text, with the number of rows that hold it, most common first and then by value. When the column holds at most 1,000 distinct values, it lists them all and `distinct_count` is exact: a reader tells a whole list by its length matching `distinct_count`. Otherwise it lists the 10 most common. A host can search a whole list by value, such as a town's code or name
+- Numbers have `min`, `max`, `mean`, `std`, the quartiles `q1`, `median` and `q3`, and a `histogram` of equal-width buckets between `min` and `max`. Dates and times have `min` and `max` as text, and dates and timestamps `span_days`. Booleans have `true_count` and `false_count`
+- `head` holds the first rows the table returns, as JSON objects, leaving out geometry and columns whose values have no JSON form
+- `geometry` describes the first geometry column, when the writer could read it: how many rows have a shape, the `bbox` of all of them (`[xmin, ymin, xmax, ymax]` in the column's coordinates), the geometry types present, and a GeoJSON `FeatureCollection` of a random sample of simplified shapes for drawing a map
+- A writer may leave out any key it cannot compute. A reader ignores keys it does not know
+- A writer reuses its parent's profile for a table whose data files (in `files.json`) and columns are the parent's, so a commit reads only the tables that changed
+- Profiles are part of the version and do not change with it. They are deleted with the catalogs when the version is taken out of retention
+
 ## The frozen catalog
 
 `ducklake.duckdb` is a DuckLake catalog in DuckDB's file format.
