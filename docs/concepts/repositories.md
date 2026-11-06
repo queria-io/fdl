@@ -29,7 +29,7 @@ Readers only read. A static HTTP server in front of the repository is enough for
   refs/tags/<name>         tags
   versions/<ID>/           one folder per version
   data/                    Parquet files, shared by all versions
-  sources/<sha256>         the files a version was built from (optional)
+  assets/<sha256>          files a version points at, such as PDFs, images and its README
 ```
 
 The repository holds no catalog outside a version folder, and never a working catalog. Either would hand readers a state that was never published.

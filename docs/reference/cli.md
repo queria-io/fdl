@@ -44,12 +44,16 @@ Refused when the version is past retention.
 ## fdl commit
 
 ```bash
-fdl commit <working.sqlite> -m "What changed" --author alice [--dataset dataset.json] [--allow-empty]
+fdl commit <working.sqlite> -m "What changed" --author alice [--dataset dataset.json] [--allow-empty] [--assets files/]
 ```
 
 Freezes the working catalog into a new version whose parent is the version it was checked out at, uploads it, and moves the branch on condition. It prints the branch, the new version ID and its `seq`.
 
 Every version is described by a `dataset.json` (see [Versions](/spec/versions#datasetjson)), read from `--dataset` or else from `dataset.json` or `dataset.yml` in the current directory. Tables described in `*.table.yml` (or `*.table.json`) files below that folder are added to it; hidden folders are skipped. The command checks it against the catalog and fills in the column types, row counts and catalog comments.
+
+The command puts `README.md` beside the description and every file below `docs/` there (hidden ones left out) in the version's tree: it writes `tree.json` with their paths from that folder and uploads those the repository lacks to `assets/<sha256>`, as written (see [tree.json](/spec/versions#treejson)).
+
+Columns marked `asset: true` hold the sha256 of files (see [Assets](/spec/versions#assets)). The command reads the values those columns hold and uploads the files the repository lacks from the `--assets` folder to `assets/<sha256>`, by their content: file names in the folder do not matter.
 
 When the version would hold what its parent holds (see [When nothing changed](/spec/writing#when-nothing-changed)), it prints `Nothing to commit`, leaves the branch where it is and exits 0. A rebuild that writes the same rows to new files counts as unchanged. `--allow-empty` makes the version anyway. If the rows cannot be read to tell, it warns and makes the version.
 
@@ -59,7 +63,16 @@ Refused when:
 - the branch has moved since the checkout. Check out again and redo the work
 - the working catalog holds inlined rows
 - a data file the catalog names is not in the repository
+- an asset column is not `varchar`, holds a value that is not a sha256, or points at a file that is neither in the repository nor in `--assets`
 - a data file is recorded with an absolute path outside the data directory
+
+## fdl assets
+
+```bash
+fdl assets <folder> > files.csv
+```
+
+Prints every file below the folder (hidden ones left out) as CSV, with `path`, `sha256`, `bytes` and `media_type`. Read it into the table that points at the files, for example with DuckDB's `read_csv`, mark its `sha256` column `asset: true`, and commit with `--assets <folder>`. The files are hashed once here; nothing reads them in SQL.
 
 ## fdl log
 
@@ -94,6 +107,8 @@ fdl withdraw <remote> <version>... [--yes]
 ```
 
 Removes versions that hold data that must not be published, such as personal data published by mistake (see [Withdrawal](/spec/data-files#withdrawal)). First commit a version without the data, so that no branch points at an affected version. The command then deletes the tags that point at the versions, the data files their catalogs name that no kept version reads, and their catalogs, and puts `expired.json` with `"reason": "withdrawn"`. `version.json` stays.
+
+Assets are not deleted yet: delete those that hold the data from `assets/` by hand.
 
 Without `--yes` it only prints what it would delete. Files a kept version still reads are listed as kept; if they hold the data, withdraw that version too. Refused while a branch or a request points at one of the versions.
 

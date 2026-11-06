@@ -21,12 +21,12 @@ A host can take pushes over HTTP, so a writer needs no keys to its storage. The 
 - Parts other than the last are the same size. A writer sends a file in parts when it is larger than one request may be (64 MB by default)
 - A host decides which keys it takes. It may refuse writes to `HEAD`, `fdl.json` and anything outside the layout (but must answer `HEAD` requests, which a writer needs for a ref's ETag), and take `versions/` and data files only with `If-None-Match: *`
 - A host that moves refs itself after its checks keeps `refs.json` too, and may refuse a writer's write to it with 403. A writer treats that as done
-- Moving a ref is where a host checks a push: the version is there, it is a fast-forward, the catalog matches `version.json`, and every data file it names is in the repository. A refusal is 409 with the reason in the body
+- Moving a ref is where a host checks a push: the version is there, it is a fast-forward, the catalog matches `version.json`, and every data file it names and every file its `tree.json` lists are in the repository. It may check the assets the rows hold too. A refusal is 409 with the reason in the body
 - There is no `DELETE`. Retention and deletion are the host's
 
 ## Uploading straight to storage
 
-A host may hand out upload URLs so that files go straight to its storage rather than through it, as Git LFS's batch API does. Only files that are written once (data files and the files of a version) go this way. Refs are always written through the host.
+A host may hand out upload URLs so that files go straight to its storage rather than through it, as Git LFS's batch API does. Only files that are written once (data files, assets and the files of a version) go this way. Refs are always written through the host.
 
 `POST <root>/?batch` with the files a writer is about to upload:
 

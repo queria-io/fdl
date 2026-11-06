@@ -48,6 +48,11 @@ A version is the files under `versions/<version ID>/`. They must not change once
     "bytes": 1536,
     "sha256": "7a0e…"
   },
+  "tree": {
+    "path": "tree.json",
+    "bytes": 214,
+    "sha256": "3c5d…"
+  },
   "changes": [
     { "table": "main.population", "kind": "add_column", "column": "note", "breaking": false }
   ],
@@ -76,8 +81,9 @@ A version is the files under `versions/<version ID>/`. They must not change once
 | `dataset` | must | The `dataset.json` beside the catalog: its file name, size and sha256. Versions written before it was required lack it |
 | `ducklake` | must | The DuckLake format, the snapshot frozen, and the range of snapshots this version adds after its parent (first and last) |
 | `files` | may | The `files.json` beside the catalog, if written: its file name, size and sha256 ([files.json](#filesjson)) |
+| `tree` | may | The `tree.json` beside the catalog, if the version holds other files: its file name, size and sha256 ([tree.json](#treejson)) |
 | `changes` | may | Column differences from the parent. `breaking` says whether SQL written for the parent may fail (a column dropped, renamed or recreated) |
-| `inputs` | may | Source files used. How `source_id` is assigned is up to the writer |
+| `inputs` | may | Source files used: where each came from, when, and its sha256. FDL does not store them; a writer that keeps them makes them assets of a table. How `source_id` is assigned is up to the writer |
 | `annotations` | may | What the format does not interpret, keyed by the name of whoever reads it (a host, a tool) |
 
 A reader must ignore fields it does not know.
@@ -127,6 +133,26 @@ A reader can tell from `version.json` alone whether it can open a version.
 A reader that reads the Parquet files without DuckLake must not read a table whose files have `deletes`, or whose `renamed_columns` is `true`, unless it applies them as DuckLake does. Otherwise it returns deleted rows or misses renamed columns.
 
 When a version is taken out of retention, `files.json` is deleted with its catalogs.
+
+## tree.json
+
+`tree.json` lists the files a version holds beside its tables, such as a README and the images it shows, by path. It plays the part of Git's tree: each path names the sha256 of a file, and the file is stored as an asset at `assets/<sha256>`. The tables are not in it; the catalog is their tree.
+
+```json tree.json
+{
+  "entries": [
+    { "path": "README.md", "sha256": "5e88…", "bytes": 3120 },
+    { "path": "docs/images/towns.png", "sha256": "c9d2…", "bytes": 48211 }
+  ]
+}
+```
+
+- `entries` lists each file's path, sha256 (lower-case hex) and size, by path. Paths are relative, separated by `/`, have no empty, `.` or `..` segment, and are unique
+- Files are stored as written. A relative link in a Markdown file is resolved against the file's own path, percent-decoded, and looked up in `entries`, as GitHub resolves a link in a README through the commit's tree. A link to a path not in `entries` is broken
+- Readers commonly show `README.md` first. Which file to show, and where, is the reader's choice
+- `description` in `dataset.json` stays a short plain text. A reader that does not read the tree still has it, and lists show it
+- A writer keeps the files where it edits them, such as beside its YAML in a Git repository, and its tool writes `tree.json`. The writer does not write it by hand
+- `tree.json` is part of the version and does not change with it. It is deleted with the catalogs when the version is taken out of retention
 
 ## The frozen catalog
 
@@ -188,6 +214,22 @@ The writer describes; the writer's tool checks the description against the froze
 - Keys this specification does not define are refused. What the format does not interpret goes under `annotations`, keyed by the name of whoever reads it, at the top, in a table or in a field. Writers keep it as written
 - Versions written before `annotations` had its name carry it as `extensions`. A reader reads `extensions` as `annotations`
 - What a license or a source says is the writer's claim. A host may check it before it publishes
+
+### Assets
+
+A table can point at files, such as the PDFs of a set of reports or the photos of a set of facilities, as Git LFS points at large files: the row holds the file's sha256, and the file is stored beside the data.
+
+```json
+{ "name": "sha256", "title": "PDF", "type": "varchar", "asset": true }
+```
+
+- A field with `"asset": true` holds, in each row, the lower-case hex sha256 of a file, or null. Its type is `varchar`
+- Each file is stored at `assets/<sha256>` at the root (see [Layout](/spec/layout#paths)). The same content is stored once, and versions share it
+- The file's name, size and media type are columns of the same table, as the writer names them. A writer should keep at least the media type, so a reader can tell how to show the file before it gets it
+- To change a file, a writer stores the new content and puts its sha256 in the row. Older versions keep pointing at the old content
+- A writer uploads a file with its media type as `Content-Type`. Every asset a version's rows hold must be in the repository before the version is written
+- A reader finds a file at `<root>assets/<sha256>`, wherever it reads the repository from, and checks its sha256 before it shows it. A row whose file is missing is shown as broken
+- A file that is not in the repository, such as one on the publisher's site, is held as a URL in an ordinary column. It is not an asset, and FDL does not manage it
 
 ## Catalogs in other formats
 

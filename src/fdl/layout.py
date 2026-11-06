@@ -27,6 +27,10 @@ FILES = "files.json"
 EXPIRED = "expired.json"
 #: Other formats of the same catalog, under the version (optional).
 CATALOGS_DIR = "catalogs/"
+#: The other files of a version (its README, say), by path to the asset that holds each (optional).
+TREE = "tree.json"
+#: Files the rows of a table point at, by sha256 (shared).
+ASSETS_DIR = "assets/"
 
 #: What a symbolic ref starts with. HEAD is the only one.
 SYMBOLIC = "ref: "

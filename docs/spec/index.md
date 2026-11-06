@@ -16,7 +16,7 @@ FDL is a storage layout for keeping versions of a [DuckLake](https://ducklake.se
 - the layout of a repository, and the name and content of each file ([Layout](/spec/layout))
 - the fields of a version record and the frozen catalog ([Versions](/spec/versions))
 - the content of refs and the rules for moving them ([Refs](/spec/refs))
-- when data files may be deleted, and how a version is taken out of retention or withdrawn ([Data files](/spec/data-files))
+- when shared objects (data files and assets) may be deleted, and how a version is taken out of retention or withdrawn ([Data files](/spec/data-files))
 - how a reader finds and opens a version, and checks who made it ([Reading](/spec/reading))
 - the order of writes, and when a push is refused ([Writing](/spec/writing))
 - the requests a host answers to take pushes over HTTP ([Pushing over HTTP](/spec/http))
@@ -41,6 +41,7 @@ The format names no host and no service. Fields a host adds go where the specifi
 | working catalog | A writer's own DuckLake catalog, in SQLite. Never in the repository |
 | data file | A Parquet file DuckLake writes, shared between versions |
 | host | A service that keeps repositories and controls access to them |
-| grace period | How long an unnamed data file is kept before it may be deleted. 7 days unless a host says otherwise |
+| asset | A file the rows of a table point at by its sha256, such as a PDF or an image collected as data |
+| grace period | How long a shared object no version reaches is kept before it may be deleted. 7 days unless a host says otherwise |
 
 A DuckLake snapshot is to a version what a small commit on a work branch is to the squash commit that lands on `main`. Snapshots are made on every write and stay inside the catalog. The unit shown to people is the version.
