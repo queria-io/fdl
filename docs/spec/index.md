@@ -41,6 +41,6 @@ The format names no host and no service. Fields a host adds go where the specifi
 | working catalog | A writer's own DuckLake catalog, in SQLite. Never in the repository |
 | data file | A Parquet file DuckLake writes, shared between versions |
 | host | A service that keeps repositories and controls access to them |
-| grace period | How long an unnamed data file is kept before it may be deleted. 7 days unless a host says otherwise |
+| grace period | How long an unnamed data file or an unlisted attachment is kept before it may be deleted. 7 days unless a host says otherwise |
 
 A DuckLake snapshot is to a version what a small commit on a work branch is to the squash commit that lands on `main`. Snapshots are made on every write and stay inside the catalog. The unit shown to people is the version.

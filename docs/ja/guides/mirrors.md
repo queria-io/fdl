@@ -9,13 +9,14 @@ description: リポジトリを別のホストに写し、最新に保ち、写�
 
 push と同じ順に写します。そうすれば、ミラーの読み手が、まだ揃っていないバージョンを ref からたどることはありません。
 
-1. ミラーに無い `data/` の下のデータファイル
+1. ミラーに無い `data/` の下のデータファイルと `attachments/` の下の添付ファイル
 2. ミラーに無い `versions/` の下のバージョンのフォルダ。各フォルダで `version.json` を最後に
 3. 変わっていれば `fdl.json`
 4. `refs/`、`HEAD`、`refs.json`
 
 ```bash
 aws s3 sync s3://origin/towns/data/     s3://mirror/towns/data/
+aws s3 sync s3://origin/towns/attachments/ s3://mirror/towns/attachments/
 aws s3 sync s3://origin/towns/versions/ s3://mirror/towns/versions/
 aws s3 cp   s3://origin/towns/fdl.json  s3://mirror/towns/fdl.json
 aws s3 sync s3://origin/towns/refs/     s3://mirror/towns/refs/ --delete
@@ -49,4 +50,4 @@ ATTACH 'ducklake:https://mirror.example.org/towns/versions/019a3c4e-…/ducklake
 
 元がバージョンの保持期間を終わらせると、ミラーは次に写すときに、`expired.json` が増え、カタログが消えたことに気づきます。`expired.json` を写し、元が消したカタログを消してください。残しておくと、元がもう出していないバージョンをミラーが出し続けます。
 
-`"reason": "withdrawn"` の `expired.json` は、公開してはいけないデータを元が取り下げたことを意味します。元が消したカタログとデータファイルを、待たずに消してください。
+`"reason": "withdrawn"` の `expired.json` は、公開してはいけないデータを元が取り下げたことを意味します。元が消したカタログ・データファイル・添付ファイルを、待たずに消してください。

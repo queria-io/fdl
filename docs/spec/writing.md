@@ -53,6 +53,6 @@ Files of a version are written once. A writer that finds one already there with 
 A push from a stale working catalog is refused on two checks:
 
 1. The version the branch holds now is not among the new version's `parents`. Someone else pushed first
-2. A data file the catalog names is missing from the repository. A file written and left unnamed longer than the grace period may have been deleted
+2. A data file the catalog names, or an attachment `dataset.json` lists, is missing from the repository. A file that no live version named for longer than the grace period may have been deleted, even if the writer found it there
 
 In both cases the writer checks out again, redoes the work and pushes again. Nothing in the repository needs to be cleaned up: the refused version is not named by any ref.

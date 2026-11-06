@@ -200,9 +200,9 @@ The writer describes; the writer's tool checks the description against the froze
 
 A dataset can carry longer text than `description`, with images, as files: a document for the dataset and one for each table. They are published with the version and do not change with it. Their history is kept where the writer edits them, such as a Git repository; FDL keeps only what was published.
 
-- `attachments` lists the files: the path the writer gave, and the file's sha256, size and media type. Paths are relative, separated by `/`, and unique within the list
+- `attachments` lists the files: the path the writer gave, and the file's sha256, size and media type. Paths are relative, separated by `/`, have no empty, `.` or `..` segment, and are unique within the list
 - Each file is stored at `attachments/<sha256>` at the root (see [Layout](/spec/layout#paths)). The same content is stored once, and versions share it
-- `document`, at the top or in a table, is the path of an attachment in Markdown (`text/markdown`). A link or image in it with a relative URL refers to another attachment, resolved against the document's own path
+- `document`, at the top or in a table, is the path of an attachment in Markdown (`text/markdown`). A link or image in it with a relative URL refers to another attachment: the URL is resolved against the document's own path and then percent-decoded
 - `description` stays a short plain text. A reader that does not read documents still has it, and lists show it
 - A reader checks a file's sha256 before it shows it, and shows a link that names no attachment as broken
 - A writer keeps documents and images as files beside its YAML and names them by path. Its tool uploads them and writes `attachments`

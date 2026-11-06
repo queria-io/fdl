@@ -25,7 +25,7 @@ A version is taken out of retention in this order:
 
 1. Put `versions/<ID>/expired.json`
 2. Delete the version's catalogs, `ducklake.duckdb` and `catalogs/`, and its `files.json`
-3. After the grace period, delete the data files that meet the conditions above
+3. After the grace period, delete the data files that meet the conditions above, and the attachments that meet theirs ([Attachments](#attachments))
 
 ```json expired.json
 { "expired_at": "2026-12-01T00:00:00Z", "reason": "retention" }
@@ -51,14 +51,15 @@ The data files go before the catalogs, so a withdrawal that stops half way can b
 ```
 
 - `version.json` stays, as with retention. If the record itself holds the data (in `message` or `inputs`), it is deleted too, and the history shows a missing parent at that point
-- Mirrors keep their own copies. A mirror that copies `expired.json` with `"reason": "withdrawn"` deletes the catalogs and the data files the origin deleted. The origin cannot force this; the host tells the mirrors it knows of
+- Mirrors keep their own copies. A mirror that copies `expired.json` with `"reason": "withdrawn"` deletes the catalogs, the data files and the attachments the origin deleted. The origin cannot force this; the host tells the mirrors it knows of
 
 ## Attachments
 
 - `attachments/<sha256>`, named by the lower-case hex sha256 of the content, and listed in a version's `dataset.json` (see [Versions](/spec/versions#documents-and-attachments))
 - Never overwritten. Several versions may list the same file
-- Deleted on the same conditions as a data file: no `dataset.json` of a live version lists it, and it was placed longer ago than the grace period.
-- Withdrawal deletes an attachment at once, like a data file, when it holds data that must not be published
+- Deleted on the same conditions as a data file: no `dataset.json` of a live version lists it, and it was placed longer ago than the grace period
+- A writer that finds an attachment already there does not upload it again. The file may still be deleted before the writer's `dataset.json` is written, so a push whose `dataset.json` lists a missing attachment is refused ([Writing](/spec/writing#when-a-push-is-refused))
+- Withdrawal deletes an attachment at once, like a data file, when it holds data that must not be published. Every version whose `dataset.json` lists it is an affected version
 
 ## Source files
 
