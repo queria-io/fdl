@@ -15,7 +15,7 @@ from pathlib import Path
 
 import typer
 
-from . import catalog, dataset, layout, refs, repo
+from . import catalog, dataset, layout, objects, refs, repo
 from .stores import StoreError, open_store
 from .version import VersionError, is_id
 
@@ -52,6 +52,7 @@ ERRORS = (
     VersionError,
     StoreError,
     dataset.DatasetError,
+    objects.ObjectError,
 )
 
 
@@ -104,6 +105,13 @@ def commit(
     allow_empty: bool = typer.Option(
         False, "--allow-empty", help="Make a version even if nothing changed since the last one"
     ),
+    assets_dir: Path | None = typer.Option(
+        None,
+        "--assets",
+        exists=True,
+        file_okay=False,
+        help="A folder with the files the asset columns point at, to upload those the repository lacks",
+    ),
 ) -> None:
     """Freeze the working catalog into a version and push it to its branch.
 
@@ -114,7 +122,10 @@ def commit(
     store = open_store(state["remote"])
     out = Path(tempfile.mkdtemp(prefix="fdl-"))
     try:
-        declared = dataset.gather(describe or dataset.find())
+        description = describe or dataset.find()
+        declared = dataset.gather(description)
+        root = Path(description).resolve().parent
+        listed = objects.tree(root)
         parent = repo.read_version(store, state["base"]) if state["base"] else None
 
         def make(allow_empty: bool):
@@ -126,6 +137,7 @@ def commit(
                 author={"name": author},
                 message=message,
                 dataset=declared,
+                tree=listed,
                 allow_empty=allow_empty,
                 working_data=Path(state["data"]).resolve().as_posix() + "/" if state.get("data") else None,
             )
@@ -136,7 +148,25 @@ def commit(
             typer.echo(f"warning: could not tell whether anything changed ({exc}); committing", err=True)
             version = make(True)
         local = Path(state["data"]) if state.get("data") else None
-        repo.push(store, out / version.id, version, ref=state["ref"], local_data=local)
+        described = json.loads((out / version.id / layout.DATASET).read_text(encoding="utf-8"))
+        held = objects.asset_values(
+            working,
+            objects.asset_columns(described),
+            data_path=Path(state["data"]).resolve().as_posix() + "/" if local else repo.data_url(store),
+        )
+        local_objects = objects.ByContent(
+            {item["sha256"]: root / item["path"] for item in listed},
+            assets_dir,
+        )
+        repo.push(
+            store,
+            out / version.id,
+            version,
+            ref=state["ref"],
+            local_data=local,
+            assets=held,
+            local_objects=local_objects,
+        )
     except repo.NothingToCommit as exc:
         # The branch may have moved on since the checkout, so say what the
         # working catalog matches rather than where the branch is.
@@ -148,6 +178,26 @@ def commit(
         shutil.rmtree(out, ignore_errors=True)
     _write_state(working, {**state, "base": version.id})
     typer.echo(f"{state['ref']} -> {version.id} (version {version.seq})")
+
+
+@app.command()
+def assets(folder: Path = typer.Argument(..., help="The folder of files the rows will point at")) -> None:
+    """List the files below a folder as CSV: path, sha256, bytes, media_type.
+
+    Read it into the table that points at them (DuckDB's read_csv, say), and
+    mark its sha256 column with ``asset: true``. `fdl commit --assets <folder>`
+    then uploads the files the repository lacks.
+    """
+    import csv
+    import sys
+
+    try:
+        found = objects.manifest(folder)
+    except ERRORS as exc:
+        raise _fail(exc) from exc
+    writer = csv.DictWriter(sys.stdout, fieldnames=["path", "sha256", "bytes", "media_type"], lineterminator="\n")
+    writer.writeheader()
+    writer.writerows(found)
 
 
 @app.command()

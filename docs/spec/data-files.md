@@ -1,21 +1,35 @@
 ---
 title: Data files
-description: Rules for data files and source files, when a data file may be deleted, and how a version is taken out of retention.
+description: Rules for shared objects (data files and assets), when a shared object may be deleted, and how a version is taken out of retention.
 ---
 
-## Data files
+## Shared objects
 
-- Named as DuckLake names them: `<data_dir><schema>/<table>/ducklake-<uuid>.parquet`. Delete files go in the same place
-- Never overwritten. Several versions may name the same file
-- A writer may place data files before making a version. Until a version names them, readers do not see them
+Data files and assets are shared objects: written once, never overwritten, and reached by any number of versions, as blobs are in Git. A version reaches them this way:
+
+| Object | Path | A version reaches it when |
+| --- | --- | --- |
+| data file | `<data_dir><schema>/<table>/ducklake-<uuid>.parquet` | its catalog names it |
+| asset | `assets/<sha256>` | a column its `dataset.json` marks as `asset` holds the sha256 in a row, or its `tree.json` lists it |
+
+- A writer may place shared objects before making a version. Until a version reaches them, readers do not see them
+- A writer that finds an object already there need not upload it again. It may still be deleted before the version is written, so a push whose version reaches a missing object is refused ([Writing](/spec/writing#when-a-push-is-refused))
+
+### Data files
+
+- Named as DuckLake names them. Delete files go in the same place
 - Compacting small files (`ducklake_merge_adjacent_files`) is allowed at any time: it writes new files and deletes none
 
-## When a data file may be deleted
+### Assets
+
+- Named by the lower-case hex sha256 of the content, so the same content is stored once (see [Versions](/spec/versions#assets))
+
+## When a shared object may be deleted
 
 Only when both hold:
 
-1. No catalog of a live version names it. A live version is one without `expired.json`
-2. It was placed longer ago than the grace period. The grace period protects files a writer has placed but not yet made a version of
+1. No live version reaches it. A live version is one without `expired.json`
+2. It was placed longer ago than the grace period. The grace period protects objects a writer has placed but not yet made a version of
 
 DuckLake's own cleanup (`ducklake_cleanup_old_files`, `ducklake_expire_snapshots`) sees only one catalog, so it must not be used to delete from a repository. Deleting is for a process that sees the whole repository.
 
@@ -24,8 +38,8 @@ DuckLake's own cleanup (`ducklake_cleanup_old_files`, `ducklake_expire_snapshots
 A version is taken out of retention in this order:
 
 1. Put `versions/<ID>/expired.json`
-2. Delete the version's catalogs, `ducklake.duckdb` and `catalogs/`, and its `files.json`
-3. After the grace period, delete the data files that meet the conditions above
+2. Delete the version's catalogs, `ducklake.duckdb` and `catalogs/`, and its `files.json` and `tree.json`
+3. After the grace period, delete the shared objects that meet the conditions above
 
 ```json expired.json
 { "expired_at": "2026-12-01T00:00:00Z", "reason": "retention" }
@@ -41,20 +55,14 @@ Withdrawal removes data that must not be published, such as personal data publis
 
 1. Make a new version without the data and move every branch that holds an affected version to it. This is a forward move: the new version's parent is the current one
 2. Delete the tags that point at affected versions
-3. Delete the data files that hold the data, at once: those the affected versions' catalogs name and no version kept reads at its snapshot
+3. Delete the shared objects that hold the data, at once, such as a data file with personal data or a screenshot showing it: those an affected version reaches and no version kept reaches. Every version that reaches such an object is an affected version
 4. For every affected version, put `expired.json` with `"reason": "withdrawn"` and delete its catalogs
 
-The data files go before the catalogs, so a withdrawal that stops half way can be run again: the catalogs still say which files hold the data.
+The shared objects go before the catalogs, so a withdrawal that stops half way can be run again: the catalogs still say which files hold the data.
 
 ```json expired.json
 { "expired_at": "2026-12-01T00:00:00Z", "reason": "withdrawn" }
 ```
 
 - `version.json` stays, as with retention. If the record itself holds the data (in `message` or `inputs`), it is deleted too, and the history shows a missing parent at that point
-- Mirrors keep their own copies. A mirror that copies `expired.json` with `"reason": "withdrawn"` deletes the catalogs and the data files the origin deleted. The origin cannot force this; the host tells the mirrors it knows of
-
-## Source files
-
-- `sources/<sha256>`, named by the lower-case hex sha256 of the content. The same content is stored once
-- Reached from the `sha256` in a version's `inputs`
-- Whether to store them, and who may read them, is the host's decision. They may be someone else's copyrighted work
+- Mirrors keep their own copies. A mirror that copies `expired.json` with `"reason": "withdrawn"` deletes the catalogs and the shared objects the origin deleted. The origin cannot force this; the host tells the mirrors it knows of

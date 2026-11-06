@@ -27,9 +27,10 @@ ATTACH 'ducklake:https://data.example.org/towns/versions/019a3c4e-…/ducklake.d
 | `refs.json` | `no-store` | `application/json` |
 | `versions/**` | `public, max-age=31536000, immutable` | as the file |
 | `data/**` | `public, max-age=31536000, immutable` | `application/octet-stream` |
+| `assets/**` | `public, max-age=31536000, immutable` | as uploaded |
 | `fdl.json` | a short `max-age` | `application/json` |
 
-A version folder and a data file never change once written, so they can be cached for as long as the CDN allows. Only `HEAD` and the refs change, and a cached ref sends readers to an old version without telling them. `expired.json` can appear in a version folder later, so a host that expires versions should purge `versions/<ID>/` from its CDN when it does.
+A version folder and a data file never change once written, so they can be cached for as long as the CDN allows. Only `HEAD` and the refs change, and a cached ref sends readers to an old version without telling them. `expired.json` can appear in a version folder later, so a host that expires versions should purge `versions/<ID>/` from its CDN when it does. On withdrawal, it also purges the data files and `assets/<sha256>` it deleted.
 
 The server must answer range requests (`Accept-Ranges: bytes`, `206 Partial Content`). DuckDB falls back to whole-file downloads without them, which is slow for large Parquet files.
 

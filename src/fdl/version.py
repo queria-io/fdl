@@ -80,6 +80,8 @@ class Version:
     files: File | None = None
     #: The version's `dataset.json`. None only in versions written before it was required.
     dataset: File | None = None
+    #: The version's `tree.json`, the other files it holds by path. Optional.
+    tree: File | None = None
     fdl: str = layout.FDL_VERSION
 
     def to_json(self) -> bytes:
@@ -124,6 +126,11 @@ class Version:
                 if self.files
                 else {}
             ),
+            **(
+                {"tree": {"path": self.tree.path, "bytes": self.tree.bytes, "sha256": self.tree.sha256}}
+                if self.tree
+                else {}
+            ),
             "changes": list(self.changes),
             "inputs": list(self.inputs),
             "annotations": self.annotations,
@@ -166,6 +173,7 @@ def parse(data: bytes, *, expected_id: str | None = None) -> Version:
             inputs=tuple(record.get("inputs", ())),
             annotations=dict(record.get("annotations", record.get("extensions", {}))),
             files=_file(record.get("files")),
+            tree=_file(record.get("tree")),
             dataset=(
                 File(path=dataset["path"], bytes=int(dataset["bytes"]), sha256=dataset["sha256"])
                 if dataset

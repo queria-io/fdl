@@ -17,7 +17,7 @@ A writer writes to a working catalog: a DuckLake catalog in SQLite, outside the 
 | --- | --- |
 | checkout | Make a working catalog from the catalog of the branch's version, and remember that version. Before the first version, make an empty one |
 | commit | Freeze the working catalog's last snapshot into a new version, with the remembered version as its parent, and describe it in `dataset.json` |
-| push | Check the data files, upload the catalog, `dataset.json` and `files.json`, then `version.json`, then move the ref on condition |
+| push | Check the data files, upload the catalog, `dataset.json`, `files.json` and `tree.json`, then `version.json`, then move the ref on condition |
 
 Checking out copies DuckLake's bookkeeping tables from the frozen catalog into SQLite as they are. Freezing does the reverse, keeping the rows up to the last snapshot. Neither rewrites a data file.
 
@@ -32,15 +32,15 @@ When freezing, a writer must:
 A writer should not make a version that holds what its parent holds, as Git makes no commit when the tree is the parent's. A version holds the same as its parent when:
 
 - the last snapshot is the parent's (`ducklake.snapshot_id`), or
-- the same tables and views are there, each table with the same columns and types and the same rows, counted as a multiset (order does not matter), and `dataset.json` has the parent's sha256
+- the same tables and views are there, each table with the same columns and types and the same rows, counted as a multiset (order does not matter), and `dataset.json` and `tree.json` have the parent's sha256 (or neither version has a `tree.json`)
 
 A table rebuilt from the same input is written to new data files, so comparing files or catalog bytes is not enough. A writer compares the files first and reads the rows only of tables whose files differ. A writer that cannot read the rows makes the version. A writer may make one anyway when asked, as `git commit --allow-empty` does.
 
 ## Order of writes
 
-1. Data files
+1. Data files and assets
 2. `versions/<ID>/ducklake.duckdb` (and any `catalogs/`)
-3. `versions/<ID>/dataset.json` and `versions/<ID>/files.json`
+3. `versions/<ID>/dataset.json`, `versions/<ID>/files.json` and `versions/<ID>/tree.json`
 4. `versions/<ID>/version.json`
 5. The ref, on condition
 
@@ -53,6 +53,6 @@ Files of a version are written once. A writer that finds one already there with 
 A push from a stale working catalog is refused on two checks:
 
 1. The version the branch holds now is not among the new version's `parents`. Someone else pushed first
-2. A data file the catalog names is missing from the repository. A file written and left unnamed longer than the grace period may have been deleted
+2. A data file the catalog names, or a file `tree.json` lists, is missing from the repository. A host may check the assets the rows hold as well. A file that no live version named for longer than the grace period may have been deleted, even if the writer found it there
 
 In both cases the writer checks out again, redoes the work and pushes again. Nothing in the repository needs to be cleaned up: the refused version is not named by any ref.

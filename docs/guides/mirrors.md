@@ -9,13 +9,14 @@ A mirror is a copy of a repository on another host. Since versions and data file
 
 Copy in the same order a push writes, so a reader of the mirror never follows a ref to a version that is not all there:
 
-1. data files under `data/` that the mirror lacks
+1. data files under `data/` and assets under `assets/` that the mirror lacks
 2. version folders under `versions/` that the mirror lacks, `version.json` last in each
 3. `fdl.json`, if it changed
 4. `refs/`, `HEAD` and `refs.json`
 
 ```bash
 aws s3 sync s3://origin/towns/data/     s3://mirror/towns/data/
+aws s3 sync s3://origin/towns/assets/   s3://mirror/towns/assets/
 aws s3 sync s3://origin/towns/versions/ s3://mirror/towns/versions/
 aws s3 cp   s3://origin/towns/fdl.json  s3://mirror/towns/fdl.json
 aws s3 sync s3://origin/towns/refs/     s3://mirror/towns/refs/ --delete
@@ -49,4 +50,4 @@ Anyone can write a `version.json`, so a checksum shows the copy matches the reco
 
 When the origin takes a version out of retention, the mirror sees `expired.json` appear and the catalog disappear on the next copy. Copy `expired.json` and delete the catalogs the origin deleted. A mirror that keeps them serves versions its origin no longer does.
 
-An `expired.json` with `"reason": "withdrawn"` means the origin removed data that must not be published. Delete the catalogs and the data files the origin deleted, without waiting.
+An `expired.json` with `"reason": "withdrawn"` means the origin removed data that must not be published. Delete the catalogs, the data files and the assets the origin deleted, without waiting.
