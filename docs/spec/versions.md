@@ -206,7 +206,7 @@ A dataset can carry longer text than `description`, with images, as files: a doc
 - `description` stays a short plain text. A reader that does not read documents still has it, and lists show it
 - A reader checks a file's sha256 before it shows it, and shows a link that names no attachment as broken
 - A writer keeps documents and images as files beside its YAML and names them by path. Its tool uploads them and writes `attachments`
-- Many files that belong to the rows of a table, such as images or PDFs collected as data, are not attachments. They go into the table, for example as a `BLOB` column
+- Attachments are what `dataset.json` lists. Files that the rows of a table point at, such as images or PDFs collected as data, are not covered by this specification yet
 
 ## Catalogs in other formats
 
