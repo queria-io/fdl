@@ -25,8 +25,9 @@ GEOMETRY_SAMPLE = 500
 #: Vertex tolerance of the sampled shapes, in the column's units (about 11 m in degrees).
 SIMPLIFY_TOLERANCE = 0.0001
 HISTOGRAM_BUCKETS = 20
-#: A column with at most this many distinct values lists them all in `values`.
-ALL_VALUES = 1000
+#: A column with at most this many distinct values lists them all in `values`: enough for
+#: a column of codes or names that covers a whole country, such as its municipalities.
+ALL_VALUES = 2000
 #: Otherwise `values` lists the most common.
 TOP_VALUES = 10
 #: Above this many rows, distinct values are estimated rather than counted.
