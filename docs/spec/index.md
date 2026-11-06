@@ -5,7 +5,7 @@ sidebar:
 description: The normative description of FDL 0.1 (draft) - what it decides, what it leaves to hosts, and the terms it uses.
 ---
 
-This is the specification of FDL 0.1, a draft. It changes as the tools that implement it are built. Tools are written against this specification, and where a tool and this text disagree, the text is changed first and the tool follows.
+This is the specification of FDL 0.1, a draft. Tools are written against this specification, and where a tool and this text disagree, the text is changed first and the tool follows.
 
 FDL is a storage layout for keeping versions of a [DuckLake](https://ducklake.select/) catalog, modelled on how Git stores commits. It says which files go where in a store and how readers and writers handle them. No server is needed: the store has to read, write and write on condition.
 
