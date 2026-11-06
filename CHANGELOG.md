@@ -1,6 +1,20 @@
 # CHANGELOG
 
 
+## v0.20.0 (2026-11-06)
+
+### Documentation
+
+- Drop the note that the draft spec changes as tools are built
+  ([#36](https://github.com/queria-io/fdl/pull/36),
+  [`de531b8`](https://github.com/queria-io/fdl/commit/de531b806a3b1d65fe4e5347ce203d22573981d6))
+
+### Features
+
+- Write a profile of each table beside a version ([#39](https://github.com/queria-io/fdl/pull/39),
+  [`bdabd3f`](https://github.com/queria-io/fdl/commit/bdabd3fcd3f0b777609de78691b8ad64a1c40c26))
+
+
 ## v0.19.0 (2026-11-06)
 
 ### Features
