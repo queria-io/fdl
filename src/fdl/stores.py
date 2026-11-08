@@ -380,6 +380,25 @@ class HttpStore:
             action = action if action is None else {k: v for k, v in action.items() if k != "_until"}
             self._send_one(key, path, action, content_type)
             return
+        for attempt in range(self.STORAGE_ATTEMPTS):
+            try:
+                self._put_to_storage(key, path, action, content_type)
+                return
+            except StoreError as exc:
+                # Storage answers a busy moment with 5xx or 429, or drops the
+                # connection. The PUT writes the same bytes again, so it is
+                # safe to repeat.
+                transient = exc.status is None or exc.status == 429 or exc.status >= 500
+                if not transient or attempt == self.STORAGE_ATTEMPTS - 1:
+                    raise
+                time.sleep(self.RETRY_DELAY * 2**attempt)
+
+    #: Tries of one PUT to storage, and the wait before the second (doubled
+    #: for each one after).
+    STORAGE_ATTEMPTS = 4
+    RETRY_DELAY = 1.0
+
+    def _put_to_storage(self, key: str, path: Path, action: dict, content_type: str | None) -> None:
         try:
             with path.open("rb") as body:
                 request = urllib.request.Request(
