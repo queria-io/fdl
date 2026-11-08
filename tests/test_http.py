@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import io
 import json
 import urllib.error
 import urllib.request
@@ -181,3 +182,38 @@ def test_a_rebuild_of_the_same_rows_over_http_is_nothing_to_commit(served, tmp_p
     assert "Nothing to commit" in result.output
     assert "could not tell" not in result.output
     assert len(list(repo.log(local))) == 1
+
+
+def test_a_busy_storage_answer_is_tried_again(tmp_path: Path, monkeypatch) -> None:
+    answers = [500, 503, None]
+    sent = []
+
+    def urlopen(request):
+        sent.append(request.full_url)
+        code = answers.pop(0)
+        if code is not None:
+            raise urllib.error.HTTPError(request.full_url, code, "busy", {}, io.BytesIO(b"InternalError"))
+        return io.BytesIO()
+
+    monkeypatch.setattr(urllib.request, "urlopen", urlopen)
+    monkeypatch.setattr(HttpStore, "RETRY_DELAY", 0)
+    path = tmp_path / "a.parquet"
+    path.write_bytes(b"ab")
+    HttpStore("https://example.invalid/repo/")._send_one("data/a.parquet", path, {"href": "https://storage.invalid/a"}, None)
+    assert sent == ["https://storage.invalid/a"] * 3
+
+
+def test_a_refused_storage_answer_is_not_tried_again(tmp_path: Path, monkeypatch) -> None:
+    sent = []
+
+    def urlopen(request):
+        sent.append(request.full_url)
+        raise urllib.error.HTTPError(request.full_url, 403, "denied", {}, io.BytesIO(b""))
+
+    monkeypatch.setattr(urllib.request, "urlopen", urlopen)
+    monkeypatch.setattr(HttpStore, "RETRY_DELAY", 0)
+    path = tmp_path / "a.parquet"
+    path.write_bytes(b"ab")
+    with pytest.raises(StoreError):
+        HttpStore("https://example.invalid/repo/")._send_one("data/a.parquet", path, {"href": "https://storage.invalid/a"}, None)
+    assert len(sent) == 1
