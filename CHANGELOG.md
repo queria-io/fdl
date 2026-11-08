@@ -1,6 +1,15 @@
 # CHANGELOG
 
 
+## v0.21.1 (2026-11-08)
+
+### Bug Fixes
+
+- Retry a data file upload when storage answers 5xx or 429
+  ([#43](https://github.com/queria-io/fdl/pull/43),
+  [`2fcaaf5`](https://github.com/queria-io/fdl/commit/2fcaaf56953237a4c7ae6c042d1b607e09752749))
+
+
 ## v0.21.0 (2026-11-06)
 
 ### Bug Fixes
