@@ -709,6 +709,19 @@ def table_columns(catalog_path: Path, snapshot: int) -> dict[str, dict[str, str]
     return found
 
 
+def has_snapshot(catalog_path: Path, snapshot: int) -> bool:
+    """Whether the catalog still holds ``snapshot`` (expiring one drops it)."""
+    con = _open(Path(catalog_path))
+    try:
+        return bool(
+            con.execute(
+                "SELECT count(*) FROM ducklake_snapshot WHERE snapshot_id = ?", [snapshot]
+            ).fetchone()[0]
+        )
+    finally:
+        con.close()
+
+
 def column_changes(catalog_path: Path, before: int, after: int) -> list[dict]:
     """The column differences between two snapshots of one catalog, as
     ``changes`` in version.json records them.

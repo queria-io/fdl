@@ -53,9 +53,15 @@ A version is the files under `versions/<version ID>/`. They must not change once
     "bytes": 214,
     "sha256": "3c5d…"
   },
-  "changes": [
-    { "table": "main.population", "kind": "add_column", "column": "note", "breaking": false }
-  ],
+  "diff": {
+    "tables": { "added": [], "dropped": [] },
+    "rows": [{ "table": "main.population", "from": 1741, "to": 1802 }],
+    "columns": [
+      { "table": "main.population", "kind": "add_column", "column": "note", "breaking": false }
+    ],
+    "data": ["main.population"],
+    "descriptions": ["main.population.note"]
+  },
   "inputs": [
     {
       "source_id": "example:population-2025",
@@ -82,7 +88,7 @@ A version is the files under `versions/<version ID>/`. They must not change once
 | `ducklake` | must | The DuckLake format, the snapshot frozen, and the range of snapshots this version adds after its parent (first and last) |
 | `files` | may | The `files.json` beside the catalog, if written: its file name, size and sha256 ([files.json](#filesjson)) |
 | `tree` | may | The `tree.json` beside the catalog, if the version holds other files: its file name, size and sha256 ([tree.json](#treejson)) |
-| `changes` | may | Column differences from the parent ([changes](#changes)). `breaking` says whether SQL written for the parent may fail |
+| `diff` | may | What changed since the first parent, or in the first version ([diff](#diff)) |
 | `inputs` | may | Source files used: where each came from, when, and its sha256. FDL does not store them; a writer that keeps them makes them assets of a table. How `source_id` is assigned is up to the writer |
 | `annotations` | may | What the format does not interpret, keyed by the name of whoever reads it (a host, a tool) |
 
@@ -92,18 +98,30 @@ In FDL 0.1 a writer writes at most one parent. `parents` is a list so that a lat
 
 The description and SQL of each snapshot stay in the catalog, in DuckLake's `commit_message` and `commit_extra_info`. They are not copied into `version.json`.
 
-### changes
+### diff
 
-Each entry of `changes` is one column difference between the version and its first parent, in a table both hold. `table` is `schema.table` and `column` the column's name in the new version.
+`diff` lists what changed between the version and its first parent, so that a reader can show a history from `version.json` alone. In the first version every table is added. `table` is `schema.table` in every key.
+
+| Key | Holds |
+| --- | --- |
+| `tables` | `added` and `dropped`: the tables only one of the two holds |
+| `rows` | `table`, `from`, `to`: the tables both hold whose row count differs |
+| `columns` | The column differences, below |
+| `data` | The tables both hold whose data files differ, even with the same rows |
+| `descriptions` | What has another `title` or `description` in `dataset.json`: `dataset`, a table, or `schema.table.column` |
+
+A writer compares the catalog at the parent's snapshot with the frozen one. It leaves `diff` out when the catalog no longer holds the parent's snapshot, and lists `descriptions` only when it had both `dataset.json`. A reader compares the two versions' `dataset.json` and `files.json` for a version without `diff`, or against a version other than its first parent.
+
+Each entry of `columns` is one column difference in a table both hold. `column` is the column's name in the new version.
 
 | `kind` | Also has | `breaking` |
 | --- | --- | --- |
 | `add_column` | | `false` |
 | `drop_column` | | `true` |
 | `rename_column` | `from`: the old name | `true` |
-| `change_type` | `from_type`, `to_type`: DuckLake's type names | `false` when every value of the old type fits the new one (`int32` to `int64`, `float` to `double`), `true` otherwise |
+| `change_type` | `from_type`, `to_type`: DuckLake's type names | `false` when every value of the old type fits the new one (`int32` to `int64`, `float32` to `float64`), `true` otherwise |
 
-Tables added or dropped are not entries; a reader finds them by comparing the two `dataset.json`. A reader ignores a `kind` it does not know and still reads its `breaking`.
+A reader ignores a `kind` it does not know and still reads its `breaking`, and ignores keys of `diff` it does not know.
 
 ### Format numbers
 

@@ -112,7 +112,7 @@ fdl diff <remote> [<version>] [--against <version>] [--json]
 ~ description main.towns.population
 ```
 
-行数は `dataset.json` から、データファイルは `files.json` から、列は親と比べるときはバージョンの `changes` から取ります（それ以外は名前で比べるので、列名の変更は見分けられません）。`~ data` は、行が同じでもテーブルのデータファイルが変わったことを示します。`--json` を付けると、同じ内容を `tables`（`added`・`dropped`）・`rows`・`columns`・`data`・`descriptions` を持つオブジェクトで表示します。
+親と比べるときは、バージョンの `diff` から取ります（[diff](/ja/spec/versions#diff)）。それ以外のときや `diff` のないバージョンでは、行数を `dataset.json` から、データファイルを `files.json` から取り、列は名前で比べます。そのため列名の変更は見分けられません。`~ data` は、行が同じでもテーブルのデータファイルが変わったことを示します。`--json` を付けると、同じ内容を `tables`（`added`・`dropped`）・`rows`・`columns`・`data`・`descriptions` を持つオブジェクトで表示します。
 
 ## fdl show
 

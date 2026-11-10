@@ -13,7 +13,7 @@ from pathlib import Path
 import duckdb
 import pytest
 
-from fdl import catalog, layout, refs, repo
+from fdl import catalog, diff, layout, refs, repo
 from fdl.stores import LocalStore
 from fdl.version import is_id, new_id, parse
 
@@ -477,3 +477,43 @@ def test_a_rebuilt_table_is_compared_by_column_name(tmp_path: Path, remote) -> N
     assert second.changes == (
         {"table": "main.towns", "kind": "change_type", "column": "pop", "from_type": "int32", "to_type": "varchar", "breaking": True},
     )
+
+
+def test_a_version_records_what_changed_since_its_parent(tmp_path: Path, remote) -> None:
+    def described(title: str) -> dict:
+        return {
+            "name": "towns",
+            "title": "Towns",
+            "tables": [{"schema": "main", "name": "towns", "fields": [{"name": "id", "title": title}]}],
+        }
+
+    build(tmp_path / "work.sqlite", remote, "CREATE TABLE lake.main.towns AS SELECT 1 AS id")
+    first = repo.commit(
+        tmp_path / "work.sqlite", tmp_path / "local", parent=None, data_path=data_path(remote),
+        author=AUTHOR, message="m", dataset=described("ID"),
+    )
+    repo.push(remote, tmp_path / "local" / first.id, first)
+    assert first.diff["tables"] == {"added": ["main.towns"], "dropped": []}
+
+    build(
+        tmp_path / "work.sqlite",
+        remote,
+        "INSERT INTO lake.main.towns VALUES (2); CREATE TABLE lake.main.roads AS SELECT 1 AS id",
+    )
+    parent_dataset = json.loads(remote.get(layout.version_dir(first.id) + layout.DATASET))
+    second = repo.commit(
+        tmp_path / "work.sqlite", tmp_path / "local", parent=first, data_path=data_path(remote),
+        author=AUTHOR, message="m", dataset={**described("Town ID"), "tables": described("Town ID")["tables"]
+        + [{"schema": "main", "name": "roads"}]}, parent_dataset=parent_dataset,
+    )
+    recorded = json.loads((tmp_path / "local" / second.id / layout.VERSION_RECORD).read_text())
+    assert recorded["diff"] == {
+        "tables": {"added": ["main.roads"], "dropped": []},
+        "rows": [{"table": "main.towns", "from": 1, "to": 2}],
+        "columns": [],
+        "data": ["main.towns"],
+        "descriptions": ["main.towns.id"],
+    }
+    repo.push(remote, tmp_path / "local" / second.id, second)
+    # fdl diff reads it from the record.
+    assert diff.versions(remote, first, repo.read_version(remote, second.id)) == recorded["diff"]

@@ -20,6 +20,7 @@ from typing import Iterable, Iterator, Mapping
 
 from . import catalog, layout, objects, profiles, refs
 from . import dataset as dataset_json
+from . import diff as diffs
 from .store import Store, is_conflict, is_missing
 from .version import Catalog, DuckLake, File, Version, VersionError, new_id, parse, utc_now
 
@@ -140,6 +141,7 @@ def commit(
     tree: list[dict] | None = None,
     allow_empty: bool = True,
     working_data: str | None = None,
+    parent_dataset: dict | None = None,
 ) -> Version:
     """Freeze the working catalog into a version under ``out_dir/<ID>/``.
 
@@ -159,6 +161,9 @@ def commit(
 
     ``working_data`` is where the working catalog wrote its new data files,
     when not where it records (see `checkout`): comparing reads them there.
+
+    ``parent_dataset`` is the parent's `dataset.json`, which the version's
+    ``diff`` compares descriptions with (see `record`).
     """
     Path(out_dir).mkdir(parents=True, exist_ok=True)
     frozen = Path(out_dir) / f".freezing-{new_id()}.duckdb"
@@ -199,6 +204,7 @@ def commit(
             annotations=annotations,
             dataset=dataset,
             tree=tree,
+            parent_dataset=parent_dataset,
         )
     finally:
         frozen.unlink(missing_ok=True)
@@ -315,11 +321,16 @@ def record(
     annotations: dict | None = None,
     dataset: dict | None = None,
     tree: list[dict] | None = None,
+    parent_dataset: dict | None = None,
 ) -> Version:
     """Make a version out of a catalog that is already frozen.
 
     For a writer that freezes the catalog itself (with checks of its own) and
     only needs the version around it. The catalog is copied, not moved.
+
+    The version's ``diff`` compares the catalog at the parent's snapshot with
+    the frozen one. Its descriptions are compared only when both ``dataset``
+    and ``parent_dataset`` (the parent's `dataset.json`) are given.
     """
     if not author.get("name"):
         raise RepoError("a version needs an author name")
@@ -336,14 +347,22 @@ def record(
             copied, parent.ducklake.snapshot_id if parent else None
         )
         described = None
+        completed = None
         if dataset is not None:
             written = target / layout.DATASET
-            written.write_bytes(dataset_json.to_json(dataset_json.describe(dataset, copied)))
+            completed = dataset_json.describe(dataset, copied)
+            written.write_bytes(dataset_json.to_json(completed))
             described = File(
                 path=layout.DATASET, bytes=written.stat().st_size, sha256=_sha256(written)
             )
         indexed = _write_files_index(target, copied, last)
-        changes = catalog.column_changes(copied, parent.ducklake.snapshot_id, last) if parent else []
+        difference = diffs.between(
+            copied,
+            parent.ducklake.snapshot_id if parent else None,
+            last,
+            old_dataset=parent_dataset,
+            new_dataset=completed,
+        )
         listed = None
         if tree:
             written = target / layout.TREE
@@ -364,7 +383,7 @@ def record(
             ),
             ducklake=DuckLake(format=recorded, snapshot_id=last, snapshots=(first, last)),
             files=indexed,
-            changes=tuple(changes),
+            diff=difference,
             inputs=tuple(inputs),
             annotations=dict(annotations or {}),
             dataset=described,

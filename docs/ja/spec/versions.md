@@ -53,9 +53,15 @@ description: バージョン ID、version.json の項目、固めたカタログ
     "bytes": 214,
     "sha256": "3c5d…"
   },
-  "changes": [
-    { "table": "main.population", "kind": "add_column", "column": "note", "breaking": false }
-  ],
+  "diff": {
+    "tables": { "added": [], "dropped": [] },
+    "rows": [{ "table": "main.population", "from": 1741, "to": 1802 }],
+    "columns": [
+      { "table": "main.population", "kind": "add_column", "column": "note", "breaking": false }
+    ],
+    "data": ["main.population"],
+    "descriptions": ["main.population.note"]
+  },
   "inputs": [
     {
       "source_id": "example:population-2025",
@@ -82,7 +88,7 @@ description: バージョン ID、version.json の項目、固めたカタログ
 | `ducklake` | must | DuckLake の形式、固めたスナップショット、親から足したスナップショットの範囲（最初と最後） |
 | `files` | may | カタログの隣の `files.json` を書いたときの、そのファイル名、大きさ、sha256（[files.json](#filesjson)） |
 | `tree` | may | バージョンがほかのファイルを持つときの、カタログの隣の `tree.json` のファイル名、大きさ、sha256（[tree.json](#treejson)） |
-| `changes` | may | 親との列の違い（[changes](#changes)）。`breaking` は、親に向けて書いた SQL が失敗しうるか |
+| `diff` | may | 最初の親からの変更。最初のバージョンでは、そのバージョンの内容（[diff](#diff)） |
 | `inputs` | may | 使った元のファイル。それぞれの取得元・取得日時・sha256 を書く。FDL はファイル自体を置かない。残したい書き手は、テーブルのアセットにする。`source_id` の付け方は書き手が決める |
 | `annotations` | may | 形式が解釈しない情報。読む側（ホストやツール）の名前をキーにする |
 
@@ -92,18 +98,30 @@ FDL 0.1 では、書き手が書く親は多くても 1 つです。`parents` �
 
 スナップショットごとの説明と SQL は、DuckLake の `commit_message` と `commit_extra_info` としてカタログの中に残し、`version.json` には写しません。
 
-### changes
+### diff
 
-`changes` の各項目は、バージョンとその最初の親の両方にある表の、列 1 つの違いです。`table` は `schema.table`、`column` は新しいバージョンでの列名です。
+`diff` は、バージョンとその最初の親との違いです。読み手は `version.json` だけで履歴を表示できます。最初のバージョンでは、すべての表を追加として記録します。どのキーでも `table` は `schema.table` です。
+
+| キー | 内容 |
+| --- | --- |
+| `tables` | `added`・`dropped`: 片方にしかない表 |
+| `rows` | `table`・`from`・`to`: 両方にあり、行数が違う表 |
+| `columns` | 列の違い（下の表） |
+| `data` | 両方にあり、データファイルが違う表。行が同じでも記録します |
+| `descriptions` | `dataset.json` の `title` か `description` が違うもの: `dataset`、表、または `schema.table.column` |
+
+書き手は、親のスナップショットのカタログと固めたカタログを比べます。カタログに親のスナップショットが残っていないときは `diff` を書きません。`descriptions` は、両方の `dataset.json` があるときだけ記録します。`diff` のないバージョンや、最初の親以外のバージョンと比べるときは、読み手が 2 つのバージョンの `dataset.json` と `files.json` を比べます。
+
+`columns` の各項目は、両方にある表の、列 1 つの違いです。`column` は新しいバージョンでの列名です。
 
 | `kind` | ほかに持つもの | `breaking` |
 | --- | --- | --- |
 | `add_column` | | `false` |
 | `drop_column` | | `true` |
 | `rename_column` | `from`: 前の列名 | `true` |
-| `change_type` | `from_type`・`to_type`: DuckLake の型名 | 前の型の値がすべて新しい型に収まるとき（`int32` から `int64`、`float` から `double`）は `false`、それ以外は `true` |
+| `change_type` | `from_type`・`to_type`: DuckLake の型名 | 前の型の値がすべて新しい型に収まるとき（`int32` から `int64`、`float32` から `float64`）は `false`、それ以外は `true` |
 
-表の追加と削除は項目にしません。読み手は 2 つの `dataset.json` を比べて見つけます。読み手は、知らない `kind` を無視し、その `breaking` は読みます。
+読み手は、知らない `kind` を無視し、その `breaking` は読みます。`diff` の知らないキーも無視します。
 
 ### 形式番号
 

@@ -118,7 +118,7 @@ diff.working(working, base) -> dict
 diff.lines(result) -> list[str]
 ```
 
-`versions` は 2 つのバージョンを、`dataset.json`・`files.json`・`changes` から比べます（最初のバージョンの前は `old` を `None` にします）。`working` は作業カタログを、checkout したときのバージョン `base` と比べます。どちらも `tables`（`added`・`dropped`）・`rows`・`columns`・`data`・`descriptions` を返し、`fdl diff --json` と同じ形です。`lines` は `fdl diff` が表示する行を返します。
+`versions` は 2 つのバージョンを、古い方が親なら新しい方の `diff` から、それ以外は `dataset.json`・`files.json` から比べます（最初のバージョンの前は `old` を `None` にします）。`working` は作業カタログを、checkout したときのバージョン `base` と比べます。どちらも `tables`（`added`・`dropped`）・`rows`・`columns`・`data`・`descriptions` を返し、`fdl diff --json` と同じ形です。`lines` は `fdl diff` が表示する行を返します。
 
 ## fdl.refs
 

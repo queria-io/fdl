@@ -57,6 +57,14 @@ ERRORS = (
 )
 
 
+def _store(remote: str):
+    """The store at ``remote``, or a clean error for one it refuses (plain http, say)."""
+    try:
+        return open_store(remote)
+    except StoreError as exc:
+        raise _fail(exc) from exc
+
+
 @app.command()
 def init(
     remote: str = Remote,
@@ -64,7 +72,7 @@ def init(
 ) -> None:
     """Start a repository (fdl.json and HEAD). Harmless on one that exists."""
     try:
-        config = repo.init(open_store(remote), data_dir=data_dir)
+        config = repo.init(_store(remote), data_dir=data_dir)
     except ERRORS as exc:
         raise _fail(exc) from exc
     typer.echo(f"fdl {config.fdl} repository, data in {config.data_dir}")
@@ -77,7 +85,7 @@ def checkout(
     ref: str = typer.Option(layout.DEFAULT_BRANCH, help="The branch to build on"),
 ) -> None:
     """Make a working catalog from the version a branch holds."""
-    store = open_store(remote)
+    store = _store(remote)
     # A repository over HTTP takes no writes from DuckDB: new data files go to
     # a folder beside the working catalog until the commit uploads them.
     local = None if repo.writes_data_files(store) else working.with_name(working.name + ".data")
@@ -120,7 +128,7 @@ def commit(
     the last version holds.
     """
     state = _read_state(working)
-    store = open_store(state["remote"])
+    store = _store(state["remote"])
     out = Path(tempfile.mkdtemp(prefix="fdl-"))
     try:
         description = describe or dataset.find()
@@ -128,6 +136,7 @@ def commit(
         root = Path(description).resolve().parent
         listed = objects.tree(root)
         parent = repo.read_version(store, state["base"]) if state["base"] else None
+        parent_dataset = diffs.described(store, parent) if parent else None
 
         def make(allow_empty: bool):
             return repo.commit(
@@ -141,6 +150,7 @@ def commit(
                 tree=listed,
                 allow_empty=allow_empty,
                 working_data=Path(state["data"]).resolve().as_posix() + "/" if state.get("data") else None,
+                parent_dataset=parent_dataset,
             )
 
         try:
@@ -181,9 +191,10 @@ def commit(
         raise _fail(exc) from exc
     finally:
         shutil.rmtree(out, ignore_errors=True)
+    # The version is pushed: record it before anything else can fail.
+    _write_state(working, {**state, "base": version.id})
     if state.get("data"):
         _drop_uploaded(store, working, Path(state["data"]), version)
-    _write_state(working, {**state, "base": version.id})
     typer.echo(f"{state['ref']} -> {version.id} (version {version.seq})")
 
 
@@ -191,18 +202,15 @@ def _drop_uploaded(store, working: Path, local: Path, version) -> None:
     """Free the disk the uploaded data files took.
 
     The working catalog is made again from the version just pushed, so it
-    reads those files from the repository, and the local copies go.
+    reads those files from the repository, and the local copies go. The
+    conversion replaces the working catalog only once it is complete, so on
+    failure the working catalog and its local files stay as they were.
     """
-    fresh = working.with_name(f".{working.name}.{version.id}.sqlite")
     try:
-        repo.checkout(store, fresh, local_data=local, version=version)
-    except ERRORS as exc:
+        repo.checkout(store, working, local_data=local, version=version)
+    except (*ERRORS, catalog.CatalogError, OSError) as exc:
         typer.echo(f"warning: kept the local data files ({exc})", err=True)
-        fresh.unlink(missing_ok=True)
         return
-    for sidecar in (working.with_name(working.name + suffix) for suffix in ("-wal", "-shm")):
-        sidecar.unlink(missing_ok=True)
-    fresh.replace(working)
     shutil.rmtree(local, ignore_errors=True)
     local.mkdir(parents=True, exist_ok=True)
 
@@ -240,7 +248,7 @@ def assets(folder: Path = typer.Argument(..., help="The folder of files the rows
 @app.command()
 def log(remote: str = Remote, ref: str = typer.Option(layout.HEAD)) -> None:
     """Versions from the one a ref holds back to the first."""
-    store = open_store(remote)
+    store = _store(remote)
     try:
         for version in repo.log(store, ref):
             mark = " (expired)" if repo.is_expired(store, version.id) else ""
@@ -258,7 +266,7 @@ def url(
     alias: str = typer.Option("lake", help="The name to ATTACH it as, with --attach"),
 ) -> None:
     """Where the catalog of the version a ref holds is, to ATTACH."""
-    store = open_store(remote)
+    store = _store(remote)
     try:
         version = repo.readable(store, ref)
         where = store.url.rstrip("/") + "/" + layout.version_catalog(version.id)
@@ -305,7 +313,7 @@ def diff(
 
     Compared with the version's parent, or with --against.
     """
-    store = open_store(remote)
+    store = _store(remote)
     try:
         new = _version(store, target)
         old = _version(store, against) if against else (repo.read_version(store, new.parents[0]) if new.parents else None)
@@ -322,7 +330,7 @@ def show(
     as_json: bool = typer.Option(False, "--json", help="Print version.json and the differences as JSON"),
 ) -> None:
     """A version: its record, its tables, and what changed from its parent."""
-    store = open_store(remote)
+    store = _store(remote)
     try:
         version = _version(store, target)
         parent = repo.read_version(store, version.parents[0]) if version.parents else None
@@ -361,7 +369,7 @@ def status(
 ) -> None:
     """What the working catalog changed since it was checked out."""
     state = _read_state(working)
-    store = open_store(state["remote"])
+    store = _store(state["remote"])
     try:
         base = repo.read_version(store, state["base"]) if state["base"] else None
         result = diffs.working(working, base)
@@ -383,7 +391,7 @@ def tag(
     delete: bool = typer.Option(False, "-d", "--delete", help="Delete the tag"),
 ) -> None:
     """List tags, tag a version, or delete a tag. Tags never move."""
-    store = open_store(remote)
+    store = _store(remote)
     try:
         if name is None:
             for tag_name, version_id in repo.tags(store).items():
@@ -413,7 +421,7 @@ def expire(
 
     Data files are left in place; versions that are kept still share them.
     """
-    store = open_store(remote)
+    store = _store(remote)
     try:
         newest = repo.head(store, ref)
         expired = repo.prune(store, newest, keep=keep, since=since) if newest else []
@@ -436,7 +444,7 @@ def withdraw(
     version already past retention has no catalog, so then every data file and
     asset no live version reaches is deleted.
     """
-    store = open_store(remote)
+    store = _store(remote)
     try:
         plan = repo.plan_withdrawal(store, versions, setup=_read_setup(store))
         for name in plan.tags:

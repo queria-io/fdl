@@ -118,7 +118,7 @@ diff.working(working, base) -> dict
 diff.lines(result) -> list[str]
 ```
 
-`versions` compares two versions (`old` is `None` before the first one) from their `dataset.json`, `files.json` and `changes`. `working` compares a working catalog with `base`, the version it was checked out at. Both return `tables` (`added`, `dropped`), `rows`, `columns`, `data` and `descriptions`, as `fdl diff --json` prints them. `lines` gives the lines `fdl diff` prints.
+`versions` compares two versions (`old` is `None` before the first one) from the newer one's `diff` when the older is its parent, and from their `dataset.json` and `files.json` otherwise. `working` compares a working catalog with `base`, the version it was checked out at. Both return `tables` (`added`, `dropped`), `rows`, `columns`, `data` and `descriptions`, as `fdl diff --json` prints them. `lines` gives the lines `fdl diff` prints.
 
 ## fdl.refs
 
