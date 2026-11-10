@@ -781,6 +781,8 @@ class Collection:
 
     deleted: tuple[str, ...]
     before: dt.datetime
+    #: The live versions whose objects were kept.
+    versions: tuple[str, ...] = ()
 
 
 def plan_collection(
@@ -801,22 +803,36 @@ def plan_collection(
     before = (now or dt.datetime.now(dt.timezone.utc)) - grace
     placed = {**store.placed(config.data_dir), **store.placed(layout.ASSETS_DIR)}
     old = {key for key, when in placed.items() if when < before}
+    live = [version_id for version_id in _version_ids(store) if not is_expired(store, version_id)]
+    reached = _reached_by_all(store, config, live, list(setup))
+    return Collection(deleted=tuple(sorted(old - reached)), before=before, versions=tuple(live))
+
+
+def _reached_by_all(store: Store, config: Config, version_ids: Iterable[str], setup: list[str]) -> set[str]:
     reached: set[str] = set()
-    setup = list(setup)
     with tempfile.TemporaryDirectory(prefix="fdl-") as tmp:
-        for version_id in _version_ids(store):
-            if not is_expired(store, version_id):
-                reached.update(_reached_by(store, config, read_version(store, version_id), Path(tmp), setup))
-    return Collection(deleted=tuple(sorted(old - reached)), before=before)
+        for version_id in version_ids:
+            reached.update(_reached_by(store, config, read_version(store, version_id), Path(tmp), setup))
+    return reached
 
 
-def collect(store: Store, *, plan: Collection) -> None:
+def collect(store: Store, *, plan: Collection, setup: Iterable[str] = ()) -> list[str]:
     """Delete the shared objects no live version reaches, once past the grace period.
 
     Data files left by working catalogs that were never pushed, and those only
-    versions past retention reached, go this way.
+    versions past retention reached, go this way. Versions written since the
+    plan are read first, and what they reach is kept. Returns the keys deleted.
     """
-    store.delete(plan.deleted)
+    config = read_config(store)
+    since = [
+        version_id
+        for version_id in _version_ids(store)
+        if version_id not in plan.versions and not is_expired(store, version_id)
+    ]
+    kept = _reached_by_all(store, config, since, list(setup))
+    deleted = [key for key in plan.deleted if key not in kept]
+    store.delete(deleted)
+    return deleted
 
 
 def _asset_columns(store: Store, version: Version) -> list[tuple[str, str, str]]:

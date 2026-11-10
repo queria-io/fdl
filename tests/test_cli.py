@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import json
 import os
 import time
 from pathlib import Path
@@ -317,6 +318,52 @@ def test_revert_moves_the_branch_forward_to_what_a_version_held(tmp_path: Path, 
     assert repo.head(store).id == reverted.id
 
 
+def test_restore_leaves_a_table_unchanged_since_as_it_is(tmp_path: Path) -> None:
+    remote, working = tmp_path / "remote", tmp_path / "lake.sqlite"
+    store = LocalStore(remote)
+    run("init", remote)
+    run("checkout", remote, working)
+    write(working, store, "CREATE TABLE lake.main.a AS SELECT 1 AS id; CREATE TABLE lake.main.b AS SELECT 1 AS id")
+    commit(working, "-m", "first", "--author", "t")
+    first = repo.head(store)
+    write(working, store, "INSERT INTO lake.main.b VALUES (2)")
+    commit(working, "-m", "second", "--author", "t")
+
+    changed = catalog.restore(working, first.ducklake.snapshot_id, data_path=repo.data_url(store))
+    assert changed == ["main.b"]
+
+
+def test_restore_keeps_what_the_columns_declared_and_drops_new_schemas(tmp_path: Path) -> None:
+    remote, working = tmp_path / "remote", tmp_path / "lake.sqlite"
+    store = LocalStore(remote)
+    run("init", remote)
+    run("checkout", remote, working)
+    write(
+        working,
+        store,
+        "CREATE TABLE lake.main.a (id INTEGER NOT NULL, name VARCHAR); INSERT INTO lake.main.a VALUES (1, 'x'); "
+        "COMMENT ON TABLE lake.main.a IS 'Towns'; COMMENT ON COLUMN lake.main.a.id IS 'Code'",
+    )
+    commit(working, "-m", "first", "--author", "t")
+    first = repo.head(store)
+    write(working, store, "INSERT INTO lake.main.a VALUES (2, 'y'); CREATE SCHEMA lake.extra; CREATE TABLE lake.extra.t AS SELECT 1 AS id")
+    commit(working, "-m", "second", "--author", "t")
+
+    changed = catalog.restore(working, first.ducklake.snapshot_id, data_path=repo.data_url(store))
+    assert changed == ["extra", "extra.t", "main.a"]
+    con = duckdb.connect()
+    for statement in catalog.attach_sql(working, alias="lake", data_path=repo.data_url(store)):
+        if statement:
+            con.execute(statement)
+    assert con.execute(
+        "SELECT column_name, is_nullable, comment FROM duckdb_columns() "
+        "WHERE database_name = 'lake' AND table_name = 'a' ORDER BY column_index"
+    ).fetchall() == [("id", False, "Code"), ("name", True, None)]
+    assert con.execute("SELECT comment FROM duckdb_tables() WHERE database_name = 'lake' AND table_name = 'a'").fetchone() == ("Towns",)
+    assert con.execute("SELECT count(*) FROM duckdb_schemas() WHERE database_name = 'lake' AND schema_name = 'extra'").fetchone() == (0,)
+    con.close()
+
+
 def test_revert_refuses_a_version_outside_the_branch(tmp_path: Path) -> None:
     remote, working = tmp_path / "remote", tmp_path / "lake.sqlite"
     store = LocalStore(remote)
@@ -346,10 +393,22 @@ def test_a_commit_waits_until_it_is_pushed(tmp_path: Path) -> None:
     write(working, store, "INSERT INTO lake.main.towns VALUES (2)")
     run("commit", working, "-m", "second try", "--author", "t")
     assert len(list((tmp_path / "lake.sqlite.pending").iterdir())) == 1
+    # Status counts from the commit, and names it.
+    status = run("status", working)
+    assert "Committed, not pushed" in status and "Nothing to commit" in status
+    assert json.loads(run("status", working, "--json"))["pending"]
     assert "version 1" in run("push", working)
     assert [v.message for v in repo.log(store)] == ["second try"]
     assert not (tmp_path / "lake.sqlite.pending").exists()
     assert "Committed, not pushed" not in run("status", working)
+
+    # A commit that finds nothing since the push drops the version not pushed yet.
+    write(working, store, "INSERT INTO lake.main.towns VALUES (3)")
+    run("commit", working, "-m", "third try", "--author", "t")
+    write(working, store, "DELETE FROM lake.main.towns WHERE id = 3")
+    assert "Nothing to commit" in run("commit", working, "-m", "fourth try", "--author", "t")
+    assert not (tmp_path / "lake.sqlite.pending").exists()
+    assert "Nothing to push" in run("push", working)
 
 
 def test_gc_deletes_what_no_live_version_reaches(tmp_path: Path) -> None:
@@ -382,3 +441,20 @@ def test_gc_deletes_what_no_live_version_reaches(tmp_path: Path) -> None:
     assert len(left) == 1 and not left & first_files
     # The branch still reads.
     assert rows(store, "SELECT id FROM v.main.towns") == [(2,)]
+
+
+def test_gc_keeps_what_a_version_pushed_since_the_plan_reaches(tmp_path: Path) -> None:
+    remote, working = tmp_path / "remote", tmp_path / "lake.sqlite"
+    store = LocalStore(remote)
+    run("init", remote)
+    run("checkout", remote, working)
+    write(working, store, "CREATE TABLE lake.main.towns AS SELECT 1 AS id")
+    old = time.time() - 2 * 86400
+    for path in (remote / layout.DEFAULT_DATA_DIR).rglob("*.parquet"):
+        os.utime(path, (old, old))
+    plan = repo.plan_collection(store, grace=__import__("datetime").timedelta(days=1))
+    assert len(plan.deleted) == 1
+    # Pushed between the plan and the delete: its file stays.
+    commit(working, "-m", "first", "--author", "t")
+    assert repo.collect(store, plan=plan) == []
+    assert len(store.list(layout.DEFAULT_DATA_DIR)) == 1

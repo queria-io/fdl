@@ -240,6 +240,11 @@ def _commit(
         pending = _pending_dir(working)
         shutil.rmtree(pending, ignore_errors=True)
         out.rename(pending)
+    except repo.NothingToCommit:
+        # The working catalog holds what the last pushed version holds, so a
+        # version committed before and not pushed no longer matches it.
+        _drop_pending(working, state)
+        raise
     finally:
         shutil.rmtree(out, ignore_errors=True)
     _write_state(
@@ -255,6 +260,12 @@ def _commit(
         },
     )
     return version
+
+
+def _drop_pending(working: Path, state: dict, **changes) -> None:
+    """Forget the version committed and not pushed, and delete it."""
+    _write_state(working, {key: value for key, value in state.items() if key != "pending"} | changes)
+    shutil.rmtree(_pending_dir(working), ignore_errors=True)
 
 
 def _written(store, state: dict) -> str | None:
@@ -298,8 +309,7 @@ def push(working: Path = Working) -> None:
     except (*ERRORS, OSError) as exc:
         raise _fail(exc) from exc
     # The version is pushed: record it before anything else can fail.
-    _write_state(working, {key: value for key, value in state.items() if key != "pending"} | {"base": version.id})
-    shutil.rmtree(_pending_dir(working), ignore_errors=True)
+    _drop_pending(working, state, base=version.id)
     if state.get("data"):
         _drop_uploaded(store, working, Path(state["data"]), version)
     typer.echo(f"{state['ref']} -> {version.id} (version {version.seq})")
@@ -329,16 +339,17 @@ def revert(
         base = repo.read_version(store, state["base"]) if state["base"] else None
         if base is None or not repo.is_ancestor(store, target.id, base):
             raise repo.RepoError(f"{target.id} is not in the history of {base.id if base else 'the working catalog'}")
+        # Read before the working catalog is written back, so a refusal leaves it as it was.
+        declared = diffs.described(store, target)
+        if declared is None:
+            raise repo.RepoError(f"{target.id} has no dataset.json to bring back")
+        listed = (diffs.listed(store, target) or {}).get("entries", [])
         catalog.restore(
             working,
             target.ducklake.snapshot_id,
             data_path=_written(store, state) or repo.data_url(store),
             setup=_read_setup(store) + _storage_setup(state.get("storage")),
         )
-        declared = diffs.described(store, target)
-        if declared is None:
-            raise repo.RepoError(f"{target.id} has no dataset.json to bring back")
-        listed = (diffs.listed(store, target) or {}).get("entries", [])
         version = _commit(
             store,
             working,
@@ -557,20 +568,29 @@ def status(
     working: Path = Working,
     as_json: bool = typer.Option(False, "--json", help="Print the differences as JSON"),
 ) -> None:
-    """What the working catalog changed since it was checked out."""
+    """What the working catalog changed since it was checked out, or since the commit not pushed yet."""
     state = _read_state(working)
     store = _store(state["remote"])
+    pending_id = (state.get("pending") or {}).get("id")
     try:
         base = repo.read_version(store, state["base"]) if state["base"] else None
-        result = diffs.working(working, base)
-    except (*ERRORS, catalog.CatalogError) as exc:
+        pending = (
+            parse_version(
+                (_pending_dir(working) / pending_id / layout.VERSION_RECORD).read_bytes(),
+                expected_id=pending_id,
+            )
+            if pending_id
+            else None
+        )
+        result = diffs.working(working, pending or base)
+    except (*ERRORS, catalog.CatalogError, OSError) as exc:
         raise _fail(exc) from exc
     if as_json:
-        typer.echo(json.dumps(result, ensure_ascii=False, indent=2))
+        typer.echo(json.dumps({"pending": pending_id, **result}, ensure_ascii=False, indent=2))
         return
     typer.echo(f"On {state['ref']} of {state['remote']}, from " + (f"{base.id} (version {base.seq})" if base else "no version yet"))
-    if state.get("pending"):
-        typer.echo(f"Committed, not pushed: {state['pending']['id']} (fdl push {working})")
+    if pending:
+        typer.echo(f"Committed, not pushed: {pending.id} (version {pending.seq}); fdl push {working}")
     for line in diffs.lines(result) or ["Nothing to commit"]:
         typer.echo(line)
 
@@ -650,10 +670,10 @@ def gc(
         if not yes:
             typer.echo(f"{len(plan.deleted)} file(s) would be deleted. Run again with --yes to delete them.")
             return
-        repo.collect(store, plan=plan)
+        deleted = repo.collect(store, plan=plan, setup=_read_setup(store))
     except (*ERRORS, catalog.CatalogError) as exc:
         raise _fail(exc) from exc
-    typer.echo(f"Deleted {len(plan.deleted)} file(s).")
+    typer.echo(f"Deleted {len(deleted)} file(s).")
 
 
 @app.command()
