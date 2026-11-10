@@ -63,7 +63,7 @@ When the version would hold what its parent holds (see [When nothing changed](/s
 
 Refused when:
 
-- there is no `dataset.json`, or it describes a table or column the catalog lacks, or has keys the format does not define
+- there is no `dataset.json`, or it describes a table or column the catalog lacks. Keys the format does not define are kept as written, with a warning
 - the branch has moved since the checkout. Check out again and redo the work
 - the working catalog holds inlined rows
 - a data file the catalog names is not in the repository

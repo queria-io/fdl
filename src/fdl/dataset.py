@@ -196,13 +196,19 @@ def to_json(description: dict[str, Any]) -> bytes:
 
 
 def _check_keys(record: Any, allowed: set[str], what: str) -> None:
+    """Refuse a record that is not an object, and warn of keys the format does not define.
+
+    Such keys are kept as written: readers ignore them, and checking what a
+    host makes of them is the host's (Queria's `queria validate`, say).
+    """
     if not isinstance(record, dict):
         raise DatasetError(f"{what} has to be a JSON object")
     unknown = sorted(set(record) - allowed)
     if unknown:
-        raise DatasetError(
-            f"{what} has keys the format does not define: {', '.join(unknown)} "
-            f"(put them under annotations.<your name>)"
+        print(
+            f"fdl: {what} has keys the format does not define: {', '.join(unknown)}; "
+            f"kept as written (did you mean annotations.<your name>?)",
+            file=sys.stderr,
         )
 
 
