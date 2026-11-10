@@ -410,3 +410,35 @@ def test_a_file_a_kept_version_still_reads_is_not_deleted(tmp_path: Path, remote
     plan = repo.plan_withdrawal(remote, [first.id])
     assert plan.deleted == () and len(plan.still_read) == 1
     assert repo.head(remote) == second
+
+
+def _pushed(tmp_path: Path, remote) -> str:
+    build(tmp_path / "work.sqlite", remote, "CREATE TABLE lake.main.towns AS SELECT 1 AS id")
+    version = commit(tmp_path, remote)
+    repo.push(remote, tmp_path / "local" / version.id, version)
+    return version.id
+
+
+def test_checkout_refuses_a_catalog_that_is_not_the_one_recorded(tmp_path: Path, remote) -> None:
+    version_id = _pushed(tmp_path, remote)
+    path = remote.root / layout.version_catalog(version_id)
+    path.write_bytes(path.read_bytes() + b"\0")
+    with pytest.raises(repo.RepoError, match="sha256"):
+        repo.checkout(remote, tmp_path / "again.sqlite")
+
+
+def test_checkout_refuses_a_catalog_naming_files_outside_the_data_folder(tmp_path: Path, remote) -> None:
+    import hashlib
+
+    version_id = _pushed(tmp_path, remote)
+    path = remote.root / layout.version_catalog(version_id)
+    con = duckdb.connect(str(path))
+    con.execute("UPDATE ducklake_data_file SET path = '../../elsewhere/a.parquet'")
+    con.close()
+    # Recorded as if the writer had made it so: only the paths give it away.
+    record = json.loads(remote.get(layout.version_record(version_id)))
+    record["catalog"]["sha256"] = hashlib.sha256(path.read_bytes()).hexdigest()
+    record["catalog"]["bytes"] = path.stat().st_size
+    (remote.root / layout.version_record(version_id)).write_text(json.dumps(record))
+    with pytest.raises(repo.RepoError, match="outside the data folder"):
+        repo.checkout(remote, tmp_path / "again.sqlite")

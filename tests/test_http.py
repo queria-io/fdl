@@ -12,7 +12,7 @@ import duckdb
 import pytest
 from typer.testing import CliRunner
 
-from fdl import catalog, layout, repo
+from fdl import catalog, layout, repo, stores
 from fdl.cli import app
 from fdl.stores import HttpStore, LocalStore, StoreError
 
@@ -120,7 +120,7 @@ def test_requests_name_fdl(monkeypatch) -> None:
         sent.append(request)
         raise urllib.error.URLError("offline")
 
-    monkeypatch.setattr(urllib.request, "urlopen", urlopen)
+    monkeypatch.setattr(stores, "_open", urlopen)
     with pytest.raises(StoreError):
         HttpStore("https://example.invalid/repo/").get("fdl.json")
     assert sent[0].get_header("User-agent").startswith("fdl/")
@@ -195,7 +195,7 @@ def test_a_busy_storage_answer_is_tried_again(tmp_path: Path, monkeypatch) -> No
             raise urllib.error.HTTPError(request.full_url, code, "busy", {}, io.BytesIO(b"InternalError"))
         return io.BytesIO()
 
-    monkeypatch.setattr(urllib.request, "urlopen", urlopen)
+    monkeypatch.setattr(stores, "_open", urlopen)
     monkeypatch.setattr(HttpStore, "RETRY_DELAY", 0)
     path = tmp_path / "a.parquet"
     path.write_bytes(b"ab")
@@ -210,10 +210,73 @@ def test_a_refused_storage_answer_is_not_tried_again(tmp_path: Path, monkeypatch
         sent.append(request.full_url)
         raise urllib.error.HTTPError(request.full_url, 403, "denied", {}, io.BytesIO(b""))
 
-    monkeypatch.setattr(urllib.request, "urlopen", urlopen)
+    monkeypatch.setattr(stores, "_open", urlopen)
     monkeypatch.setattr(HttpStore, "RETRY_DELAY", 0)
     path = tmp_path / "a.parquet"
     path.write_bytes(b"ab")
     with pytest.raises(StoreError):
         HttpStore("https://example.invalid/repo/")._send_one("data/a.parquet", path, {"href": "https://storage.invalid/a"}, None)
     assert len(sent) == 1
+
+
+def _redirecting(to: str):
+    """A server that answers GET /fdl.json with a redirect to ``to`` (on itself
+    when it starts with ``/``) and any other path with ``{}``. It records the
+    Authorization each request carried."""
+    import threading
+    from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
+
+    seen: list[str | None] = []
+
+    class Handler(BaseHTTPRequestHandler):
+        def log_message(self, *args) -> None:
+            pass
+
+        def do_GET(self) -> None:
+            seen.append(self.headers.get("Authorization"))
+            if to and self.path == "/fdl.json":
+                self.send_response(302)
+                self.send_header("Location", to)
+                self.send_header("Content-Length", "0")
+                self.end_headers()
+                return
+            body = b"{}"
+            self.send_response(200)
+            self.send_header("Content-Length", str(len(body)))
+            self.end_headers()
+            self.wfile.write(body)
+
+    server = ThreadingHTTPServer(("127.0.0.1", 0), Handler)
+    threading.Thread(target=server.serve_forever, daemon=True).start()
+    return server, seen
+
+
+def test_the_token_does_not_follow_a_redirect_to_another_origin() -> None:
+    other, other_seen = _redirecting("")
+    # localhost and 127.0.0.1 are different origins.
+    first, first_seen = _redirecting(f"http://localhost:{other.server_address[1]}/moved")
+    try:
+        store = HttpStore(f"http://127.0.0.1:{first.server_address[1]}/", token=TOKEN)
+        assert store.get("fdl.json") == b"{}"
+    finally:
+        first.shutdown()
+        other.shutdown()
+    assert first_seen == [f"Bearer {TOKEN}"]
+    assert other_seen == [None]
+
+
+def test_the_token_follows_a_redirect_on_the_same_origin() -> None:
+    server, seen = _redirecting("/moved")
+    try:
+        store = HttpStore(f"http://127.0.0.1:{server.server_address[1]}/", token=TOKEN)
+        assert store.get("fdl.json") == b"{}"
+    finally:
+        server.shutdown()
+    assert seen == [f"Bearer {TOKEN}"] * 2
+
+
+def test_plain_http_is_only_for_this_machine() -> None:
+    with pytest.raises(StoreError, match="https"):
+        HttpStore("http://example.org/repo/", token=TOKEN)
+    HttpStore("http://localhost:8000/repo/", token=TOKEN)
+    HttpStore("http://[::1]:8000/repo/", token=TOKEN)
