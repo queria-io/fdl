@@ -40,7 +40,7 @@ No ref and no version names the file, so no reader can reach it. If the writer g
 
 ## The first commit
 
-`fdl commit` does its work in this order:
+`fdl commit` does steps 1 to 4 on the writer's disk, and `fdl push` does the rest, in this order:
 
 1. Copy the working catalog from SQLite into a DuckDB file, keeping the snapshots up to the last one
 2. Set the catalog's `data_path` to the repository's data folder, and refuse if any file is recorded with an absolute path elsewhere
@@ -62,7 +62,7 @@ versions/019a2f10-…/version.json
 data/main/towns/ducklake-0199f1….parquet
 ```
 
-The order is what keeps readers safe. A reader starts from a ref, and the ref is written last. If the commit stops after step 6, 7 or 8, the repository holds a version folder no ref points at. Readers never see it, and it changes nothing.
+The order is what keeps readers safe. A reader starts from a ref, and the ref is written last. If the push stops after step 6, 7 or 8, the repository holds a version folder no ref points at. Readers never see it, and it changes nothing.
 
 `version.json` is written after the catalog and `dataset.json` for the same reason: a tool that lists `versions/` can treat a folder without `version.json` as unfinished.
 

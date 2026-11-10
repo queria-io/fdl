@@ -76,13 +76,14 @@ Every version carries a `dataset.json` that says what it holds. Write one next t
 
 Only `name` and `title` are required. `fdl commit` checks the file against the catalog and fills in each table's row count and each column's type.
 
-## Commit
+## Commit and push
 
 ```bash
 fdl commit work/lake.sqlite -m "First towns" --author alice
+fdl push work/lake.sqlite
 ```
 
-`commit` freezes the working catalog into a version, uploads it and moves `main` to it. It prints `refs/heads/main -> 019a3c4e-… (version 1)`. The repository now holds:
+`commit` freezes the working catalog into a version on your disk. `push` uploads it and moves `main` to it, and prints `refs/heads/main -> 019a3c4e-… (version 1)`. The repository now holds:
 
 ```
 towns/
@@ -134,8 +135,9 @@ INSERT INTO lake.main.towns SELECT * FROM 'towns-2026.csv';
 
 ```bash
 fdl commit work/lake.sqlite -m "Add 2026" --author alice
+fdl push work/lake.sqlite
 ```
 
 The new version lists the first as its parent. Both catalogs name the first Parquet file; only the second names the new one.
 
-If someone else committed in between, the commit is refused, because the new version would not be built on what `main` holds now. Check out again and redo the change. [Versions and refs](/concepts/versions-and-refs) explains why.
+If someone else pushed in between, the push is refused, because the new version would not be built on what `main` holds now. Check out again and redo the change. [Versions and refs](/concepts/versions-and-refs) explains why.

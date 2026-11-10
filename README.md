@@ -57,6 +57,7 @@ Then make a version and move `main` to it:
 
 ```bash
 fdl commit work/lake.sqlite -m "First towns" --author alice
+fdl push work/lake.sqlite
 fdl log s3://my-bucket/towns/
 ```
 
@@ -80,7 +81,8 @@ Credentials and the endpoint come from boto3's usual places (`AWS_*` environment
 | --- | --- |
 | `fdl init <remote>` | Start a repository (`fdl.json` and `HEAD`) |
 | `fdl checkout <remote> <working>` | Make a working catalog from the version `main` holds |
-| `fdl commit <working> -m … --author …` | Freeze the working catalog into a version and push it |
+| `fdl commit <working> -m … --author …` | Freeze the working catalog into a version |
+| `fdl push <working>` | Upload the committed version and move `main` to it |
 | `fdl log <remote>` | List versions from `main` back to the first |
 | `fdl status <working>` | What the working catalog changed since the checkout |
 | `fdl diff <remote> [version]` | What a version changed since its parent: tables, rows, columns, data files, descriptions |
@@ -88,6 +90,7 @@ Credentials and the endpoint come from boto3's usual places (`AWS_*` environment
 | `fdl url <remote> [--attach]` | Print the catalog URL of the version `main` holds, or the whole `ATTACH` statement |
 | `fdl tag <remote> [name] [version]` | List tags, tag a version, or delete a tag (`-d`) |
 | `fdl expire <remote> --keep N` | Mark older versions as past retention and delete their catalogs |
+| `fdl gc <remote> --yes` | Delete data files no live version reaches, after the grace period |
 | `fdl withdraw <remote> <version>…` | Remove versions that hold data that must not be published |
 | `fdl assets <folder>` | List files for an asset column (path, sha256, bytes, media type) |
 

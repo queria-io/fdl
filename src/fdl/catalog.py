@@ -20,7 +20,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Literal
+from typing import Iterable, Literal
 
 #: Options that make SQLite usable by more than one writer. WAL is set on both
 #: fresh and existing catalogs, so a catalog left in `delete` mode by an older
@@ -963,5 +963,117 @@ def same_contents(working: Path, since: int, *, data_path: str | None = None) ->
         raise
     except Exception as exc:  # noqa: BLE001 - duckdb raises several types
         raise CatalogError(f"could not compare {working} with snapshot {since}: {exc}") from exc
+    finally:
+        con.close()
+
+
+def restore(
+    working: Path, snapshot: int, *, data_path: str | None = None, setup: Iterable[str] = ()
+) -> list[str]:
+    """Make the working catalog hold, in a new snapshot, what ``snapshot`` held.
+
+    The tables and views ``snapshot`` held come back as they were there, and
+    the others are dropped. A table unchanged since ``snapshot`` is left as it
+    is; any other is written again from its rows at ``snapshot``, so its data
+    files are new ones and those of the later versions stay in the repository.
+    Returns the tables and views it changed, as ``schema.name``.
+
+    ``snapshot`` must still be in the catalog: one that was expired raises
+    `CatalogError`. ``setup`` runs first, for the keys reading the files needs.
+    """
+    import duckdb
+
+    working = Path(working)
+    if not has_snapshot(working, snapshot):
+        raise CatalogError(f"snapshot {snapshot} is no longer in {working}")
+    last = last_snapshot(working)
+    con = duckdb.connect()
+    try:
+        for statement in [*setup, *attach_sql(
+            working, alias="lake", data_path=data_path or working_data_path(working)
+        )]:
+            if statement:
+                con.execute(statement)
+        # A view's SQL names its tables as the writer did, from inside the catalog.
+        con.execute("USE lake")
+        meta = "__ducklake_metadata_lake.main"
+
+        def live(alias: str) -> str:
+            return f"{alias}.begin_snapshot <= $s AND ({alias}.end_snapshot IS NULL OR {alias}.end_snapshot > $s)"
+
+        def tables(at: int) -> dict[tuple[str, str], int]:
+            rows = con.execute(
+                f"""
+                SELECT s.schema_name, t.table_name, t.table_id
+                FROM {meta}.ducklake_table t JOIN {meta}.ducklake_schema s USING (schema_id)
+                WHERE {live('t')} AND {live('s')}
+                """,
+                {"s": at},
+            ).fetchall()
+            return {(schema, name): table_id for schema, name, table_id in rows}
+
+        def views(at: int) -> dict[tuple[str, str], str]:
+            rows = con.execute(
+                f"""
+                SELECT s.schema_name, v.view_name, v.sql
+                FROM {meta}.ducklake_view v JOIN {meta}.ducklake_schema s USING (schema_id)
+                WHERE {live('v')} AND {live('s')}
+                """,
+                {"s": at},
+            ).fetchall()
+            return {(schema, name): sql for schema, name, sql in rows}
+
+        def changed_since(table_id: int) -> bool:
+            # Anything about the table that began or ended after ``snapshot``.
+            later = "(begin_snapshot > $s OR coalesce(end_snapshot, $s + 1) <= $last)"
+            return any(
+                con.execute(
+                    f"SELECT count(*) FROM {meta}.{kind} WHERE table_id = $t AND {later}",
+                    {"s": snapshot, "t": table_id, "last": last},
+                ).fetchone()[0]
+                for kind in ("ducklake_data_file", "ducklake_delete_file", "ducklake_column")
+            )
+
+        def quoted(identifier: str) -> str:
+            return '"' + identifier.replace('"', '""') + '"'
+
+        def name(key: tuple[str, str]) -> str:
+            return f"lake.{quoted(key[0])}.{quoted(key[1])}"
+
+        old_tables, new_tables = tables(snapshot), tables(last)
+        old_views, new_views = views(snapshot), views(last)
+        changed: list[str] = []
+        con.execute("BEGIN")
+        for key in new_views.keys() - old_views.keys():
+            con.execute(f"DROP VIEW {name(key)}")
+            changed.append(".".join(key))
+        for key in new_tables.keys() - old_tables.keys():
+            con.execute(f"DROP TABLE {name(key)}")
+            changed.append(".".join(key))
+        for schema in {key[0] for key in [*old_tables, *old_views]}:
+            con.execute(f"CREATE SCHEMA IF NOT EXISTS lake.{quoted(schema)}")
+        for key, table_id in old_tables.items():
+            if new_tables.get(key) == table_id and not changed_since(table_id):
+                continue
+            # Read before the table is replaced: within the transaction, the
+            # old snapshot is still what AT names.
+            con.execute(
+                f"CREATE OR REPLACE TABLE {name(key)} AS "
+                f"SELECT * FROM {name(key)} AT (VERSION => {int(snapshot)})"
+            )
+            changed.append(".".join(key))
+        for key, sql in old_views.items():
+            if new_views.get(key) == sql:
+                continue
+            # DuckLake records the catalog's own name as a placeholder.
+            body = sql.replace("{DUCKLAKE_CATALOG}", "lake")
+            con.execute(f"CREATE OR REPLACE VIEW {name(key)} AS {body}")
+            changed.append(".".join(key))
+        con.execute("COMMIT")
+        return sorted(changed)
+    except CatalogError:
+        raise
+    except Exception as exc:  # noqa: BLE001 - duckdb raises several types
+        raise CatalogError(f"could not restore snapshot {snapshot} in {working}: {exc}") from exc
     finally:
         con.close()

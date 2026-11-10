@@ -22,6 +22,10 @@ def run(*args) -> str:
     return result.output
 
 
+def commit(working, *args) -> str:
+    return run("commit", working, *args) + run("push", working)
+
+
 def write(working: Path, store: LocalStore, sql: str) -> None:
     con = duckdb.connect()
     for statement in catalog.attach_sql(working, alias="lake", data_path=repo.data_url(store)):
@@ -54,7 +58,7 @@ def test_a_commit_profiles_each_table(repository) -> None:
         "CREATE TABLE lake.main.towns AS SELECT i AS id, 'town ' || (i % 3) AS name, "
         "DATE '2020-01-01' + i::INTEGER AS day, i % 2 = 0 AS even FROM range(20) t(i)",
     )
-    run("commit", working, "-m", "m", "--author", "t")
+    commit(working, "-m", "m", "--author", "t")
     got = profile_of(store)
 
     assert got["rows"] == 20
@@ -70,7 +74,7 @@ def test_a_commit_profiles_each_table(repository) -> None:
 def test_many_values_list_only_the_most_common(repository) -> None:
     store, working = repository
     write(working, store, f"CREATE TABLE lake.main.towns AS SELECT 'v' || i AS code FROM range({profiles.ALL_VALUES + 5}) t(i)")
-    run("commit", working, "-m", "m", "--author", "t")
+    commit(working, "-m", "m", "--author", "t")
     code = profile_of(store)["columns"][0]
     assert len(code["values"]) == profiles.TOP_VALUES
     assert code["distinct_count"] > profiles.ALL_VALUES
@@ -79,7 +83,7 @@ def test_many_values_list_only_the_most_common(repository) -> None:
 def test_a_column_at_the_limit_lists_every_value(repository) -> None:
     store, working = repository
     write(working, store, f"CREATE TABLE lake.main.towns AS SELECT 'v' || i AS code FROM range({profiles.ALL_VALUES}) t(i)")
-    run("commit", working, "-m", "m", "--author", "t")
+    commit(working, "-m", "m", "--author", "t")
     code = profile_of(store)["columns"][0]
     assert len(code["values"]) == code["distinct_count"] == profiles.ALL_VALUES
 
@@ -107,7 +111,7 @@ def test_an_unchanged_table_keeps_its_parents_profile(repository, monkeypatch) -
     store, working = repository
     write(working, store, "CREATE TABLE lake.main.towns AS SELECT 1 AS id")
     write(working, store, "CREATE TABLE lake.main.other AS SELECT 1 AS id")
-    run("commit", working, "-m", "m", "--author", "t")
+    commit(working, "-m", "m", "--author", "t")
     write(working, store, "INSERT INTO lake.main.other VALUES (2)")
 
     built: list[str] = []
@@ -119,7 +123,7 @@ def test_an_unchanged_table_keeps_its_parents_profile(repository, monkeypatch) -
         return original(working, wanted, **kwargs)
 
     monkeypatch.setattr(profiles, "build", spy)
-    run("commit", working, "-m", "again", "--author", "t")
+    commit(working, "-m", "again", "--author", "t")
     assert built == ["other"]
     assert profile_of(store, "towns")["rows"] == 1
     assert profile_of(store, "other")["rows"] == 2
@@ -128,10 +132,10 @@ def test_an_unchanged_table_keeps_its_parents_profile(repository, monkeypatch) -
 def test_expiry_deletes_the_profiles(repository) -> None:
     store, working = repository
     write(working, store, "CREATE TABLE lake.main.towns AS SELECT 1 AS id")
-    run("commit", working, "-m", "m", "--author", "t")
+    commit(working, "-m", "m", "--author", "t")
     first = repo.head(store).id
     write(working, store, "INSERT INTO lake.main.towns VALUES (2)")
-    run("commit", working, "-m", "again", "--author", "t")
+    commit(working, "-m", "again", "--author", "t")
     repo.expire(store, first)
     assert store.list(f"{layout.version_dir(first)}profiles/") == []
 
@@ -148,7 +152,7 @@ def test_a_geometry_column_gets_its_extent_and_a_sample(repository) -> None:
         "INSTALL spatial; LOAD spatial; CREATE TABLE lake.main.towns AS "
         "SELECT i AS id, ST_Point(139 + i, 35) AS geom FROM range(3) t(i)",
     )
-    run("commit", working, "-m", "m", "--author", "t")
+    commit(working, "-m", "m", "--author", "t")
     got = profile_of(store)
     assert got["geometry"]["column"] == "geom"
     assert got["geometry"]["count"] == 3

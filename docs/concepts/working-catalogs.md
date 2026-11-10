@@ -11,7 +11,8 @@ A working catalog is a DuckLake catalog in a SQLite file, on the writer's own di
 | --- | --- | --- |
 | check out | `fdl checkout` | Copy the catalog of the branch's version into SQLite, and remember that version |
 | write | any DuckDB client | DuckLake writes Parquet into the repository and bookkeeping into SQLite |
-| commit | `fdl commit` | Freeze the last snapshot into a new version, upload it, move the branch |
+| commit | `fdl commit` | Freeze the last snapshot into a new version, kept beside the working catalog |
+| push | `fdl push` | Upload the version and move the branch to it |
 
 Checking out copies DuckLake's bookkeeping tables from the frozen DuckDB file into SQLite as they are. Freezing does the reverse. Neither rewrites a Parquet file, so both are fast even for a large dataset: the catalog is small and the data stays where it is.
 
@@ -19,7 +20,7 @@ Checking out copies DuckLake's bookkeeping tables from the frozen DuckDB file in
 
 A working catalog has to be written by DuckDB and kept between sessions. SQLite does both without a database server, works the same on a laptop and in a container, and copies in and out of DuckDB's format without loss.
 
-There is one kind of working catalog. A host that writes on behalf of its users (a scheduled import, a web form) checks out, writes and commits the same way a person does on a laptop. When two of them commit at once, the conditional write on the ref settles it: one wins, and the other checks out again.
+There is one kind of working catalog. A host that writes on behalf of its users (a scheduled import, a web form) checks out, writes, commits and pushes the same way a person does on a laptop. When two of them push at once, the conditional write on the ref settles it: one wins, and the other checks out again.
 
 ## Attaching
 
@@ -33,15 +34,15 @@ ATTACH 'ducklake:work/lake.sqlite' AS lake (
 );
 ```
 
-- `DATA_PATH` is the repository's data folder, so new Parquet files land where readers will look for them. For a repository over HTTP it is a folder beside the working catalog instead, and `fdl commit` uploads the new files (see [Pushing over HTTP](/spec/http#writing-to-it))
+- `DATA_PATH` is the repository's data folder, so new Parquet files land where readers will look for them. For a repository over HTTP it is a folder beside the working catalog instead, and `fdl push` uploads the new files (see [Pushing over HTTP](/spec/http#writing-to-it))
 - `DATA_INLINING_ROW_LIMIT 0` keeps every row out of the catalog. A version must not carry inlined rows, and `fdl commit` refuses a working catalog that holds some
 - `META_TYPE 'sqlite'` has to be stated. Left to guess from the file, DuckDB passes an option to SQLite that SQLite rejects
 
-## Data files written before a commit
+## Data files written before a push
 
 DuckLake writes Parquet as you go, so data files reach the repository before any version names them. Readers never see them: a reader only opens catalogs of versions, and no version names those files yet.
 
-A file that stays unnamed for longer than the grace period (7 days by default) may be deleted by maintenance. Commit within that time. If a commit is refused because a file it names is missing, rebuild the table in the working catalog and commit again.
+A file that stays unnamed for longer than the grace period (7 days by default) may be deleted by maintenance. Push within that time. If a push is refused because a file it names is missing, rebuild the table in the working catalog, commit and push again. A version committed and never pushed names its files only on your disk, so they are deleted in the same way.
 
 ## Snapshots in the working catalog
 

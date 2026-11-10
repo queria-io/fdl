@@ -253,6 +253,11 @@ def described(store: Store, version: Version) -> dict | None:
     return _get_json(store, layout.version_dir(version.id) + path)
 
 
+def listed(store: Store, version: Version) -> dict | None:
+    """A version's `tree.json`, or ``None`` without one."""
+    return _get_json(store, layout.version_dir(version.id) + version.tree.path) if version.tree else None
+
+
 def indexed(store: Store, version: Version) -> dict | None:
     """A version's `files.json`, or ``None`` without one."""
     return _get_json(store, layout.version_dir(version.id) + version.files.path) if version.files else None
