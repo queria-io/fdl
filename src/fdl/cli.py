@@ -9,9 +9,11 @@ knows what it builds on.
 from __future__ import annotations
 
 import json
+import os
 import shutil
 import tempfile
 from pathlib import Path
+from urllib.parse import urlparse
 
 import typer
 
@@ -83,19 +85,35 @@ def checkout(
     remote: str = Remote,
     working: Path = Working,
     ref: str = typer.Option(layout.DEFAULT_BRANCH, help="The branch to build on"),
+    storage: str | None = typer.Option(
+        None,
+        help="The repository's root in its object storage (s3://…), to write new data files there directly instead of uploading them on commit",
+    ),
 ) -> None:
     """Make a working catalog from the version a branch holds."""
     store = _store(remote)
     # A repository over HTTP takes no writes from DuckDB: new data files go to
-    # a folder beside the working catalog until the commit uploads them.
-    local = None if repo.writes_data_files(store) else working.with_name(working.name + ".data")
+    # a folder beside the working catalog until the commit uploads them, or
+    # straight to the repository's storage when the writer has keys to it.
+    local = (
+        None
+        if storage or repo.writes_data_files(store)
+        else working.with_name(working.name + ".data")
+    )
     try:
-        version = repo.checkout(store, working, ref=ref, local_data=local)
-        data = repo.data_url(store) if local is None else local.resolve().as_posix() + "/"
+        version = repo.checkout(store, working, ref=ref, local_data=local, storage=storage)
+        if storage:
+            data = repo.storage_data_path(storage, repo.read_config(store))
+        else:
+            data = repo.data_url(store) if local is None else local.resolve().as_posix() + "/"
     except ERRORS as exc:
         raise _fail(exc) from exc
     state = {"remote": remote, "ref": ref, "base": version.id if version else None}
-    _write_state(working, {**state, **({"data": str(local)} if local else {})})
+    if local:
+        state["data"] = str(local)
+    if storage:
+        state["storage"] = storage
+    _write_state(working, state)
     typer.echo(f"{working} at {version.id if version else 'an empty catalog'}")
     typer.echo("Write to it with:")
     typer.echo("  " + catalog.attach_sql(working, alias="lake", data_path=data)[-1] + ";")
@@ -138,6 +156,14 @@ def commit(
         parent = repo.read_version(store, state["base"]) if state["base"] else None
         parent_dataset = diffs.described(store, parent) if parent else None
 
+        # Where the working catalog wrote its new data files, when not where it records.
+        if state.get("storage"):
+            written = repo.storage_data_path(state["storage"], repo.read_config(store))
+        elif state.get("data"):
+            written = Path(state["data"]).resolve().as_posix() + "/"
+        else:
+            written = None
+
         def make(allow_empty: bool):
             return repo.commit(
                 working,
@@ -149,7 +175,7 @@ def commit(
                 dataset=declared,
                 tree=listed,
                 allow_empty=allow_empty,
-                working_data=Path(state["data"]).resolve().as_posix() + "/" if state.get("data") else None,
+                working_data=written,
                 parent_dataset=parent_dataset,
             )
 
@@ -159,8 +185,8 @@ def commit(
             typer.echo(f"warning: could not tell whether anything changed ({exc}); committing", err=True)
             version = make(True)
         local = Path(state["data"]) if state.get("data") else None
-        reading = Path(state["data"]).resolve().as_posix() + "/" if local else repo.data_url(store)
-        setup = _read_setup(store)
+        reading = written or repo.data_url(store)
+        setup = _read_setup(store) + _storage_setup(state.get("storage"))
         described = json.loads((out / version.id / layout.DATASET).read_text(encoding="utf-8"))
         held = objects.asset_values(
             working, objects.asset_columns(described), data_path=reading, setup=setup
@@ -213,6 +239,34 @@ def _drop_uploaded(store, working: Path, local: Path, version) -> None:
         return
     shutil.rmtree(local, ignore_errors=True)
     local.mkdir(parents=True, exist_ok=True)
+
+
+def _storage_setup(storage: str | None) -> list[str]:
+    """A DuckDB secret for an ``s3://`` storage, from the ``AWS_*`` variables.
+
+    None without ``AWS_ACCESS_KEY_ID``: DuckDB then uses a secret of the
+    writer's own, if any.
+    """
+    env = os.environ
+    if not storage or not storage.startswith("s3://") or not env.get("AWS_ACCESS_KEY_ID"):
+        return []
+
+    def quoted(value: str) -> str:
+        return "'" + value.replace("'", "''") + "'"
+
+    endpoint = urlparse(env.get("AWS_ENDPOINT_URL_S3") or env.get("AWS_ENDPOINT_URL") or "")
+    options = [
+        f"KEY_ID {quoted(env['AWS_ACCESS_KEY_ID'])}",
+        f"SECRET {quoted(env.get('AWS_SECRET_ACCESS_KEY', ''))}",
+        *([f"SESSION_TOKEN {quoted(env['AWS_SESSION_TOKEN'])}"] if env.get("AWS_SESSION_TOKEN") else []),
+        f"REGION {quoted(env.get('AWS_REGION') or env.get('AWS_DEFAULT_REGION') or 'auto')}",
+        *(
+            [f"ENDPOINT {quoted(endpoint.netloc)}", "URL_STYLE 'path'", f"USE_SSL {str(endpoint.scheme != 'http').lower()}"]
+            if endpoint.netloc
+            else []
+        ),
+    ]
+    return [f"CREATE SECRET fdl_storage (TYPE s3, {', '.join(options)}, SCOPE {quoted(storage)})"]
 
 
 def _read_setup(store) -> list[str]:

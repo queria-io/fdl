@@ -68,3 +68,5 @@ DuckDB cannot write data files to an HTTP URL, so a working catalog of such a re
 - New files are written to a folder on the writer's machine, the working catalog's data path
 
 Committing turns references under the repository's `data_dir` back into relative ones, and the new files are relative already. Pushing uploads the new files the repository lacks before the catalog.
+
+A writer with keys to the repository's storage may instead give the working catalog the storage's own location of `data_dir` as its data path. New files are then written into the repository as they are made, and pushing has none to upload. Moving the ref is still where the host checks them.
