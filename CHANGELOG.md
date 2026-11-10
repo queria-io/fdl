@@ -1,6 +1,26 @@
 # CHANGELOG
 
 
+## v0.22.0 (2026-11-10)
+
+### Features
+
+- Checkout --storage writes new data files to the repository's storage; keep unknown dataset.json
+  keys ([#47](https://github.com/queria-io/fdl/pull/47),
+  [`3df2120`](https://github.com/queria-io/fdl/commit/3df212081c9cf79ebfab2582981171462a88fa96))
+
+- Diff, show and status; DuckDB 2.0; keep the token on its origin; check catalogs on checkout; docs
+  for a beta ([#44](https://github.com/queria-io/fdl/pull/44),
+  [`13b83d5`](https://github.com/queria-io/fdl/commit/13b83d59f0ad936895e312b46fecf755c24b6138))
+
+- Record what changed since the parent in version.json
+  ([#46](https://github.com/queria-io/fdl/pull/46),
+  [`eee1ec3`](https://github.com/queria-io/fdl/commit/eee1ec3099bceea5938c68c4d656182512ea4718))
+
+- **dataset**: Read depends_on from a table's SQL ([#45](https://github.com/queria-io/fdl/pull/45),
+  [`75003ba`](https://github.com/queria-io/fdl/commit/75003ba5d97efed5868b0297a9e28953b69b13f7))
+
+
 ## v0.21.1 (2026-11-08)
 
 ### Bug Fixes
