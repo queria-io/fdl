@@ -44,6 +44,55 @@ A writer that brings back what an earlier version held makes a new version, as `
 
 The new version's parent is the version the working catalog was checked out at, so pushing it is refused if the branch has moved since, as for any commit. Its tables and views are those of the earlier version at its snapshot, with the same columns and rows, and its `dataset.json` and `tree.json` are the earlier version's. The working catalog gets there in a new snapshot: tables the earlier version did not hold are dropped, and tables changed since are written again from their rows at the earlier snapshot. The earlier snapshot must still be in the catalog.
 
+## Branches
+
+A branch is made by creating `refs/heads/<name>` at a version (see [Refs](/spec/refs)). Work on it is checked out, committed and pushed as on `main`. Its versions are not on `main`'s history until they are merged.
+
+## Merging
+
+Merging brings what another branch changed into the branch being written. The writer works out the result from three versions:
+
+- ours: the version the working catalog was checked out at, on the branch being written
+- theirs: the version of the other branch
+- the base: a common ancestor of ours and theirs that no other common ancestor descends from, following every entry of `parents`. When there is more than one, the writer refuses to merge
+
+When the base is theirs, there is nothing to merge. When the base is ours, the branch is moved to theirs, with no new version. Otherwise the writer makes a merge version: its `parents` are ours, then theirs, and pushing it is refused if the branch has moved since, as for any commit. The base's catalog must still be there, with its snapshot; a writer refuses to merge from a base past retention.
+
+### Tables
+
+A table is the same table in two versions when it has the same `schema.table`. Each table is compared in the three versions, and two versions hold the same table when the columns, their types and the rows (counted as a multiset) are the same:
+
+| ours and theirs, against the base | The merge version holds |
+| --- | --- |
+| Neither changed it, or both changed it the same way | That table |
+| Only one changed it, added it or dropped it | That side's table, or none if it dropped it |
+| One dropped it and the other changed it | A conflict |
+| Both changed it, or both added it, differently | Rows merged by primary key, below, or a conflict |
+
+A view is compared by its SQL, as a table without a primary key.
+
+### Rows merged by primary key
+
+Two changes to the same table are merged row by row when ours and theirs declare the same `primary_key` for it in `dataset.json`, and the base does as well, or did not hold the table. The columns and their types must be the same in ours and theirs; a table whose columns changed on both sides is a conflict.
+
+Each row is found by the values of its primary key, and each key is compared as a table is above: a row only one side added, changed or deleted takes that side's change, and a key both sides changed differently is a conflict. A table where a key holds `NULL` or appears more than once, in any of the three versions, is a conflict.
+
+A table without a primary key is not merged by rows, even when the two sides changed different rows. A writer may warn when a table has no primary key. A key made up for the merge (a row number, say) is not a primary key: it does not say which rows are the same row.
+
+### Descriptions
+
+`dataset.json` and `tree.json` are merged key by key. An object is compared member by member, and the entries of `tables` are matched by `schema` and `name`, and those of `fields` by `name`. Any other value (a string, a number, a list) is taken whole: when only one side changed it, that side's value; when both changed it differently, a conflict. A file of `tree.json` is matched by its path.
+
+The values made from the catalog (`rows`, and each field's `type` and `nullable`) are written again from the merge version's catalog, not merged.
+
+### Conflicts
+
+A merge with any conflict makes no version. The writer lists each conflict, by table and, for rows, by the values of the primary key, and changes nothing in the repository. The person merging changes one of the branches so that the two no longer conflict, and merges again.
+
+### The merge version
+
+The working catalog is checked out from ours and gets the result in a new snapshot. Data files may be written anew or, for a table taken whole from theirs, named as theirs names them. `diff` compares the merge version with ours, its first parent.
+
 ## Order of writes
 
 1. Data files and assets
@@ -60,7 +109,7 @@ Files of a version are written once. A writer that finds one already there with 
 
 A push from a stale working catalog is refused on two checks:
 
-1. The version the branch holds now is not among the new version's `parents`. Someone else pushed first
+1. The new version does not descend from the version the branch holds now. Someone else pushed first
 2. A data file the catalog names, or a file `tree.json` lists, is missing from the repository. A host may check the assets the rows hold as well. A file that no live version named for longer than the grace period may have been deleted, even if the writer found it there
 
-In both cases the writer checks out again, redoes the work and pushes again. Nothing in the repository needs to be cleaned up: the refused version is not named by any ref.
+In both cases the writer checks out again, redoes the work and pushes again. After the first, it may instead merge the branch into its work. Nothing in the repository needs to be cleaned up: the refused version is not named by any ref.
