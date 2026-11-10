@@ -32,12 +32,14 @@ Writes `fdl.json`, with a new `id`, and `HEAD`. Running it on an existing reposi
 ## fdl checkout
 
 ```bash
-fdl checkout <remote> <working.sqlite> [--ref refs/heads/main]
+fdl checkout <remote> <working.sqlite> [--ref refs/heads/main] [--storage s3://bucket/prefix/]
 ```
 
 Makes a working catalog (DuckLake in SQLite) from the catalog of the version the branch holds, or an empty one before the first version. Beside it, `<working.sqlite>.fdl.json` remembers the repository, the branch and the version it was made from. It prints the `ATTACH` statement to write with.
 
 For a repository over HTTP, new data files are written to `<working.sqlite>.data/` and uploaded by the commit. Files already in the repository are read over HTTP where they are. Once a commit has uploaded them, it makes the working catalog again from the new version and deletes the local copies, so the folder holds only what has not been committed.
+
+With `--storage`, the working catalog reads and writes the data files in the repository's own storage instead: `--storage` is the repository's root there, and new files go straight under its `data_dir`, so the commit has none to upload. The keys come from the `AWS_*` variables (`AWS_ENDPOINT_URL` for R2 and other S3-compatible stores), or from a DuckDB secret of your own. The build that writes to the working catalog needs them too.
 
 Refused when the version is past retention, when its catalog's sha256 is not the one `version.json` records, or when the catalog names a data file outside the data folder.
 
@@ -61,7 +63,7 @@ When the version would hold what its parent holds (see [When nothing changed](/s
 
 Refused when:
 
-- there is no `dataset.json`, or it describes a table or column the catalog lacks, or has keys the format does not define
+- there is no `dataset.json`, or it describes a table or column the catalog lacks. Keys the format does not define are kept as written, with a warning
 - the branch has moved since the checkout. Check out again and redo the work
 - the working catalog holds inlined rows
 - a data file the catalog names is not in the repository

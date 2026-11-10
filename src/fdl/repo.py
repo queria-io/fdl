@@ -236,6 +236,7 @@ def checkout(
     ref: str = layout.HEAD,
     local_data: Path | None = None,
     version: Version | None = None,
+    storage: str | None = None,
 ) -> Version | None:
     """Make a working catalog from the version ``ref`` holds, or from ``version`` when given.
 
@@ -246,11 +247,18 @@ def checkout(
     A store DuckDB cannot write to (one over HTTP) needs ``local_data``, a
     folder on this machine: new data files are written there and uploaded by
     `push`, while the files already in the repository are read where they are.
+
+    ``storage`` is instead the repository's root in its object storage (an
+    ``s3://`` URL, say): the working catalog reads and writes the data files
+    there directly, with keys of the writer's own, and `push` has none to
+    upload.
     """
     working = Path(working)
     config = read_config(store)
     remote_data = _data_url(store, config)
-    if writes_data_files(store):
+    if storage is not None:
+        data_path = storage_data_path(storage, config)
+    elif writes_data_files(store):
         data_path = remote_data
     elif local_data is None:
         raise RepoError("this store takes no data files from DuckDB; give a local folder for them")
@@ -268,7 +276,7 @@ def checkout(
     try:
         frozen.write_bytes(store.get(layout.version_catalog(version.id)))
         check_catalog(frozen, version)
-        if data_path != remote_data:
+        if data_path != remote_data and storage is None:
             catalog.pin_files(frozen, remote_data)
         catalog.convert(frozen, working, data_path=data_path)
     finally:
@@ -291,6 +299,12 @@ def check_catalog(frozen: Path, version: Version) -> None:
     for key in catalog.data_files(frozen):
         if key.startswith("/") or "\\" in key or any(part in ("", ".", "..") for part in key.split("/")):
             raise RepoError(f"{version.id}: the catalog names a data file outside the data folder: {key}")
+
+
+def storage_data_path(storage: str, config: Config) -> str:
+    """The data files' folder, given the repository's root in its storage."""
+    root = storage if "://" in storage else Path(storage).resolve().as_posix()
+    return root.rstrip("/") + "/" + config.data_dir
 
 
 def writes_data_files(store: Store) -> bool:

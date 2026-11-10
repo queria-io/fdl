@@ -48,9 +48,10 @@ def test_what_the_catalog_lacks_is_refused(frozen: Path) -> None:
         )
 
 
-def test_keys_outside_the_format_go_under_annotations(frozen: Path) -> None:
-    with pytest.raises(DatasetError, match="title_kana"):
-        describe({"name": "t", "title": "T", "title_kana": "ティー"}, frozen)
+def test_keys_outside_the_format_are_kept_with_a_warning(frozen: Path, capsys) -> None:
+    described = describe({"name": "t", "title": "T", "title_kana": "ティー"}, frozen)
+    assert described["title_kana"] == "ティー"
+    assert "title_kana" in capsys.readouterr().err
     with pytest.raises(DatasetError, match="needs a title"):
         describe({"name": "t"}, frozen)
     described = describe({"name": "t", "title": "T", "annotations": {"queria": {"themes": ["x"]}}}, frozen)

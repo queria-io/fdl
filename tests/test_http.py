@@ -304,3 +304,51 @@ def test_a_commit_over_http_frees_the_local_data_files(served, tmp_path: Path) -
         f"ATTACH 'ducklake:{frozen}' AS v (READ_ONLY, DATA_PATH '{repo.data_url(local)}', OVERRIDE_DATA_PATH true)"
     )
     assert con.execute("SELECT id FROM v.main.towns ORDER BY id").fetchall() == [(1,), (2,)]
+
+
+def test_a_checkout_with_storage_writes_data_files_there(served, tmp_path: Path) -> None:
+    local, url, _ = served
+    working = tmp_path / "work" / "lake.sqlite"
+    out = run("checkout", url, working, "--storage", local.root)
+    data = f"{Path(local.root).resolve().as_posix()}/data/"
+    assert f"DATA_PATH '{data}'" in out
+    assert not working.with_name(working.name + ".data").exists()
+
+    def build(sql: str) -> None:
+        con = duckdb.connect()
+        for statement in catalog.attach_sql(working, alias="lake", data_path=data):
+            if statement:
+                con.execute(statement)
+        con.execute(sql)
+        con.close()
+
+    build("CREATE TABLE lake.main.towns AS SELECT 1 AS id")
+    # Written into the repository before the commit: nothing to upload.
+    assert list((Path(local.root) / "data").rglob("*.parquet"))
+    run("commit", working, "-m", "first", "--author", "tester")
+    build("INSERT INTO lake.main.towns VALUES (2)")
+    run("commit", working, "-m", "second", "--author", "tester")
+
+    second = repo.head(local)
+    frozen = tmp_path / "frozen.duckdb"
+    frozen.write_bytes(local.get(layout.version_catalog(second.id)))
+    assert not catalog.absolute_paths(frozen)
+    con = duckdb.connect()
+    con.execute("INSTALL ducklake; LOAD ducklake;")
+    con.execute(f"ATTACH 'ducklake:{frozen}' AS v (READ_ONLY, DATA_PATH '{repo.data_url(local)}', OVERRIDE_DATA_PATH true)")
+    assert con.execute("SELECT id FROM v.main.towns ORDER BY id").fetchall() == [(1,), (2,)]
+
+
+def test_the_storage_secret_comes_from_the_aws_variables(monkeypatch) -> None:
+    from fdl.cli import _storage_setup
+
+    monkeypatch.delenv("AWS_ACCESS_KEY_ID", raising=False)
+    assert _storage_setup("s3://b/p/") == []
+    monkeypatch.setenv("AWS_ACCESS_KEY_ID", "id")
+    monkeypatch.setenv("AWS_SECRET_ACCESS_KEY", "se'cret")
+    monkeypatch.setenv("AWS_SESSION_TOKEN", "tok")
+    monkeypatch.setenv("AWS_ENDPOINT_URL", "https://acct.r2.cloudflarestorage.com")
+    [statement] = _storage_setup("s3://b/p/")
+    assert "SECRET 'se''cret'" in statement and "SESSION_TOKEN 'tok'" in statement
+    assert "ENDPOINT 'acct.r2.cloudflarestorage.com'" in statement and "SCOPE 's3://b/p/'" in statement
+    duckdb.connect().execute("INSTALL httpfs; LOAD httpfs;").execute(statement)

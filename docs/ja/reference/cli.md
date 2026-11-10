@@ -32,12 +32,14 @@ fdl init <remote> [--data-dir data/]
 ## fdl checkout
 
 ```bash
-fdl checkout <remote> <working.sqlite> [--ref refs/heads/main]
+fdl checkout <remote> <working.sqlite> [--ref refs/heads/main] [--storage s3://bucket/prefix/]
 ```
 
 ブランチが指すバージョンのカタログから作業カタログ（SQLite の DuckLake）を作ります。最初のバージョンの前は空のものを作ります。隣の `<working.sqlite>.fdl.json` に、リポジトリ、ブランチ、元のバージョンを記録します。書くときの `ATTACH` 文を表示します。
 
 HTTP のリポジトリでは、新しいデータファイルは `<working.sqlite>.data/` に書かれ、コミットでアップロードされます。リポジトリに既にあるファイルは、その場所から HTTP で読みます。コミットはアップロードを終えると、新しいバージョンから作業カタログを作り直して手元の写しを削除するので、このフォルダにはまだコミットしていないファイルだけが残ります。
+
+`--storage` を付けると、作業カタログはリポジトリのストレージで直接データファイルを読み書きします。`--storage` にはそのストレージでのリポジトリの根を渡します。新しいファイルはその `data_dir` の下に直接書かれるので、コミットでアップロードするものはありません。鍵は `AWS_*` の環境変数（R2 などの S3 互換ストレージは `AWS_ENDPOINT_URL`）か、自分で作った DuckDB の secret から取ります。作業カタログに書くビルドにも同じ鍵が要ります。
 
 バージョンの保持期間が過ぎているとき、カタログの sha256 が `version.json` の記録と違うとき、カタログがデータフォルダの外のデータファイルを指しているときは断られます。
 
@@ -61,7 +63,7 @@ fdl commit <working.sqlite> -m "What changed" --author alice [--dataset dataset.
 
 次のときは断られます。
 
-- `dataset.json` が無いとき、カタログに無い表や列を説明しているとき、形式が決めていないキーがあるとき
+- `dataset.json` が無いとき、カタログに無い表や列を説明しているとき。形式が決めていないキーは、警告を出してそのまま残します
 - チェックアウトのあとにブランチが動いたとき。チェックアウトし直して作業をやり直す
 - 作業カタログが行をカタログの中に持っているとき
 - カタログが参照するデータファイルがリポジトリに無いとき
