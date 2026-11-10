@@ -33,7 +33,7 @@ pip install 'fdl-cli[s3]>=0.21,<0.22'
 ## 動く環境
 
 - Python 3.10 以降
-- DuckDB 1.5.2 以降（2.x を含む）と `ducklake` 拡張。どの DuckDB で書いても、`fdl` が書くカタログは DuckLake の形式 1.0、DuckDB のストレージ v1.5.0 なので、DuckDB 1.5 以降で読めます
+- DuckDB 1.5.2 以降（2.x を含む。2.x は Python 3.11 以降）と `ducklake` 拡張。どの DuckDB で書いても、`fdl` が書くカタログは DuckLake の形式 1.0、DuckDB のストレージ v1.5.0 なので、DuckDB 1.5 以降で読めます
 
 ## 問題の報告
 

@@ -18,6 +18,10 @@ jobs:
         python: ["3.10", "3.13"]
         # Catalogs written by either have to read on the other.
         duckdb: ["1.5", "2.0"]
+        exclude:
+          # DuckDB 2.0 needs Python 3.11 or later.
+          - python: "3.10"
+            duckdb: "2.0"
     steps:
       - uses: actions/checkout@v5
       - uses: astral-sh/setup-uv@v7
