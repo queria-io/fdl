@@ -165,12 +165,6 @@ def compare(
     }
 
 
-def is_empty(result: dict[str, Any]) -> bool:
-    return not any(
-        [result["tables"]["added"], result["tables"]["dropped"], result["rows"], result["columns"], result["data"], result["descriptions"]]
-    )
-
-
 def lines(result: dict[str, Any]) -> list[str]:
     """The differences as lines for a terminal, one change a line."""
 

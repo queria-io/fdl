@@ -101,7 +101,7 @@ FDL 0.1 では、書き手が書く親は多くても 1 つです。`parents` �
 | `add_column` | | `false` |
 | `drop_column` | | `true` |
 | `rename_column` | `from`: 前の列名 | `true` |
-| `change_type` | `from_type`・`to_type`: DuckLake の型名 | 前の型の値がすべて新しい型に収まるとき（`int32` から `int64`、`float` から `double`）は `false`、それ以外は `true` |
+| `change_type` | `from_type`・`to_type`: DuckLake の型名 | 前の型の値がすべて新しい型に収まるとき（`int32` から `int64`、`float32` から `float64`）は `false`、それ以外は `true` |
 
 表の追加と削除は項目にしません。読み手は 2 つの `dataset.json` を比べて見つけます。読み手は、知らない `kind` を無視し、その `breaking` は読みます。
 

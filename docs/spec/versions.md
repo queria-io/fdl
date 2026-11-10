@@ -101,7 +101,7 @@ Each entry of `changes` is one column difference between the version and its fir
 | `add_column` | | `false` |
 | `drop_column` | | `true` |
 | `rename_column` | `from`: the old name | `true` |
-| `change_type` | `from_type`, `to_type`: DuckLake's type names | `false` when every value of the old type fits the new one (`int32` to `int64`, `float` to `double`), `true` otherwise |
+| `change_type` | `from_type`, `to_type`: DuckLake's type names | `false` when every value of the old type fits the new one (`int32` to `int64`, `float32` to `float64`), `true` otherwise |
 
 Tables added or dropped are not entries; a reader finds them by comparing the two `dataset.json`. A reader ignores a `kind` it does not know and still reads its `breaking`.
 
