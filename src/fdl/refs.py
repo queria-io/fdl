@@ -65,6 +65,11 @@ def read(store: Store, name: str) -> Ref | None:
         if not target.startswith(layout.SYMBOLIC):
             raise RefError(f"HEAD does not point at a ref: {target!r}")
         target = layout.check_ref(target[len(layout.SYMBOLIC) :])
+    else:
+        try:
+            layout.check_version_id(target)
+        except layout.LayoutError as exc:
+            raise RefError(f"{name} does not hold a version ID: {exc}") from exc
     return Ref(name=name, target=target, etag=etag_of(headers))
 
 

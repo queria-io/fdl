@@ -5,13 +5,11 @@ from __future__ import annotations
 import datetime as dt
 import json
 import os
-import re
 import time
 from dataclasses import dataclass, field
 
 from . import layout
 
-_ID = re.compile(r"[0-9a-f]{8}-[0-9a-f]{4}-7[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}")
 
 
 class VersionError(ValueError):
@@ -35,7 +33,7 @@ def new_id(now_ms: int | None = None) -> str:
 
 
 def is_id(value: str) -> bool:
-    return bool(_ID.fullmatch(value))
+    return layout.is_version_id(value)
 
 
 @dataclass(frozen=True)
@@ -158,14 +156,14 @@ def parse(data: bytes, *, expected_id: str | None = None) -> Version:
         dataset = record.get("dataset")
         return Version(
             fdl=record["fdl"],
-            id=record["id"],
+            id=layout.check_version_id(record["id"]),
             seq=int(record["seq"]),
-            parents=tuple(record["parents"]),
+            parents=tuple(layout.check_version_id(p) for p in record["parents"]),
             created_at=record["created_at"],
             author=dict(record["author"]),
             message=record["message"],
             catalog=Catalog(
-                path=catalog["path"],
+                path=layout.check_file_name(catalog["path"]),
                 storage=catalog["storage"],
                 bytes=int(catalog["bytes"]),
                 sha256=catalog["sha256"],
@@ -181,7 +179,7 @@ def parse(data: bytes, *, expected_id: str | None = None) -> Version:
             files=_file(record.get("files")),
             tree=_file(record.get("tree")),
             dataset=(
-                File(path=dataset["path"], bytes=int(dataset["bytes"]), sha256=dataset["sha256"])
+                File(path=layout.check_file_name(dataset["path"]), bytes=int(dataset["bytes"]), sha256=dataset["sha256"])
                 if dataset
                 else None
             ),
@@ -195,7 +193,7 @@ def parse(data: bytes, *, expected_id: str | None = None) -> Version:
 def _file(entry: dict | None) -> File | None:
     if not entry:
         return None
-    return File(path=entry["path"], bytes=int(entry["bytes"]), sha256=entry["sha256"])
+    return File(path=layout.check_file_name(entry["path"]), bytes=int(entry["bytes"]), sha256=entry["sha256"])
 
 
 def utc_now() -> str:

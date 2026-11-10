@@ -31,6 +31,8 @@ Only when both hold:
 1. No live version reaches it. A live version is one without `expired.json`
 2. It was placed longer ago than the grace period. The grace period protects objects a writer has placed but not yet made a version of
 
+Only a file whose path has the form in the table above is a shared object: a data file named `ducklake-<name>.parquet` under the data directory, or `assets/` followed by 64 lower-case hex digits. A process that deletes shared objects must leave every other file alone.
+
 DuckLake's own cleanup (`ducklake_cleanup_old_files`, `ducklake_expire_snapshots`) sees only one catalog, so it must not be used to delete from a repository. Deleting is for a process that sees the whole repository.
 
 ## Past retention

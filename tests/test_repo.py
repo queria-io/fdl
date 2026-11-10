@@ -517,3 +517,37 @@ def test_a_version_records_what_changed_since_its_parent(tmp_path: Path, remote)
     repo.push(remote, tmp_path / "local" / second.id, second)
     # fdl diff reads it from the record.
     assert diff.versions(remote, first, repo.read_version(remote, second.id)) == recorded["diff"]
+
+
+def test_a_record_with_a_path_outside_its_folder_is_refused(tmp_path: Path, remote) -> None:
+    version_id = _pushed(tmp_path, remote)
+    record = json.loads(remote.get(layout.version_record(version_id)))
+    for field, value in (("parents", ["../x"]), ("catalog", {**record["catalog"], "path": "../ducklake.duckdb"})):
+        with pytest.raises(ValueError):
+            parse(json.dumps({**record, field: value}).encode(), expected_id=version_id)
+
+
+def test_a_ref_that_does_not_hold_a_version_id_is_refused(remote) -> None:
+    remote.put("refs/heads/main", b"../../etc\n")
+    with pytest.raises(refs.RefError, match="version ID"):
+        refs.read(remote, "refs/heads/main")
+
+
+def test_collection_leaves_files_that_are_not_shared_objects(tmp_path: Path, remote) -> None:
+    import datetime as dt
+
+    _pushed(tmp_path, remote)
+    remote.put("data/README.txt", b"not a data file\n")
+    remote.put("assets/notes.txt", b"not an asset\n")
+    later = dt.datetime.now(dt.timezone.utc) + dt.timedelta(days=1)
+    plan = repo.plan_collection(remote, grace=dt.timedelta(0), now=later)
+    assert "data/README.txt" not in plan.deleted and "assets/notes.txt" not in plan.deleted
+
+
+def test_a_push_sent_again_rewrites_refs_json(tmp_path: Path, remote) -> None:
+    build(tmp_path / "work.sqlite", remote, "CREATE TABLE lake.main.towns AS SELECT 1 AS id")
+    version = commit(tmp_path, remote)
+    repo.push(remote, tmp_path / "local" / version.id, version)
+    remote.delete([layout.REFS_INDEX])
+    repo.push(remote, tmp_path / "local" / version.id, version)
+    assert version.id in remote.get(layout.REFS_INDEX).decode()
