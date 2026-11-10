@@ -452,7 +452,9 @@ def push(
     config = read_config(store)
     current_ref = refs.read(store, layout.check_ref(ref))
     if current_ref is not None and current_ref.target == version.id:
-        # This push again, after a run whose answer was lost.
+        # This push again, after a run whose answer was lost. That run may
+        # have stopped before rewriting refs.json.
+        update_refs_index(store)
         return
     _refuse_unless_fast_forward(current_ref, version)
 
@@ -745,8 +747,11 @@ def plan_withdrawal(store: Store, version_ids: Iterable[str], *, setup: Iterable
         # A version already past retention no longer says which objects it
         # reached. Those no live version reaches are waiting for the grace
         # period anyway, so all of them go now.
-        candidates.update(store.list(config.data_dir))
-        candidates.update(store.list(layout.ASSETS_DIR))
+        candidates.update(
+            key
+            for key in (*store.list(config.data_dir), *store.list(layout.ASSETS_DIR))
+            if layout.is_shared_object(key, config.data_dir)
+        )
     return Withdrawal(
         versions=affected,
         tags=tuple(tags),
@@ -802,7 +807,7 @@ def plan_collection(
     config = read_config(store)
     before = (now or dt.datetime.now(dt.timezone.utc)) - grace
     placed = {**store.placed(config.data_dir), **store.placed(layout.ASSETS_DIR)}
-    old = {key for key, when in placed.items() if when < before}
+    old = {key for key, when in placed.items() if when < before and layout.is_shared_object(key, config.data_dir)}
     live = [version_id for version_id in _version_ids(store) if not is_expired(store, version_id)]
     reached = _reached_by_all(store, config, live, list(setup))
     return Collection(deleted=tuple(sorted(old - reached)), before=before, versions=tuple(live))
@@ -891,7 +896,8 @@ def withdraw(store: Store, version_ids: Iterable[str], *, plan: Withdrawal | Non
 
 def _version_ids(store: Store) -> list[str]:
     suffix = "/" + layout.VERSION_RECORD
-    return [key[len("versions/") : -len(suffix)] for key in store.list("versions/") if key.endswith(suffix)]
+    ids = [key[len("versions/") : -len(suffix)] for key in store.list("versions/") if key.endswith(suffix)]
+    return [version_id for version_id in ids if layout.is_version_id(version_id)]
 
 
 def _fetch_catalog(store: Store, version_id: str, tmp: Path) -> Path | None:

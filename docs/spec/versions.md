@@ -15,6 +15,7 @@ A version is the files under `versions/<version ID>/`. They must not change once
 - A UUIDv7 in lower case with hyphens, for example `019a3c4e-7b21-7f3a-9c55-2f0d8e1a4b6c`. IDs sort by creation time, and writers do not collide without coordinating
 - Not a content hash. The same catalog can be written as different bytes, so a hash would not be stable. Content is checked with `catalog.sha256`
 - The number shown to people is `seq`. It is not unique across branches, so it is not the ID
+- A reader must refuse an ID in any other form, whether it comes from a ref, a folder name or `parents`. The ID becomes part of a path
 
 ## version.json
 
@@ -93,6 +94,8 @@ A version is the files under `versions/<version ID>/`. They must not change once
 | `annotations` | may | What the format does not interpret, keyed by the name of whoever reads it (a host, a tool) |
 
 A reader must ignore fields it does not know.
+
+The `path` of `catalog`, `dataset`, `files` and `tree` is a file name in the version's folder: it holds no `/` or `\\` and is not `.` or `..`. A reader must refuse a record with any other.
 
 In FDL 0.1 a writer writes at most one parent. `parents` is a list so that a later version of this specification can describe merges without changing the field; a reader must accept a list of any length and follow the first entry for history.
 

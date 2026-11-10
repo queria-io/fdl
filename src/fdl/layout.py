@@ -43,6 +43,13 @@ _REF_KINDS = ("heads", "tags", "requests")
 LISTED_REFS = ("refs/heads/", "refs/tags/")
 _REF_MAX = 128
 
+#: A version ID: a lower-case UUIDv7.
+_VERSION_ID = re.compile(r"[0-9a-f]{8}-[0-9a-f]{4}-7[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}")
+
+#: The names of shared objects (see `is_shared_object`).
+_DATA_FILE = re.compile(r"ducklake-[^/]+\.parquet")
+_ASSET = re.compile(r"assets/[0-9a-f]{64}")
+
 
 class LayoutError(ValueError):
     """A name that this format does not allow."""
@@ -60,6 +67,41 @@ def check_ref(name: str) -> str:
             f"up to {_REF_MAX} characters)"
         )
     return name
+
+
+def is_version_id(value: object) -> bool:
+    return isinstance(value, str) and bool(_VERSION_ID.fullmatch(value))
+
+
+def check_version_id(value: object) -> str:
+    """Return ``value`` if it is a version ID, or refuse. The ID becomes part of a path."""
+    if not is_version_id(value):
+        raise LayoutError(f"not a version ID: {value!r}")
+    return value
+
+
+def check_file_name(value: object) -> str:
+    """Return ``value`` if it is a plain file name in a version's folder, or refuse."""
+    if (
+        not isinstance(value, str)
+        or not value
+        or value in (".", "..")
+        or "/" in value
+        or "\\" in value
+    ):
+        raise LayoutError(f"not a file name in a version's folder: {value!r}")
+    return value
+
+
+def is_shared_object(key: str, data_dir: str) -> bool:
+    """Whether ``key`` is named as a shared object: a data file or an asset.
+
+    Deleting is only for these, so a stray file under the data directory is
+    left alone.
+    """
+    if _ASSET.fullmatch(key):
+        return True
+    return key.startswith(data_dir) and bool(_DATA_FILE.fullmatch(key.rsplit("/", 1)[-1]))
 
 
 def version_dir(version_id: str) -> str:
