@@ -37,6 +37,8 @@ The root must not hold a DuckLake catalog outside `versions/`, and must never ho
 
 Files with other names may sit at the root. Readers must ignore them.
 
+A repository's root must not be under another repository's root. Deleting the outer repository's shared objects would take the inner one's files for objects no version reaches.
+
 ## fdl.json
 
 ```json

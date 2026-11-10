@@ -7,7 +7,7 @@ description: The fdl commands, their options and when they refuse.
 
 ## Tokens for HTTP
 
-fdl keeps no tokens and has no login. For a repository over HTTP it sends, as `Authorization: Bearer`:
+fdl keeps no tokens and has no login. A repository over HTTP has to be `https`, except on this machine (`localhost`). fdl sends the token only to the repository's origin, never after a redirect to another one, as `Authorization: Bearer`:
 
 1. `FDL_TOKEN`, when set (for CI)
 2. Otherwise what the credential helper set for the repository's URL in fdl's config answers. With no helper set, fdl sends no token
@@ -39,7 +39,7 @@ Makes a working catalog (DuckLake in SQLite) from the catalog of the version the
 
 For a repository over HTTP, new data files are written to `<working.sqlite>.data/` and uploaded by the commit. Files already in the repository are read over HTTP where they are.
 
-Refused when the version is past retention.
+Refused when the version is past retention, when its catalog's sha256 is not the one `version.json` records, or when the catalog names a data file outside the data folder.
 
 ## fdl commit
 

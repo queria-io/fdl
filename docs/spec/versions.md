@@ -82,7 +82,7 @@ A version is the files under `versions/<version ID>/`. They must not change once
 | `ducklake` | must | The DuckLake format, the snapshot frozen, and the range of snapshots this version adds after its parent (first and last) |
 | `files` | may | The `files.json` beside the catalog, if written: its file name, size and sha256 ([files.json](#filesjson)) |
 | `tree` | may | The `tree.json` beside the catalog, if the version holds other files: its file name, size and sha256 ([tree.json](#treejson)) |
-| `changes` | may | Column differences from the parent. `breaking` says whether SQL written for the parent may fail (a column dropped, renamed or recreated) |
+| `changes` | may | Column differences from the parent ([changes](#changes)). `breaking` says whether SQL written for the parent may fail |
 | `inputs` | may | Source files used: where each came from, when, and its sha256. FDL does not store them; a writer that keeps them makes them assets of a table. How `source_id` is assigned is up to the writer |
 | `annotations` | may | What the format does not interpret, keyed by the name of whoever reads it (a host, a tool) |
 
@@ -91,6 +91,19 @@ A reader must ignore fields it does not know.
 In FDL 0.1 a writer writes at most one parent. `parents` is a list so that a later version of this specification can describe merges without changing the field; a reader must accept a list of any length and follow the first entry for history.
 
 The description and SQL of each snapshot stay in the catalog, in DuckLake's `commit_message` and `commit_extra_info`. They are not copied into `version.json`.
+
+### changes
+
+Each entry of `changes` is one column difference between the version and its first parent, in a table both hold. `table` is `schema.table` and `column` the column's name in the new version.
+
+| `kind` | Also has | `breaking` |
+| --- | --- | --- |
+| `add_column` | | `false` |
+| `drop_column` | | `true` |
+| `rename_column` | `from`: the old name | `true` |
+| `change_type` | `from_type`, `to_type`: DuckLake's type names | `false` when every value of the old type fits the new one (`int32` to `int64`, `float` to `double`), `true` otherwise |
+
+Tables added or dropped are not entries; a reader finds them by comparing the two `dataset.json`. A reader ignores a `kind` it does not know and still reads its `breaking`.
 
 ### Format numbers
 
@@ -256,7 +269,7 @@ The writer describes; the writer's tool checks the description against the froze
 - `tables` lists every table of the catalog's last snapshot. The writer's tool adds the tables the writer did not describe, with what the catalog knows of them, and refuses a described table or column the catalog lacks
 - A view of the catalog is listed after the tables with `"kind": "view"` and its `sql` from the catalog. The catalog records no columns for a view, so its `fields` are the writer's, without `type`, `nullable` or `rows`. `kind` is left out for a table
 - From the catalog: each table's `rows`, and each field's `type` (DuckLake's type name) and `nullable`. Comments in the catalog (`COMMENT ON`) are used where the writer gave no `description`
-- Keys this specification does not define are refused. What the format does not interpret goes under `annotations`, keyed by the name of whoever reads it, at the top, in a table or in a field. Writers keep it as written
+- A reader ignores keys this specification does not define. A writer's tool may refuse them, to catch a misspelt key. What the format does not interpret goes under `annotations`, keyed by the name of whoever reads it, at the top, in a table or in a field. Writers keep it as written
 - Versions written before `annotations` had its name carry it as `extensions`. A reader reads `extensions` as `annotations`
 - What a license or a source says is the writer's claim. A host may check it before it publishes
 

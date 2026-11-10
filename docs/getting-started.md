@@ -29,6 +29,8 @@ towns/
 
 `HEAD` names the default branch, `main`. The branch itself does not exist yet: there is no version for it to point at.
 
+`fdl init` makes the repository where readers will find it, as `git init --bare` does on a server. Your own place to write is the working catalog, made next.
+
 ## Check out a working catalog
 
 You never write to the repository directly. You write to a working catalog, a DuckLake catalog in a SQLite file on your own disk, and turn it into a version when you are done.

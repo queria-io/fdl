@@ -7,7 +7,7 @@ description: fdl のコマンド、オプション、断られるとき。
 
 ## HTTP のトークン
 
-fdl はトークンを保存せず、ログインのコマンドもありません。HTTP のリポジトリには、次の順に見つけたトークンを `Authorization: Bearer` で送ります。
+fdl はトークンを保存せず、ログインのコマンドもありません。HTTP のリポジトリは、手元のマシン（`localhost`）を除いて `https` でなければなりません。fdl はトークンをリポジトリと同じオリジンにだけ送り、別のオリジンへのリダイレクトの後には送りません。トークンは次の順に見つけたものを `Authorization: Bearer` で送ります。
 
 1. `FDL_TOKEN` があればそれ（CI 向け）
 2. 無ければ、fdl の設定でリポジトリの URL に設定した credential helper が答えたもの。helper が無ければトークンを送りません
@@ -39,7 +39,7 @@ fdl checkout <remote> <working.sqlite> [--ref refs/heads/main]
 
 HTTP のリポジトリでは、新しいデータファイルは `<working.sqlite>.data/` に書かれ、コミットでアップロードされます。リポジトリに既にあるファイルは、その場所から HTTP で読みます。
 
-バージョンの保持期間が過ぎていると断られます。
+バージョンの保持期間が過ぎているとき、カタログの sha256 が `version.json` の記録と違うとき、カタログがデータフォルダの外のデータファイルを指しているときは断られます。
 
 ## fdl commit
 

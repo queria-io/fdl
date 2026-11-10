@@ -82,7 +82,7 @@ description: バージョン ID、version.json の項目、固めたカタログ
 | `ducklake` | must | DuckLake の形式、固めたスナップショット、親から足したスナップショットの範囲（最初と最後） |
 | `files` | may | カタログの隣の `files.json` を書いたときの、そのファイル名、大きさ、sha256（[files.json](#filesjson)） |
 | `tree` | may | バージョンがほかのファイルを持つときの、カタログの隣の `tree.json` のファイル名、大きさ、sha256（[tree.json](#treejson)） |
-| `changes` | may | 親との列の違い。`breaking` は、親に向けて書いた SQL が失敗しうるか（列の削除・改名・作り直し） |
+| `changes` | may | 親との列の違い（[changes](#changes)）。`breaking` は、親に向けて書いた SQL が失敗しうるか |
 | `inputs` | may | 使った元のファイル。それぞれの取得元・取得日時・sha256 を書く。FDL はファイル自体を置かない。残したい書き手は、テーブルのアセットにする。`source_id` の付け方は書き手が決める |
 | `annotations` | may | 形式が解釈しない情報。読む側（ホストやツール）の名前をキーにする |
 
@@ -91,6 +91,19 @@ description: バージョン ID、version.json の項目、固めたカタログ
 FDL 0.1 では、書き手が書く親は多くても 1 つです。`parents` をリストにしているのは、仕様の将来のバージョンで、項目を変えずにマージを表せるようにするためです。読み手は、どんな長さのリストも受け付け、履歴をたどるときは最初の要素を使わなければなりません。
 
 スナップショットごとの説明と SQL は、DuckLake の `commit_message` と `commit_extra_info` としてカタログの中に残し、`version.json` には写しません。
+
+### changes
+
+`changes` の各項目は、バージョンとその最初の親の両方にある表の、列 1 つの違いです。`table` は `schema.table`、`column` は新しいバージョンでの列名です。
+
+| `kind` | ほかに持つもの | `breaking` |
+| --- | --- | --- |
+| `add_column` | | `false` |
+| `drop_column` | | `true` |
+| `rename_column` | `from`: 前の列名 | `true` |
+| `change_type` | `from_type`・`to_type`: DuckLake の型名 | 前の型の値がすべて新しい型に収まるとき（`int32` から `int64`、`float` から `double`）は `false`、それ以外は `true` |
+
+表の追加と削除は項目にしません。読み手は 2 つの `dataset.json` を比べて見つけます。読み手は、知らない `kind` を無視し、その `breaking` は読みます。
 
 ### 形式番号
 
@@ -256,7 +269,7 @@ profile は、`ducklake.snapshot_id` の時点の 1 つのテーブルの要約�
 - `tables` には、カタログの最後のスナップショットにある表をすべて並べる。書き手が説明しなかった表は、書き手のツールがカタログから分かることで足す。カタログに無い表や列を説明していたら断る
 - カタログのビューは表のあとに `"kind": "view"` を付けて並べ、`sql` はカタログのものを入れる。カタログはビューの列を記録しないので、ビューの `fields` は書き手が書いたままで、`type`・`nullable`・`rows` を持たない。表には `kind` を付けない
 - カタログから取るもの: 表ごとの `rows`、列ごとの `type`（DuckLake の型名）と `nullable`。書き手が `description` を書かなかったところには、カタログのコメント（`COMMENT ON`）を使う
-- この仕様が決めていないキーは断る。形式が解釈しない情報は、最上位・表・列それぞれの `annotations` に、読む側の名前をキーにして置く。書き手は書かれたまま残す
+- 読み手は、この仕様が決めていないキーを無視する。書き手の道具は、綴りの誤りに気づけるよう、そのキーを断ってもよい。形式が解釈しない情報は、最上位・表・列それぞれの `annotations` に、読む側の名前をキーにして置く。書き手は書かれたまま残す
 - `annotations` という名前になる前のバージョンは、同じものを `extensions` に持つ。読み手は `extensions` を `annotations` として読む
 - ライセンスや出典に書いたことは書き手の主張で、ホストは公開する前に確かめてよい
 
