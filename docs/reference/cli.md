@@ -187,4 +187,14 @@ Without `--yes` it only prints what it would delete. Files a kept version still 
 fdl expire <remote> [--keep 1] [--since 2026-10-01T00:00:00Z] [--ref refs/heads/main]
 ```
 
-Takes versions behind the newest `--keep` on the branch's first-parent line out of retention: puts `expired.json` and deletes their catalogs. Versions made at or after `--since`, and any a ref points at, are kept. Data files are not deleted.
+Takes versions behind the newest `--keep` on the branch's first-parent line out of retention: puts `expired.json` and deletes their catalogs. Versions made at or after `--since`, and any a ref points at, are kept. Data files are not deleted; `fdl gc` deletes them.
+
+## fdl gc
+
+```bash
+fdl gc <remote> [--grace 7d] [--yes]
+```
+
+Deletes the data files and assets no live version reaches and that were written longer ago than `--grace` (`7d`, `24h` or `30m`), as [When a shared object may be deleted](/spec/data-files#when-a-shared-object-may-be-deleted) allows. These are the files only versions past retention reached, and files working catalogs wrote and never pushed. Without `--yes`, it only lists them.
+
+It reads `files.json` of every live version, and the catalog of a version whose rows hold assets. Refused for a repository over HTTP, where deleting is the host's, and when a live version has neither `files.json` nor a catalog.

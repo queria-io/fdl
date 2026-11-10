@@ -48,6 +48,11 @@ class Store(Protocol):
     def delete(self, keys: Sequence[str]) -> None:
         """Remove these keys. One already gone is not an error."""
 
+    # Stores that `fdl gc` deletes from also have:
+    #
+    #     def placed(self, prefix: str = "") -> dict[str, datetime]:
+    #         """The keys under ``prefix``, each with when it was written (UTC)."""
+
 
 def is_conflict(error: BaseException) -> bool:
     """Whether a write was refused by its condition."""

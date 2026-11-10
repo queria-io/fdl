@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import os
+import time
 from pathlib import Path
 
 import duckdb
@@ -348,3 +350,35 @@ def test_a_commit_waits_until_it_is_pushed(tmp_path: Path) -> None:
     assert [v.message for v in repo.log(store)] == ["second try"]
     assert not (tmp_path / "lake.sqlite.pending").exists()
     assert "Committed, not pushed" not in run("status", working)
+
+
+def test_gc_deletes_what_no_live_version_reaches(tmp_path: Path) -> None:
+    remote, working = tmp_path / "remote", tmp_path / "lake.sqlite"
+    store = LocalStore(remote)
+    run("init", remote)
+    run("checkout", remote, working)
+    write(working, store, "CREATE TABLE lake.main.towns AS SELECT 1 AS id")
+    commit(working, "-m", "first", "--author", "t")
+    first_files = set(store.list(layout.DEFAULT_DATA_DIR))
+    write(working, store, "CREATE OR REPLACE TABLE lake.main.towns AS SELECT 2 AS id")
+    commit(working, "-m", "second", "--author", "t")
+    # Written and never pushed.
+    write(working, store, "CREATE OR REPLACE TABLE lake.main.towns AS SELECT 3 AS id")
+    every = set(store.list(layout.DEFAULT_DATA_DIR))
+    assert len(every) == 3
+
+    # Nothing is old enough yet.
+    assert "0 file(s) would be deleted" in run("gc", remote)
+    run("expire", remote)
+    old = time.time() - 2 * 86400
+    for path in (remote / layout.DEFAULT_DATA_DIR).rglob("*.parquet"):
+        os.utime(path, (old, old))
+
+    out = run("gc", remote, "--grace", "1d")
+    assert "2 file(s) would be deleted" in out
+    assert set(store.list(layout.DEFAULT_DATA_DIR)) == every
+    assert "Deleted 2 file(s)" in run("gc", remote, "--grace", "1d", "--yes")
+    left = set(store.list(layout.DEFAULT_DATA_DIR))
+    assert len(left) == 1 and not left & first_files
+    # The branch still reads.
+    assert rows(store, "SELECT id FROM v.main.towns") == [(2,)]

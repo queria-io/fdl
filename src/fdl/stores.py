@@ -7,6 +7,7 @@ missing, 412 for a failed condition), which is all `fdl.store` looks at.
 
 from __future__ import annotations
 
+import datetime as dt
 import hashlib
 import importlib.metadata
 import json
@@ -145,6 +146,12 @@ class LocalStore:
         for key in keys:
             self._path(key).unlink(missing_ok=True)
 
+    def placed(self, prefix: str = "") -> dict[str, dt.datetime]:
+        return {
+            key: dt.datetime.fromtimestamp(self._path(key).stat().st_mtime, dt.timezone.utc)
+            for key in self.list(prefix)
+        }
+
 
 class S3Store:
     """A repository under ``s3://<bucket>/<prefix>``.
@@ -230,6 +237,16 @@ class S3Store:
     def delete(self, keys: Sequence[str]) -> None:
         for key in keys:
             self._call("delete_object", key, Key=self.prefix + key)
+
+    def placed(self, prefix: str = "") -> dict[str, dt.datetime]:
+        found: dict[str, dt.datetime] = {}
+        pages = self.client.get_paginator("list_objects_v2").paginate(
+            Bucket=self.bucket, Prefix=self.prefix + prefix
+        )
+        for page in pages:
+            for item in page.get("Contents", []):
+                found[item["Key"][len(self.prefix) :]] = item["LastModified"]
+        return found
 
 
 class HttpStore:

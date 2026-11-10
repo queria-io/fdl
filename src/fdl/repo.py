@@ -740,19 +740,7 @@ def plan_withdrawal(store: Store, version_ids: Iterable[str], *, setup: Iterable
                 continue
             if is_expired(store, version_id):
                 continue
-            version = read_version(store, version_id)
-            # files.json lists what the version reads, without its catalog.
-            indexed = _indexed_files(store, version)
-            local = None
-            if indexed is None or _asset_columns(store, version):
-                local = _fetch_catalog(store, version_id, Path(tmp))
-            if indexed is not None:
-                kept.update(config.data_dir + key for key in indexed)
-            elif local is not None:
-                kept.update(config.data_dir + key for key in _read_files(local, version))
-            kept.update(_reached_assets(store, version, local, setup))
-            if local is not None:
-                local.unlink()
+            kept.update(_reached_by(store, config, read_version(store, version_id), Path(tmp), setup))
     if catalogless:
         # A version already past retention no longer says which objects it
         # reached. Those no live version reaches are waiting for the grace
@@ -765,6 +753,70 @@ def plan_withdrawal(store: Store, version_ids: Iterable[str], *, setup: Iterable
         deleted=tuple(sorted(candidates - kept)),
         still_read=tuple(sorted(candidates & kept)),
     )
+
+
+def _reached_by(store: Store, config: Config, version: Version, tmp: Path, setup: list[str]) -> set[str]:
+    """The shared objects a live version reaches, as store keys."""
+    # files.json lists what the version reads, without its catalog.
+    indexed = _indexed_files(store, version)
+    local = None
+    if indexed is None or _asset_columns(store, version):
+        local = _fetch_catalog(store, version.id, tmp)
+    reached: set[str] = set()
+    if indexed is not None:
+        reached.update(config.data_dir + key for key in indexed)
+    elif local is not None:
+        reached.update(config.data_dir + key for key in _read_files(local, version))
+    else:
+        raise RepoError(f"{version.id} is live but has neither files.json nor a catalog to say what it reads")
+    reached.update(_reached_assets(store, version, local, setup))
+    if local is not None:
+        local.unlink()
+    return reached
+
+
+@dataclass(frozen=True)
+class Collection:
+    """What `collect` deletes: shared objects no live version reaches, placed before ``before``."""
+
+    deleted: tuple[str, ...]
+    before: dt.datetime
+
+
+def plan_collection(
+    store: Store,
+    *,
+    grace: dt.timedelta = dt.timedelta(days=7),
+    setup: Iterable[str] = (),
+    now: dt.datetime | None = None,
+) -> Collection:
+    """Work out which shared objects may be deleted (see `collect`), changing nothing.
+
+    The objects are listed before the versions are read, so a version pushed
+    while this runs keeps what it reaches.
+    """
+    if not hasattr(store, "placed"):
+        raise RepoError("this store does not say when objects were written; collect at the storage itself")
+    config = read_config(store)
+    before = (now or dt.datetime.now(dt.timezone.utc)) - grace
+    placed = {**store.placed(config.data_dir), **store.placed(layout.ASSETS_DIR)}
+    old = {key for key, when in placed.items() if when < before}
+    reached: set[str] = set()
+    setup = list(setup)
+    with tempfile.TemporaryDirectory(prefix="fdl-") as tmp:
+        for version_id in _version_ids(store):
+            if not is_expired(store, version_id):
+                reached.update(_reached_by(store, config, read_version(store, version_id), Path(tmp), setup))
+    return Collection(deleted=tuple(sorted(old - reached)), before=before)
+
+
+def collect(store: Store, *, plan: Collection) -> None:
+    """Delete the shared objects no live version reaches, once past the grace period.
+
+    Data files left by working catalogs that were never pushed, and those only
+    versions past retention reached, go this way.
+    """
+    store.delete(plan.deleted)
 
 
 def _asset_columns(store: Store, version: Version) -> list[tuple[str, str, str]]:

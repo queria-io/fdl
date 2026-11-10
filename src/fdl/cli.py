@@ -9,8 +9,10 @@ pushed.
 
 from __future__ import annotations
 
+import datetime as dt
 import json
 import os
+import re
 import shutil
 import tempfile
 from pathlib import Path
@@ -618,6 +620,40 @@ def expire(
     except ERRORS as exc:
         raise _fail(exc) from exc
     typer.echo(f"Expired {len(expired)} version(s).")
+
+
+def _duration(value: str) -> dt.timedelta:
+    """``7d``, ``24h`` or ``30m``."""
+    match = re.fullmatch(r"(\d+)([dhm])", value.strip())
+    if match is None:
+        raise typer.BadParameter(f"expected a number and d, h or m, such as 7d: {value!r}")
+    unit = {"d": "days", "h": "hours", "m": "minutes"}[match[2]]
+    return dt.timedelta(**{unit: int(match[1])})
+
+
+@app.command()
+def gc(
+    remote: str = Remote,
+    grace: str = typer.Option("7d", help="Keep objects written more recently than this: 7d, 24h or 30m"),
+    yes: bool = typer.Option(False, "--yes", help="Do it. Without this, only say what would be deleted"),
+) -> None:
+    """Delete data files and assets no live version reaches, once past the grace period.
+
+    These are files of versions past retention, and files a working catalog
+    wrote and never pushed. Run it after expire.
+    """
+    store = _store(remote)
+    try:
+        plan = repo.plan_collection(store, grace=_duration(grace), setup=_read_setup(store))
+        for key in plan.deleted:
+            typer.echo(f"delete file  {key}")
+        if not yes:
+            typer.echo(f"{len(plan.deleted)} file(s) would be deleted. Run again with --yes to delete them.")
+            return
+        repo.collect(store, plan=plan)
+    except (*ERRORS, catalog.CatalogError) as exc:
+        raise _fail(exc) from exc
+    typer.echo(f"Deleted {len(plan.deleted)} file(s).")
 
 
 @app.command()
