@@ -16,11 +16,14 @@ jobs:
       matrix:
         # The oldest Python the package supports, and the newest.
         python: ["3.10", "3.13"]
+        # Catalogs written by either have to read on the other.
+        duckdb: ["1.5", "2.0"]
     steps:
       - uses: actions/checkout@v5
       - uses: astral-sh/setup-uv@v7
       - run: uv sync --python ${{ matrix.python }}
-      - run: uv run --python ${{ matrix.python }} pytest -q
+      - run: uv pip install --python .venv "duckdb~=${{ matrix.duckdb }}.0"
+      - run: uv run --no-sync pytest -q
 
   docs:
     runs-on: ubuntu-latest

@@ -38,6 +38,27 @@ DATA_INLINING_ROW_LIMIT = 0
 #: under 1 MB and the requests from 29 to 9.
 PUBLISHED_BLOCK_SIZE = 16384
 
+#: The DuckLake format and DuckDB storage version every catalog is written in,
+#: whatever DuckDB writes it. DuckDB 2.0 would otherwise write format 1.1 in
+#: storage v2.0.0, which DuckDB 1.5 (and the DuckDB-WASM built on it) cannot
+#: open.
+DUCKLAKE_FORMAT = "1.0"
+PUBLISHED_STORAGE_VERSION = "v1.5.0"
+
+
+def _duckdb_major() -> int:
+    import duckdb
+
+    return int(duckdb.__version__.split(".")[0])
+
+
+def _format_options() -> list[str]:
+    """The option that makes a new catalog in `DUCKLAKE_FORMAT`.
+
+    DuckDB 1.5 writes that format already and rejects the option.
+    """
+    return [f"DUCKLAKE_VERSION '{DUCKLAKE_FORMAT}'"] if _duckdb_major() >= 2 else []
+
 
 class CatalogError(RuntimeError):
     """The catalog could not be created, opened or converted."""
@@ -75,7 +96,11 @@ def _attach_options(
 
 
 def attach_sql(
-    catalog_path: Path, *, alias: str, data_path: str, read_only: bool = False
+    catalog_path: Path,
+    *,
+    alias: str,
+    data_path: str,
+    read_only: bool = False,
 ) -> list[str]:
     """The statements that open a catalog, in the order they must run.
 
@@ -88,6 +113,9 @@ def attach_sql(
         "sqlite" if catalog_path.suffix == ".sqlite" else "duckdb"
     )
     options = _attach_options(data_path, meta_type)
+    if not catalog_path.exists():
+        # A new catalog, made in the format every reader can open.
+        options.extend(_format_options())
     if read_only:
         options.append("READ_ONLY")
     return [
@@ -162,6 +190,33 @@ def _refuse_inline_rows(con) -> None:
         )
 
 
+def _downgrade_storage(path: Path) -> None:
+    """Rewrite a DuckDB file in `PUBLISHED_STORAGE_VERSION`.
+
+    DuckDB 2.0 upgrades the file's storage when DuckLake attaches to it, even
+    one created older. A copy into a file created in the old version keeps it.
+    """
+    import duckdb
+
+    copy = path.with_name(path.name + ".old")
+    for leftover in [copy, *_sidecars(copy)]:
+        if leftover.exists():
+            leftover.unlink()
+    con = duckdb.connect()
+    try:
+        con.execute(f"ATTACH '{_escape(str(path))}' AS src (READ_ONLY)")
+        con.execute(
+            f"ATTACH '{_escape(str(copy))}' AS dst "
+            f"(STORAGE_VERSION '{PUBLISHED_STORAGE_VERSION}', "
+            f"BLOCK_SIZE {PUBLISHED_BLOCK_SIZE})"
+        )
+        con.execute("COPY FROM DATABASE src TO dst")
+        con.execute("CHECKPOINT dst")
+    finally:
+        con.close()
+    copy.replace(path)
+
+
 def convert(
     source: Path,
     target: Path,
@@ -213,7 +268,7 @@ def convert(
             # extension does not expose.
             con.execute(
                 f"ATTACH 'ducklake:{_escape(str(tmp))}' AS dst "
-                f"({', '.join(_attach_options(data_path, target_type))})"
+                f"({', '.join(_attach_options(data_path, target_type) + _format_options())})"
             )
             con.execute("DETACH dst")
 
@@ -261,6 +316,8 @@ def convert(
             con.execute("CHECKPOINT dst")
         finally:
             con.close()
+        if target_type == "duckdb" and _duckdb_major() >= 2:
+            _downgrade_storage(tmp)
 
         if target.exists():
             target.unlink()

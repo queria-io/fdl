@@ -87,8 +87,10 @@ def test_commit_push_and_read_back(tmp_path: Path, remote) -> None:
 
     assert repo.head(remote) == first
     assert first.seq == 1 and first.parents == ()
-    assert first.catalog.storage.startswith("duckdb-v")
-    assert not first.catalog.storage.endswith("+")
+    # Whatever DuckDB writes it, the catalog is in the format readers on
+    # DuckDB 1.5 open.
+    assert first.catalog.storage == "duckdb-v1.5.0"
+    assert first.ducklake.format == "1.0"
     assert remote.get("refs/heads/main") == f"{first.id}\n".encode()
     assert read_rows(remote, first.id) == [(1,)]
 

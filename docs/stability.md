@@ -33,7 +33,7 @@ pip install 'fdl-cli[s3]>=0.21,<0.22'
 ## What it runs on
 
 - Python 3.10 or later
-- DuckDB 1.5.2 or a later 1.x release, with the `ducklake` extension. The catalogs `fdl` writes are DuckLake format 1.0, which DuckDB 1.5 and later read
+- DuckDB 1.5.2 or later, 2.x included, with the `ducklake` extension. Whichever DuckDB writes them, the catalogs `fdl` writes are DuckLake format 1.0 in DuckDB storage v1.5.0, so DuckDB 1.5 and later read them
 
 ## Reporting a problem
 
