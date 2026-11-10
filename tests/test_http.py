@@ -280,3 +280,27 @@ def test_plain_http_is_only_for_this_machine() -> None:
         HttpStore("http://example.org/repo/", token=TOKEN)
     HttpStore("http://localhost:8000/repo/", token=TOKEN)
     HttpStore("http://[::1]:8000/repo/", token=TOKEN)
+
+
+def test_a_commit_over_http_frees_the_local_data_files(served, tmp_path: Path) -> None:
+    local, url, _ = served
+    working = tmp_path / "work" / "lake.sqlite"
+    run("checkout", url, working)
+    write(working, "CREATE TABLE lake.main.towns AS SELECT 1 AS id")
+    run("commit", working, "-m", "first", "--author", "tester")
+    folder = working.with_name(working.name + ".data")
+    assert folder.is_dir() and not any(p.is_file() for p in folder.rglob("*"))
+
+    # The same working catalog goes on: the first file is read from the repository.
+    write(working, "INSERT INTO lake.main.towns SELECT id + 1 FROM lake.main.towns")
+    run("commit", working, "-m", "second", "--author", "tester")
+    second = repo.head(local)
+    assert second.seq == 2
+    frozen = tmp_path / "frozen.duckdb"
+    frozen.write_bytes(local.get(layout.version_catalog(second.id)))
+    con = duckdb.connect()
+    con.execute("INSTALL ducklake; LOAD ducklake;")
+    con.execute(
+        f"ATTACH 'ducklake:{frozen}' AS v (READ_ONLY, DATA_PATH '{repo.data_url(local)}', OVERRIDE_DATA_PATH true)"
+    )
+    assert con.execute("SELECT id FROM v.main.towns ORDER BY id").fetchall() == [(1,), (2,)]

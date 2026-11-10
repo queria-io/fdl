@@ -15,6 +15,7 @@ for version in repo.log(store):
 | モジュール | 中身 |
 | --- | --- |
 | `fdl.repo` | 操作: `init`、`checkout`、`commit`、`push`、`log`、`expire`、`prune` |
+| `fdl.diff` | 2 つのバージョンの違い（`diff.versions`）と作業カタログの変更（`diff.working`） |
 | `fdl.refs` | ref を読み、条件付きで動かす |
 | `fdl.version` | `Version`（`version.json` の記録）と新しい ID |
 | `fdl.catalog` | DuckDB と SQLite の DuckLake カタログと、その間の写し |
@@ -44,10 +45,10 @@ repo.init(store, *, data_dir="data/") -> Config
 リポジトリを作ります。既にあればそのままにして、設定を返します。
 
 ```python
-repo.checkout(store, working, *, ref="HEAD") -> Version | None
+repo.checkout(store, working, *, ref="HEAD", local_data=None, version=None) -> Version | None
 ```
 
-`ref` が指すバージョンから、`working` に作業カタログを作ります。そのバージョンを返し、最初のバージョンの前は `None` を返します。
+`ref` が指すバージョン、または `version` を渡したときはそのバージョンから、`working` に作業カタログを作ります。そのバージョンを返し、最初のバージョンの前は `None` を返します。HTTP の置き場では、新しいデータファイルを書くフォルダ `local_data` が要ります。カタログの sha256 が `version.json` の記録と違うときと、カタログがデータフォルダの外のデータファイルを指しているときは断ります。
 
 ```python
 repo.commit(working, out_dir, *, parent, data_path, author, message, inputs=(), annotations=None, dataset=None) -> Version
@@ -108,6 +109,16 @@ repo.withdraw(store, version_ids, *, plan=None) -> Withdrawal
 ```
 
 公開してはいけないデータを持つバージョンを取り下げます。`plan_withdrawal` は何も変えずに、消すタグ、消すデータファイル、残すバージョンが読むので残すファイルを返します。`withdraw` はタグ、データファイル、カタログの順に消します。ブランチかリクエストが該当するバージョンを指しているあいだは、どちらも `RepoError` を出します。
+
+## fdl.diff
+
+```python
+diff.versions(store, old, new) -> dict
+diff.working(working, base) -> dict
+diff.lines(result) -> list[str]
+```
+
+`versions` は 2 つのバージョンを、`dataset.json`・`files.json`・`changes` から比べます（最初のバージョンの前は `old` を `None` にします）。`working` は作業カタログを、checkout したときのバージョン `base` と比べます。どちらも `tables`（`added`・`dropped`）・`rows`・`columns`・`data`・`descriptions` を返し、`fdl diff --json` と同じ形です。`lines` は `fdl diff` が表示する行を返します。
 
 ## fdl.refs
 

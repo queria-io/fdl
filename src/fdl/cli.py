@@ -16,6 +16,7 @@ from pathlib import Path
 import typer
 
 from . import catalog, dataset, layout, objects, refs, repo
+from . import diff as diffs
 from .stores import StoreError, open_store
 from .version import VersionError, is_id
 
@@ -180,8 +181,30 @@ def commit(
         raise _fail(exc) from exc
     finally:
         shutil.rmtree(out, ignore_errors=True)
+    if state.get("data"):
+        _drop_uploaded(store, working, Path(state["data"]), version)
     _write_state(working, {**state, "base": version.id})
     typer.echo(f"{state['ref']} -> {version.id} (version {version.seq})")
+
+
+def _drop_uploaded(store, working: Path, local: Path, version) -> None:
+    """Free the disk the uploaded data files took.
+
+    The working catalog is made again from the version just pushed, so it
+    reads those files from the repository, and the local copies go.
+    """
+    fresh = working.with_name(f".{working.name}.{version.id}.sqlite")
+    try:
+        repo.checkout(store, fresh, local_data=local, version=version)
+    except ERRORS as exc:
+        typer.echo(f"warning: kept the local data files ({exc})", err=True)
+        fresh.unlink(missing_ok=True)
+        return
+    for sidecar in (working.with_name(working.name + suffix) for suffix in ("-wal", "-shm")):
+        sidecar.unlink(missing_ok=True)
+    fresh.replace(working)
+    shutil.rmtree(local, ignore_errors=True)
+    local.mkdir(parents=True, exist_ok=True)
 
 
 def _read_setup(store) -> list[str]:
@@ -228,14 +251,128 @@ def log(remote: str = Remote, ref: str = typer.Option(layout.HEAD)) -> None:
 
 
 @app.command()
-def url(remote: str = Remote, ref: str = typer.Option(layout.HEAD)) -> None:
+def url(
+    remote: str = Remote,
+    ref: str = typer.Option(layout.HEAD),
+    attach: bool = typer.Option(False, "--attach", help="Print the whole ATTACH statement, with the data path"),
+    alias: str = typer.Option("lake", help="The name to ATTACH it as, with --attach"),
+) -> None:
     """Where the catalog of the version a ref holds is, to ATTACH."""
     store = open_store(remote)
     try:
         version = repo.readable(store, ref)
+        where = store.url.rstrip("/") + "/" + layout.version_catalog(version.id)
+        data = repo.data_url(store)
     except ERRORS as exc:
         raise _fail(exc) from exc
-    typer.echo(store.url.rstrip("/") + "/" + layout.version_catalog(version.id))
+    if not attach:
+        typer.echo(where)
+        return
+    for statement in _read_setup(store):
+        typer.echo(statement + ";")
+    where, data = (value.replace("'", "''") for value in (where, data))
+    typer.echo(
+        f"ATTACH 'ducklake:{where}' AS {alias} (DATA_PATH '{data}', OVERRIDE_DATA_PATH true, READ_ONLY);"
+    )
+
+
+def _version(store, target: str):
+    """The version ``target`` names: a version ID, or a ref."""
+    if is_id(target):
+        return repo.read_version(store, target)
+    found = repo.head(store, target)
+    if found is None:
+        raise repo.RepoError(f"{target} holds no version yet")
+    return found
+
+
+def _print_diff(result: dict, as_json: bool) -> None:
+    if as_json:
+        typer.echo(json.dumps(result, ensure_ascii=False, indent=2))
+        return
+    for line in diffs.lines(result) or ["No changes"]:
+        typer.echo(line)
+
+
+@app.command()
+def diff(
+    remote: str = Remote,
+    target: str = typer.Argument(layout.HEAD, help="A version ID, or a ref"),
+    against: str | None = typer.Option(None, help="The version or ref to compare with (default: the target's parent)"),
+    as_json: bool = typer.Option(False, "--json", help="Print the differences as JSON"),
+) -> None:
+    """What changed in a version: tables, rows, columns, data files and descriptions.
+
+    Compared with the version's parent, or with --against.
+    """
+    store = open_store(remote)
+    try:
+        new = _version(store, target)
+        old = _version(store, against) if against else (repo.read_version(store, new.parents[0]) if new.parents else None)
+        result = diffs.versions(store, old, new)
+    except ERRORS as exc:
+        raise _fail(exc) from exc
+    _print_diff(result, as_json)
+
+
+@app.command()
+def show(
+    remote: str = Remote,
+    target: str = typer.Argument(layout.HEAD, help="A version ID, or a ref"),
+    as_json: bool = typer.Option(False, "--json", help="Print version.json and the differences as JSON"),
+) -> None:
+    """A version: its record, its tables, and what changed from its parent."""
+    store = open_store(remote)
+    try:
+        version = _version(store, target)
+        parent = repo.read_version(store, version.parents[0]) if version.parents else None
+        expired = repo.is_expired(store, version.id)
+        described = None if expired else diffs.described(store, version)
+        result = None if expired else diffs.versions(store, parent, version)
+    except ERRORS as exc:
+        raise _fail(exc) from exc
+    if as_json:
+        typer.echo(json.dumps(
+            {"version": json.loads(version.to_json()), "expired": expired, "diff": result},
+            ensure_ascii=False, indent=2,
+        ))
+        return
+    typer.echo(f"version {version.seq}  {version.id}" + ("  (expired)" if expired else ""))
+    typer.echo(f"parent    {version.parents[0] if version.parents else '-'}")
+    typer.echo(f"author    {version.author.get('name', '')}")
+    typer.echo(f"date      {version.created_at}")
+    typer.echo("")
+    typer.echo(f"    {version.message}")
+    if described:
+        typer.echo("")
+        for table in described.get("tables", []):
+            rows = f"{table['rows']:,} row{'' if table['rows'] == 1 else 's'}" if isinstance(table.get("rows"), int) else table.get("kind", "")
+            typer.echo(f"  {table.get('schema')}.{table.get('name')}  {rows}")
+    if result is not None:
+        typer.echo("")
+        for line in diffs.lines(result) or ["No changes from the parent"]:
+            typer.echo(line)
+
+
+@app.command()
+def status(
+    working: Path = Working,
+    as_json: bool = typer.Option(False, "--json", help="Print the differences as JSON"),
+) -> None:
+    """What the working catalog changed since it was checked out."""
+    state = _read_state(working)
+    store = open_store(state["remote"])
+    try:
+        base = repo.read_version(store, state["base"]) if state["base"] else None
+        result = diffs.working(working, base)
+    except (*ERRORS, catalog.CatalogError) as exc:
+        raise _fail(exc) from exc
+    if as_json:
+        typer.echo(json.dumps(result, ensure_ascii=False, indent=2))
+        return
+    typer.echo(f"On {state['ref']} of {state['remote']}, from " + (f"{base.id} (version {base.seq})" if base else "no version yet"))
+    for line in diffs.lines(result) or ["Nothing to commit"]:
+        typer.echo(line)
 
 
 @app.command()

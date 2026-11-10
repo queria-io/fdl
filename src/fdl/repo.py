@@ -229,8 +229,9 @@ def checkout(
     *,
     ref: str = layout.HEAD,
     local_data: Path | None = None,
+    version: Version | None = None,
 ) -> Version | None:
-    """Make a working catalog from the version ``ref`` holds.
+    """Make a working catalog from the version ``ref`` holds, or from ``version`` when given.
 
     Before the first version there is nothing to copy, and an empty working
     catalog is created instead. Returns the version checked out, which a
@@ -250,7 +251,7 @@ def checkout(
     else:
         Path(local_data).mkdir(parents=True, exist_ok=True)
         data_path = Path(local_data).resolve().as_posix() + "/"
-    version = head(store, ref)
+    version = version or head(store, ref)
     if version is None:
         catalog.create(working, alias="lake", data_path=data_path)
         return None
@@ -342,6 +343,7 @@ def record(
                 path=layout.DATASET, bytes=written.stat().st_size, sha256=_sha256(written)
             )
         indexed = _write_files_index(target, copied, last)
+        changes = catalog.column_changes(copied, parent.ducklake.snapshot_id, last) if parent else []
         listed = None
         if tree:
             written = target / layout.TREE
@@ -362,6 +364,7 @@ def record(
             ),
             ducklake=DuckLake(format=recorded, snapshot_id=last, snapshots=(first, last)),
             files=indexed,
+            changes=tuple(changes),
             inputs=tuple(inputs),
             annotations=dict(annotations or {}),
             dataset=described,

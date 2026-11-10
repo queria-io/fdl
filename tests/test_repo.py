@@ -442,3 +442,36 @@ def test_checkout_refuses_a_catalog_naming_files_outside_the_data_folder(tmp_pat
     (remote.root / layout.version_record(version_id)).write_text(json.dumps(record))
     with pytest.raises(repo.RepoError, match="outside the data folder"):
         repo.checkout(remote, tmp_path / "again.sqlite")
+
+
+def test_a_version_records_its_column_changes(tmp_path: Path, remote) -> None:
+    build(tmp_path / "work.sqlite", remote, "CREATE TABLE lake.main.towns AS SELECT 1::INTEGER AS id, 'a' AS name, 2 AS pop, 3 AS area")
+    first = commit(tmp_path, remote)
+    repo.push(remote, tmp_path / "local" / first.id, first)
+    build(
+        tmp_path / "work.sqlite",
+        remote,
+        "ALTER TABLE lake.main.towns ADD COLUMN note VARCHAR;"
+        "ALTER TABLE lake.main.towns RENAME COLUMN name TO town;"
+        "ALTER TABLE lake.main.towns DROP COLUMN area;"
+        "ALTER TABLE lake.main.towns ALTER id SET TYPE BIGINT;",
+    )
+    second = commit(tmp_path, remote, parent=first)
+    assert first.changes == ()
+    assert sorted(second.changes, key=lambda c: c["kind"]) == [
+        {"table": "main.towns", "kind": "add_column", "column": "note", "breaking": False},
+        {"table": "main.towns", "kind": "change_type", "column": "id", "from_type": "int32", "to_type": "int64", "breaking": False},
+        {"table": "main.towns", "kind": "drop_column", "column": "area", "breaking": True},
+        {"table": "main.towns", "kind": "rename_column", "column": "town", "from": "name", "breaking": True},
+    ]
+
+
+def test_a_rebuilt_table_is_compared_by_column_name(tmp_path: Path, remote) -> None:
+    build(tmp_path / "work.sqlite", remote, "CREATE TABLE lake.main.towns AS SELECT 1 AS id, 2 AS pop")
+    first = commit(tmp_path, remote)
+    repo.push(remote, tmp_path / "local" / first.id, first)
+    build(tmp_path / "work.sqlite", remote, "CREATE OR REPLACE TABLE lake.main.towns AS SELECT 1 AS id, 'x' AS pop")
+    second = commit(tmp_path, remote, parent=first)
+    assert second.changes == (
+        {"table": "main.towns", "kind": "change_type", "column": "pop", "from_type": "int32", "to_type": "varchar", "breaking": True},
+    )

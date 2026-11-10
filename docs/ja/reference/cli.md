@@ -37,7 +37,7 @@ fdl checkout <remote> <working.sqlite> [--ref refs/heads/main]
 
 ブランチが指すバージョンのカタログから作業カタログ（SQLite の DuckLake）を作ります。最初のバージョンの前は空のものを作ります。隣の `<working.sqlite>.fdl.json` に、リポジトリ、ブランチ、元のバージョンを記録します。書くときの `ATTACH` 文を表示します。
 
-HTTP のリポジトリでは、新しいデータファイルは `<working.sqlite>.data/` に書かれ、コミットでアップロードされます。リポジトリに既にあるファイルは、その場所から HTTP で読みます。
+HTTP のリポジトリでは、新しいデータファイルは `<working.sqlite>.data/` に書かれ、コミットでアップロードされます。リポジトリに既にあるファイルは、その場所から HTTP で読みます。コミットはアップロードを終えると、新しいバージョンから作業カタログを作り直して手元の写しを削除するので、このフォルダにはまだコミットしていないファイルだけが残ります。
 
 バージョンの保持期間が過ぎているとき、カタログの sha256 が `version.json` の記録と違うとき、カタログがデータフォルダの外のデータファイルを指しているときは断られます。
 
@@ -84,13 +84,51 @@ fdl log <remote> [--ref HEAD]
 
 ref が指すバージョンから最初のバージョンまで、最初の親をたどって並べます。`seq`、ID、時刻、作者、メッセージを表示します。保持期間を過ぎたバージョンには `(expired)` が付きます。
 
+## fdl status
+
+```bash
+fdl status <working.sqlite> [--json]
+```
+
+作業カタログが checkout してから何を変えたかを、`fdl diff` と同じ区分で表示します。元のバージョンと同じ内容なら `Nothing to commit` と表示します。`dataset.json` の文言はコミットまで比べません。
+
+## fdl diff
+
+```bash
+fdl diff <remote> [<version>] [--against <version>] [--json]
+```
+
+バージョン（既定は `HEAD` が指すもの）が親から、または `--against` で指定したバージョンから何を変えたかを表示します。バージョンはバージョン ID か ref で指定します。1 行が 1 つの変更です。
+
+```
++ table main.roads
+- table main.old_towns
+~ rows main.towns: 1,741 -> 1,802
++ column main.towns.note
+- column main.towns.area  (breaking)
+~ column main.towns.name -> town  (breaking)
+~ column main.towns.id: int32 -> int64
+~ data main.towns
+~ description main.towns.population
+```
+
+行数は `dataset.json` から、データファイルは `files.json` から、列は親と比べるときはバージョンの `changes` から取ります（それ以外は名前で比べるので、列名の変更は見分けられません）。`~ data` は、行が同じでもテーブルのデータファイルが変わったことを示します。`--json` を付けると、同じ内容を `tables`（`added`・`dropped`）・`rows`・`columns`・`data`・`descriptions` を持つオブジェクトで表示します。
+
+## fdl show
+
+```bash
+fdl show <remote> [<version>] [--json]
+```
+
+バージョンの番号・ID・親・作者・時刻・メッセージと、テーブルとその行数、親からの変更を表示します。
+
 ## fdl url
 
 ```bash
-fdl url <remote> [--ref HEAD]
+fdl url <remote> [--ref HEAD] [--attach] [--alias lake]
 ```
 
-ref が指すバージョンのカタログの URL を表示します。読み取り専用で `ATTACH` するのに使います。保持期間を過ぎたか取り下げたバージョンは、カタログがまだ配られていても断ります。
+ref が指すバージョンのカタログの URL を表示します。読み取り専用で `ATTACH` するのに使います。`--attach` を付けると、データパス付きの `ATTACH` 文をそのまま表示します（トークンのある HTTP のリポジトリでは、その前に `CREATE SECRET` も表示します）。保持期間を過ぎたか取り下げたバージョンは、カタログがまだ配られていても断ります。
 
 ## fdl tag
 

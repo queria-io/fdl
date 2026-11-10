@@ -37,7 +37,7 @@ fdl checkout <remote> <working.sqlite> [--ref refs/heads/main]
 
 Makes a working catalog (DuckLake in SQLite) from the catalog of the version the branch holds, or an empty one before the first version. Beside it, `<working.sqlite>.fdl.json` remembers the repository, the branch and the version it was made from. It prints the `ATTACH` statement to write with.
 
-For a repository over HTTP, new data files are written to `<working.sqlite>.data/` and uploaded by the commit. Files already in the repository are read over HTTP where they are.
+For a repository over HTTP, new data files are written to `<working.sqlite>.data/` and uploaded by the commit. Files already in the repository are read over HTTP where they are. Once a commit has uploaded them, it makes the working catalog again from the new version and deletes the local copies, so the folder holds only what has not been committed.
 
 Refused when the version is past retention, when its catalog's sha256 is not the one `version.json` records, or when the catalog names a data file outside the data folder.
 
@@ -84,13 +84,51 @@ fdl log <remote> [--ref HEAD]
 
 Versions from the one the ref holds back to the first, by first parent. Each shows `seq`, ID, time, author and message. Versions past retention are marked `(expired)`.
 
+## fdl status
+
+```bash
+fdl status <working.sqlite> [--json]
+```
+
+What the working catalog changed since it was checked out, in the same kinds as `fdl diff`. `Nothing to commit` when it holds what the version it came from holds. The words of `dataset.json` are not compared until the commit.
+
+## fdl diff
+
+```bash
+fdl diff <remote> [<version>] [--against <version>] [--json]
+```
+
+What changed in a version (default: the one `HEAD` holds) since its parent, or since the version `--against` names. A version is a version ID or a ref. Each line is one change:
+
+```
++ table main.roads
+- table main.old_towns
+~ rows main.towns: 1,741 -> 1,802
++ column main.towns.note
+- column main.towns.area  (breaking)
+~ column main.towns.name -> town  (breaking)
+~ column main.towns.id: int32 -> int64
+~ data main.towns
+~ description main.towns.population
+```
+
+Rows come from `dataset.json`, data files from `files.json`, and columns from the version's `changes` when it is compared with its parent (by name otherwise, which does not see a rename). `~ data` means the table's data files differ, even when the rows are the same. `--json` prints the same as an object with `tables` (`added`, `dropped`), `rows`, `columns`, `data` and `descriptions`.
+
+## fdl show
+
+```bash
+fdl show <remote> [<version>] [--json]
+```
+
+A version's number, ID, parent, author, time and message, its tables with their rows, and what changed since its parent.
+
 ## fdl url
 
 ```bash
-fdl url <remote> [--ref HEAD]
+fdl url <remote> [--ref HEAD] [--attach] [--alias lake]
 ```
 
-Prints the URL of the catalog of the version the ref holds, to `ATTACH` read-only. A version past retention or withdrawn is refused, even where its catalog is still served.
+Prints the URL of the catalog of the version the ref holds, to `ATTACH` read-only. With `--attach`, prints the whole `ATTACH` statement with the data path (and, over HTTP with a token, the `CREATE SECRET` before it). A version past retention or withdrawn is refused, even where its catalog is still served.
 
 ## fdl tag
 
