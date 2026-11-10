@@ -2,7 +2,7 @@
 
 Both are brought to one shape first: each table's row count, data files,
 columns and words. A version gives them from its `dataset.json` and
-`files.json`; a working catalog gives them from two of its snapshots. Then one
+`files.json`; a catalog gives them from two of its snapshots. Then one
 comparison lists the differences, in six kinds:
 
 - tables added and dropped
@@ -73,6 +73,49 @@ def from_catalog(catalog_path: Path, snapshot: int) -> dict[str, Table]:
         }
         for name, table in listed.items()
     }
+
+
+def _with_text(tables: dict[str, Table], dataset: dict | None) -> dict[str, Table]:
+    """``tables`` with the words ``dataset`` (a `dataset.json`) gives them."""
+    if dataset is None:
+        return tables
+    words = from_version(dataset, None)
+    return {
+        name: {
+            **table,
+            "text": words.get(name, {}).get("text"),
+            "field_text": words.get(name, {}).get("field_text", {}),
+        }
+        for name, table in tables.items()
+    }
+
+
+def between(
+    catalog_path: Path,
+    before: int | None,
+    after: int,
+    *,
+    old_dataset: dict | None = None,
+    new_dataset: dict | None = None,
+) -> dict[str, Any] | None:
+    """The differences between two snapshots of one catalog, ``before`` ``None`` for none.
+
+    What a commit records as its version's ``diff``. Words are compared where
+    both `dataset.json` are given. ``None`` when the catalog no longer holds
+    ``before``: once expired, its tables and files cannot be read.
+    """
+    if before is not None and not catalog.has_snapshot(catalog_path, before):
+        return None
+    new = _with_text(from_catalog(catalog_path, after), new_dataset)
+    if before is None:
+        return compare({}, new)
+    return compare(
+        _with_text(from_catalog(catalog_path, before), old_dataset),
+        new,
+        changes=catalog.column_changes(catalog_path, before, after),
+        old_dataset=old_dataset,
+        new_dataset=new_dataset,
+    )
 
 
 def _file_set(table: dict) -> frozenset[str]:
@@ -216,13 +259,19 @@ def indexed(store: Store, version: Version) -> dict | None:
 
 
 def versions(store: Store, old: Version | None, new: Version) -> dict[str, Any]:
-    """The differences from ``old`` to ``new``. Before the first version ``old`` is ``None``."""
+    """The differences from ``old`` to ``new``. Before the first version ``old`` is ``None``.
+
+    Against its first parent (or before the first version) a version's own
+    ``diff`` is the answer; otherwise, or for a version written without one,
+    the two are compared from their files.
+    """
+    if new.diff is not None and (new.parents[:1] == ((old.id,) if old else ())):
+        return new.diff
     new_dataset = described(store, new)
     old_dataset = described(store, old) if old else {}
     return compare(
         from_version(old_dataset, indexed(store, old) if old else {}),
         from_version(new_dataset, indexed(store, new)),
-        changes=new.changes if old is not None and new.parents[:1] == (old.id,) and new.changes else None,
         old_dataset=old_dataset if old else None,
         new_dataset=new_dataset if old else None,
     )
@@ -236,11 +285,9 @@ def working(working_path: Path, base: Version | None) -> dict[str, Any]:
         frozen = Path(tmp) / "status.duckdb"
         catalog.convert(working_path, frozen, data_path=catalog.working_data_path(working_path))
         last = catalog.snapshot_range(frozen, None)[1]
-        new = from_catalog(frozen, last)
-        if base is None:
-            return compare({}, new)
-        return compare(
-            from_catalog(frozen, base.ducklake.snapshot_id),
-            new,
-            changes=catalog.column_changes(frozen, base.ducklake.snapshot_id, last),
-        )
+        result = between(frozen, base.ducklake.snapshot_id if base else None, last)
+        if result is None:
+            raise catalog.CatalogError(
+                "the working catalog no longer holds the snapshot it was checked out at"
+            )
+        return result

@@ -136,6 +136,7 @@ def commit(
         root = Path(description).resolve().parent
         listed = objects.tree(root)
         parent = repo.read_version(store, state["base"]) if state["base"] else None
+        parent_dataset = diffs.described(store, parent) if parent else None
 
         def make(allow_empty: bool):
             return repo.commit(
@@ -149,6 +150,7 @@ def commit(
                 tree=listed,
                 allow_empty=allow_empty,
                 working_data=Path(state["data"]).resolve().as_posix() + "/" if state.get("data") else None,
+                parent_dataset=parent_dataset,
             )
 
         try:

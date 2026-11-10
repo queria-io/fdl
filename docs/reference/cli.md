@@ -112,7 +112,7 @@ What changed in a version (default: the one `HEAD` holds) since its parent, or s
 ~ description main.towns.population
 ```
 
-Rows come from `dataset.json`, data files from `files.json`, and columns from the version's `changes` when it is compared with its parent (by name otherwise, which does not see a rename). `~ data` means the table's data files differ, even when the rows are the same. `--json` prints the same as an object with `tables` (`added`, `dropped`), `rows`, `columns`, `data` and `descriptions`.
+Against its parent, the changes come from the version's `diff` (see [diff](/spec/versions#diff)). Otherwise, or for a version written without one, rows come from `dataset.json`, data files from `files.json`, and columns are compared by name, which does not see a rename. `~ data` means the table's data files differ, even when the rows are the same. `--json` prints the same as an object with `tables` (`added`, `dropped`), `rows`, `columns`, `data` and `descriptions`.
 
 ## fdl show
 

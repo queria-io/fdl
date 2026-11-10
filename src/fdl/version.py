@@ -73,7 +73,8 @@ class Version:
     message: str
     catalog: Catalog
     ducklake: DuckLake
-    changes: tuple[dict, ...] = ()
+    #: What changed since the first parent, as `fdl diff --json` prints it. Optional.
+    diff: dict | None = None
     inputs: tuple[dict, ...] = ()
     annotations: dict = field(default_factory=dict)
     #: The version's `files.json`, the index of each table's files. Optional.
@@ -83,6 +84,11 @@ class Version:
     #: The version's `tree.json`, the other files it holds by path. Optional.
     tree: File | None = None
     fdl: str = layout.FDL_VERSION
+
+    @property
+    def changes(self) -> tuple[dict, ...]:
+        """The column differences from the first parent (``diff.columns``)."""
+        return tuple((self.diff or {}).get("columns", ()))
 
     def to_json(self) -> bytes:
         record = {
@@ -131,7 +137,7 @@ class Version:
                 if self.tree
                 else {}
             ),
-            "changes": list(self.changes),
+            **({"diff": self.diff} if self.diff is not None else {}),
             "inputs": list(self.inputs),
             "annotations": self.annotations,
         }
@@ -169,7 +175,7 @@ def parse(data: bytes, *, expected_id: str | None = None) -> Version:
                 snapshot_id=int(ducklake["snapshot_id"]),
                 snapshots=tuple(ducklake["snapshots"]),
             ),
-            changes=tuple(record.get("changes", ())),
+            diff=record.get("diff"),
             inputs=tuple(record.get("inputs", ())),
             annotations=dict(record.get("annotations", record.get("extensions", {}))),
             files=_file(record.get("files")),
