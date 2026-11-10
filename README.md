@@ -19,7 +19,7 @@ FDL is a storage layout and a tool for it. Each version is a frozen catalog with
   data/main/towns/ducklake-….parquet
 ```
 
-The documentation and the specification are at [fdl.flo8s.com](https://fdl.flo8s.com).
+The documentation and the specification are at [fdl.queria.io](https://fdl.queria.io).
 
 ## Quick start
 
@@ -32,6 +32,8 @@ fdl checkout s3://my-bucket/towns/ work/lake.sqlite
 
 The package is `fdl-cli` on PyPI. It installs the `fdl` command and the `fdl` Python package (`import fdl`).
 
+`fdl init` makes the repository in the store itself, as `git init --bare` does on a server. Your own copy to write to is the working catalog that `checkout` makes, a SQLite file.
+
 Write to the working catalog with DuckDB, attached the way `checkout` prints:
 
 ```sql
@@ -43,6 +45,13 @@ CREATE TABLE lake.main.towns AS SELECT * FROM 'towns.csv';
 ```
 
 Rows have to go to Parquet, not into the catalog (`DATA_INLINING_ROW_LIMIT 0`): a version is read over HTTP, and inlined rows would not be in it.
+
+Describe what the version holds in `dataset.yml`, next to where you run `fdl commit`. Only `name` and `title` are required; `fdl commit` fills in each table's columns and row count from the catalog:
+
+```yaml
+name: towns
+title: Towns
+```
 
 Then make a version and move `main` to it:
 
@@ -74,7 +83,10 @@ Credentials and the endpoint come from boto3's usual places (`AWS_*` environment
 | `fdl commit <working> -m … --author …` | Freeze the working catalog into a version and push it |
 | `fdl log <remote>` | List versions from `main` back to the first |
 | `fdl url <remote>` | Print the catalog URL of the version `main` holds |
+| `fdl tag <remote> [name] [version]` | List tags, tag a version, or delete a tag (`-d`) |
 | `fdl expire <remote> --keep N` | Mark older versions as past retention and delete their catalogs |
+| `fdl withdraw <remote> <version>…` | Remove versions that hold data that must not be published |
+| `fdl assets <folder>` | List files for an asset column (path, sha256, bytes, media type) |
 
 A push that is not built on what `main` holds now is refused: check out again and redo the work.
 
