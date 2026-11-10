@@ -21,6 +21,8 @@ helper = "example-cli fdl-credential"
 
 fdl runs `<helper> get`, writes `protocol=`, `host=` and `path=` lines and a blank line to its stdin, and reads the `password=` line it prints. A helper that prints nothing, or exits with an error, means no token. The host's own tool stores the token and writes its helper here.
 
+When the host answers 401 to a token from the helper, fdl runs the helper once more and, if it answers a different token, sends the request again with it. A helper can hand out short-lived tokens this way. A token from `FDL_TOKEN` is not asked for again.
+
 ## fdl init
 
 ```bash

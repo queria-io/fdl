@@ -271,6 +271,9 @@ class HttpStore:
         if parsed.scheme != "https" and not (parsed.scheme == "http" and parsed.hostname in LOOPBACK):
             raise StoreError(f"{url}: a repository over HTTP has to be https (plain http only on this machine)")
         self.root = url.rstrip("/") + "/"
+        #: A token fdl asked for (rather than one it was handed) is asked for
+        #: again when the host refuses it: a short-lived one may have run out.
+        self._asks = token is None
         self.token = token if token is not None else credentials_for(self.root)
         self.part_size = part_size or self.PART_SIZE
 
@@ -288,13 +291,26 @@ class HttpStore:
         headers: dict[str, str] | None = None,
     ):
         url = self.root + quote(key) + ("?" + urlencode(query) if query else "")
-        request = urllib.request.Request(
-            url, data=data, method=method, headers={"User-Agent": USER_AGENT, **(headers or {})}
-        )
-        if self.token:
-            request.add_header("Authorization", f"Bearer {self.token}")
-        try:
+
+        def send():
+            request = urllib.request.Request(
+                url, data=data, method=method, headers={"User-Agent": USER_AGENT, **(headers or {})}
+            )
+            if self.token:
+                request.add_header("Authorization", f"Bearer {self.token}")
             return _open(request)
+
+        try:
+            try:
+                return send()
+            except urllib.error.HTTPError as exc:
+                if exc.code != 401 or not self._asks:
+                    raise
+                fresh = credentials_for(self.root)
+                if not fresh or fresh == self.token:
+                    raise
+                self.token = fresh
+                return send()
         except urllib.error.HTTPError as exc:
             detail = exc.read().decode(errors="replace").strip()
             raise StoreError(

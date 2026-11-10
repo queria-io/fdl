@@ -357,3 +357,28 @@ def test_the_storage_secret_comes_from_the_aws_variables(monkeypatch) -> None:
     assert "SECRET 'se''cret'" in statement and "SESSION_TOKEN 'tok'" in statement
     assert "ENDPOINT 'acct.r2.cloudflarestorage.com'" in statement and "SCOPE 's3://b/p/'" in statement
     duckdb.connect().execute("INSTALL httpfs; LOAD httpfs;").execute(statement)
+
+
+def test_a_refused_token_is_asked_for_again(tmp_path: Path, monkeypatch) -> None:
+    answers = iter(["run-out", TOKEN])
+    asked: list[str] = []
+
+    def helper(url: str) -> str:
+        asked.append(url)
+        return next(answers)
+
+    monkeypatch.setattr(stores, "credentials_for", helper)
+    server = serve(LocalStore(tmp_path))
+    try:
+        store = HttpStore(f"http://127.0.0.1:{server.server_address[1]}/")
+        store.put("a.txt", b"a")
+        assert len(asked) == 2 and store.token == TOKEN
+        # A token it was handed is not asked for again.
+        handed = HttpStore(f"http://127.0.0.1:{server.server_address[1]}/", token="run-out")
+        with pytest.raises(StoreError) as refused:
+            handed.put("b.txt", b"b")
+        assert refused.value.status == 401 and len(asked) == 2
+    finally:
+        server.shutdown()
+    assert (tmp_path / "a.txt").read_bytes() == b"a"
+    assert not (tmp_path / "b.txt").exists()
