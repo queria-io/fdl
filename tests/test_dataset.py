@@ -199,3 +199,29 @@ def test_the_writer_wins_and_unreadable_sql_is_left_alone(frozen: Path) -> None:
 def test_catalogs_map_aliases_to_repositories(frozen: Path) -> None:
     with pytest.raises(DatasetError, match="catalogs"):
         describe({"name": "t", "title": "T", "catalogs": {"census": "https://example.org/census/#main.x"}}, frozen)
+
+
+def test_names_are_read_as_duckdb_binds_them(frozen: Path) -> None:
+    _views(
+        frozen,
+        "CREATE SCHEMA lake.s",
+        "CREATE TABLE lake.s.towns AS SELECT 1 AS code",
+        "USE lake.s",
+        "CREATE VIEW lake.s.near AS SELECT * FROM towns "
+        "UNION ALL SELECT * FROM (WITH towns AS (SELECT 2 AS code) SELECT * FROM towns)",
+    )
+    declared = {
+        "name": "t",
+        "title": "T",
+        "catalogs": {"census": "https://example.org/census/"},
+        "tables": [
+            {
+                "schema": "main",
+                "name": "towns",
+                "sql": "SELECT * FROM Census.main.areas JOIN S.Towns USING (code)",
+            }
+        ],
+    }
+    tables = {(t["schema"], t["name"]): t for t in describe(declared, frozen)["tables"]}
+    assert tables[("s", "near")]["depends_on"] == ["s.towns"]
+    assert tables[("main", "towns")]["depends_on"] == ["https://example.org/census/#main.areas", "s.towns"]
