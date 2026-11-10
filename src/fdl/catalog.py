@@ -1023,19 +1023,50 @@ def restore(
             ).fetchall()
             return {(schema, name): sql for schema, name, sql in rows}
 
+        def schemas(at: int) -> set[str]:
+            rows = con.execute(
+                f"SELECT s.schema_name FROM {meta}.ducklake_schema s WHERE {live('s')}", {"s": at}
+            ).fetchall()
+            return {schema for (schema,) in rows}
+
+        def columns(table_id: int) -> list[tuple[str, str | None, bool]]:
+            """Top-level columns at ``snapshot``: name, comment, whether nulls are allowed."""
+            return con.execute(
+                f"""
+                SELECT c.column_name, g.value, c.nulls_allowed
+                FROM {meta}.ducklake_column c
+                LEFT JOIN {meta}.ducklake_column_tag g
+                  ON g.table_id = c.table_id AND g.column_id = c.column_id AND g.key = 'comment'
+                  AND {live('g')}
+                WHERE c.table_id = $t AND c.parent_column IS NULL AND {live('c')}
+                ORDER BY c.column_order
+                """,
+                {"s": snapshot, "t": table_id},
+            ).fetchall()
+
+        def table_comment(table_id: int) -> str | None:
+            row = con.execute(
+                f"SELECT value FROM {meta}.ducklake_tag g WHERE object_id = $t AND key = 'comment' AND {live('g')}",
+                {"s": snapshot, "t": table_id},
+            ).fetchone()
+            return row[0] if row else None
+
         def changed_since(table_id: int) -> bool:
             # Anything about the table that began or ended after ``snapshot``.
-            later = "(begin_snapshot > $s OR coalesce(end_snapshot, $s + 1) <= $last)"
+            later = "(begin_snapshot > $s OR end_snapshot > $s)"
             return any(
                 con.execute(
                     f"SELECT count(*) FROM {meta}.{kind} WHERE table_id = $t AND {later}",
-                    {"s": snapshot, "t": table_id, "last": last},
+                    {"s": snapshot, "t": table_id},
                 ).fetchone()[0]
                 for kind in ("ducklake_data_file", "ducklake_delete_file", "ducklake_column")
             )
 
         def quoted(identifier: str) -> str:
             return '"' + identifier.replace('"', '""') + '"'
+
+        def literal(text: str) -> str:
+            return "'" + text.replace("'", "''") + "'"
 
         def name(key: tuple[str, str]) -> str:
             return f"lake.{quoted(key[0])}.{quoted(key[1])}"
@@ -1050,17 +1081,36 @@ def restore(
         for key in new_tables.keys() - old_tables.keys():
             con.execute(f"DROP TABLE {name(key)}")
             changed.append(".".join(key))
-        for schema in {key[0] for key in [*old_tables, *old_views]}:
+        for schema in schemas(last) - schemas(snapshot):
+            con.execute(f"DROP SCHEMA lake.{quoted(schema)} CASCADE")
+            changed.append(schema)
+        for schema in schemas(snapshot):
             con.execute(f"CREATE SCHEMA IF NOT EXISTS lake.{quoted(schema)}")
         for key, table_id in old_tables.items():
             if new_tables.get(key) == table_id and not changed_since(table_id):
                 continue
-            # Read before the table is replaced: within the transaction, the
-            # old snapshot is still what AT names.
-            con.execute(
-                f"CREATE OR REPLACE TABLE {name(key)} AS "
-                f"SELECT * FROM {name(key)} AT (VERSION => {int(snapshot)})"
+            at = f"{name(key)} AT (VERSION => {int(snapshot)})"
+            declared = columns(table_id)
+            types = dict(con.execute(f"SELECT column_name, column_type FROM (DESCRIBE SELECT * FROM {at})").fetchall())
+            # Declared as the columns were, NOT NULL included, then filled:
+            # within the transaction AT still names the table as it was.
+            body = ", ".join(
+                f"{quoted(column)} {types[column]}" + ("" if nulls else " NOT NULL")
+                for column, _, nulls in declared
             )
+            # Filled beside the table, then put in its place.
+            staging = name((key[0], "__fdl_restore"))
+            con.execute(f"CREATE TABLE {staging} ({body})")
+            con.execute(f"INSERT INTO {staging} SELECT * FROM {at}")
+            if key in new_tables:
+                con.execute(f"DROP TABLE {name(key)}")
+            con.execute(f"ALTER TABLE {staging} RENAME TO {quoted(key[1])}")
+            for column, comment, _ in declared:
+                if comment is not None:
+                    con.execute(f"COMMENT ON COLUMN {name(key)}.{quoted(column)} IS {literal(comment)}")
+            comment = table_comment(table_id)
+            if comment is not None:
+                con.execute(f"COMMENT ON TABLE {name(key)} IS {literal(comment)}")
             changed.append(".".join(key))
         for key, sql in old_views.items():
             if new_views.get(key) == sql:

@@ -108,7 +108,7 @@ ref が指すバージョンから最初のバージョンまで、最初の親�
 fdl status <working.sqlite> [--json]
 ```
 
-作業カタログが checkout してから何を変えたかを、`fdl diff` と同じ区分で表示します。元のバージョンと同じ内容なら `Nothing to commit` と表示します。`dataset.json` の文言はコミットまで比べません。コミットしてまだ push していないバージョンがあれば、先にそれを表示します。
+作業カタログが checkout してから何を変えたかを、`fdl diff` と同じ区分で表示します。元のバージョンと同じ内容なら `Nothing to commit` と表示します。`dataset.json` の文言はコミットまで比べません。コミットしてまだ push していないバージョンがあれば、先にそれを表示し、変更はそのバージョンから数えます。`--json` では `pending` にその ID を入れます。
 
 ## fdl diff
 

@@ -147,10 +147,14 @@ class LocalStore:
             self._path(key).unlink(missing_ok=True)
 
     def placed(self, prefix: str = "") -> dict[str, dt.datetime]:
-        return {
-            key: dt.datetime.fromtimestamp(self._path(key).stat().st_mtime, dt.timezone.utc)
-            for key in self.list(prefix)
-        }
+        found: dict[str, dt.datetime] = {}
+        for key in self.list(prefix):
+            try:
+                written = self._path(key).stat().st_mtime
+            except FileNotFoundError:
+                continue  # deleted since it was listed
+            found[key] = dt.datetime.fromtimestamp(written, dt.timezone.utc)
+        return found
 
 
 class S3Store:
@@ -226,13 +230,7 @@ class S3Store:
         return {"ETag": answer["ETag"]}
 
     def list(self, prefix: str = "") -> list[str]:
-        keys: list[str] = []
-        pages = self.client.get_paginator("list_objects_v2").paginate(
-            Bucket=self.bucket, Prefix=self.prefix + prefix
-        )
-        for page in pages:
-            keys.extend(item["Key"][len(self.prefix) :] for item in page.get("Contents", []))
-        return keys
+        return [*self.placed(prefix)]
 
     def delete(self, keys: Sequence[str]) -> None:
         for key in keys:

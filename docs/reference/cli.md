@@ -108,7 +108,7 @@ Versions from the one the ref holds back to the first, by first parent. Each sho
 fdl status <working.sqlite> [--json]
 ```
 
-What the working catalog changed since it was checked out, in the same kinds as `fdl diff`. `Nothing to commit` when it holds what the version it came from holds. The words of `dataset.json` are not compared until the commit. A version committed and not pushed yet is named first.
+What the working catalog changed since it was checked out, in the same kinds as `fdl diff`. `Nothing to commit` when it holds what the version it came from holds. The words of `dataset.json` are not compared until the commit. When a version is committed and not pushed yet, it is named first and the changes are counted from it; `--json` gives its ID as `pending`.
 
 ## fdl diff
 
