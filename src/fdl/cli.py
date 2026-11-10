@@ -3,7 +3,8 @@
 A working catalog is a DuckLake catalog in SQLite that you write to with any
 DuckDB client. Beside it sits ``<working>.fdl.json``, which remembers the
 repository it came from and the version it was checked out at, so a commit
-knows what it builds on.
+knows what it builds on. A commit waits in ``<working>.pending/`` until it is
+pushed.
 """
 
 from __future__ import annotations
@@ -21,6 +22,7 @@ from . import catalog, dataset, layout, objects, refs, repo
 from . import diff as diffs
 from .stores import StoreError, open_store
 from .version import VersionError, is_id
+from .version import parse as parse_version
 
 app = typer.Typer(no_args_is_help=True, pretty_exceptions_short=True)
 
@@ -140,10 +142,11 @@ def commit(
         help="A folder with the files the asset columns point at, to upload those the repository lacks",
     ),
 ) -> None:
-    """Freeze the working catalog into a version and push it to its branch.
+    """Freeze the working catalog into a version, kept beside it until you push it.
 
     Nothing is made when the tables, their rows and the description are what
-    the last version holds.
+    the last pushed version holds. Committing again before pushing replaces
+    the version not pushed yet.
     """
     state = _read_state(working)
     store = _store(state["remote"])
@@ -152,10 +155,6 @@ def commit(
         declared = dataset.gather(description)
         root = Path(description).resolve().parent
         listed = objects.tree(root)
-        local_objects = objects.ByContent(
-            {item["sha256"]: root / item["path"] for item in listed},
-            assets_dir,
-        )
         version = _commit(
             store,
             working,
@@ -164,17 +163,22 @@ def commit(
             author=author,
             declared=declared,
             listed=listed,
-            local_objects=local_objects,
+            local_objects={item["sha256"]: str(root / item["path"]) for item in listed},
+            assets_dir=assets_dir,
             allow_empty=allow_empty,
         )
     except repo.NothingToCommit as exc:
-        # The branch may have moved on since the checkout, so say what the
-        # working catalog matches rather than where the branch is.
-        typer.echo(f"Nothing to commit: {exc}; {state['ref']} was not moved")
+        typer.echo(f"Nothing to commit: {exc}")
         return
     except ERRORS as exc:
         raise _fail(exc) from exc
-    typer.echo(f"{state['ref']} -> {version.id} (version {version.seq})")
+    typer.echo(f"Committed {version.id} (version {version.seq}). Push it to {state['ref']} with:")
+    typer.echo(f"  fdl push {working}")
+
+
+def _pending_dir(working: Path) -> Path:
+    """Where the committed version not pushed yet waits, as ``<ID>/``."""
+    return working.with_name(working.name + ".pending")
 
 
 def _commit(
@@ -186,22 +190,20 @@ def _commit(
     author: str,
     declared: dict,
     listed: list[dict],
-    local_objects,
+    local_objects: dict[str, str],
+    assets_dir: Path | None,
     allow_empty: bool,
 ):
-    """Freeze the working catalog into a version, push it and remember it as the base."""
-    out = Path(tempfile.mkdtemp(prefix="fdl-"))
+    """Freeze the working catalog into a version beside it, to push later.
+
+    Its parent is the version the working catalog was checked out at (or last
+    pushed). Any version committed before and not pushed is replaced.
+    """
+    out = Path(tempfile.mkdtemp(prefix=".fdl-commit-", dir=working.resolve().parent))
     try:
         parent = repo.read_version(store, state["base"]) if state["base"] else None
         parent_dataset = diffs.described(store, parent) if parent else None
-
-        # Where the working catalog wrote its new data files, when not where it records.
-        if state.get("storage"):
-            written = repo.storage_data_path(state["storage"], repo.read_config(store))
-        elif state.get("data"):
-            written = Path(state["data"]).resolve().as_posix() + "/"
-        else:
-            written = None
+        written = _written(store, state)
 
         def make(allow_empty: bool):
             return repo.commit(
@@ -223,7 +225,6 @@ def _commit(
         except repo.CannotCompare as exc:
             typer.echo(f"warning: could not tell whether anything changed ({exc}); committing", err=True)
             version = make(True)
-        local = Path(state["data"]) if state.get("data") else None
         reading = written or repo.data_url(store)
         setup = _read_setup(store) + _storage_setup(state.get("storage"))
         described = json.loads((out / version.id / layout.DATASET).read_text(encoding="utf-8"))
@@ -234,62 +235,108 @@ def _commit(
             repo.write_profiles(store, out / version.id, parent, working, data_path=reading, setup=setup)
         except Exception as exc:  # noqa: BLE001 - a profile is never worth a failed commit
             typer.echo(f"warning: tables were not profiled ({exc})", err=True)
-        repo.push(
-            store,
-            out / version.id,
-            version,
-            ref=state["ref"],
-            local_data=local,
-            assets=held,
-            local_objects=local_objects,
-        )
+        pending = _pending_dir(working)
+        shutil.rmtree(pending, ignore_errors=True)
+        out.rename(pending)
     finally:
         shutil.rmtree(out, ignore_errors=True)
+    _write_state(
+        working,
+        {
+            **state,
+            "pending": {
+                "id": version.id,
+                "assets": sorted(held),
+                "objects": local_objects,
+                "assets_dir": str(assets_dir.resolve()) if assets_dir else None,
+            },
+        },
+    )
+    return version
+
+
+def _written(store, state: dict) -> str | None:
+    """Where the working catalog writes its new data files, when not where it records."""
+    if state.get("storage"):
+        return repo.storage_data_path(state["storage"], repo.read_config(store))
+    if state.get("data"):
+        return Path(state["data"]).resolve().as_posix() + "/"
+    return None
+
+
+@app.command()
+def push(working: Path = Working) -> None:
+    """Upload the committed version and move the branch to it.
+
+    Refused when someone else moved the branch since the checkout: check out
+    again, redo the work, commit and push.
+    """
+    state = _read_state(working)
+    pending = state.get("pending")
+    if not pending:
+        typer.echo("Nothing to push: commit first")
+        return
+    store = _store(state["remote"])
+    folder = _pending_dir(working) / pending["id"]
+    try:
+        version = parse_version((folder / layout.VERSION_RECORD).read_bytes(), expected_id=pending["id"])
+        assets_dir = pending.get("assets_dir")
+        repo.push(
+            store,
+            folder,
+            version,
+            ref=state["ref"],
+            local_data=Path(state["data"]) if state.get("data") else None,
+            assets=pending["assets"],
+            local_objects=objects.ByContent(
+                {sha: Path(path) for sha, path in pending["objects"].items()},
+                Path(assets_dir) if assets_dir else None,
+            ),
+        )
+    except (*ERRORS, OSError) as exc:
+        raise _fail(exc) from exc
     # The version is pushed: record it before anything else can fail.
-    _write_state(working, {**state, "base": version.id})
+    _write_state(working, {key: value for key, value in state.items() if key != "pending"} | {"base": version.id})
+    shutil.rmtree(_pending_dir(working), ignore_errors=True)
     if state.get("data"):
         _drop_uploaded(store, working, Path(state["data"]), version)
-    return version
+    typer.echo(f"{state['ref']} -> {version.id} (version {version.seq})")
 
 
 @app.command()
 def revert(
     version_id: str = typer.Argument(help="The version whose contents come back: a version ID, or a ref"),
-    remote: str = Remote,
-    ref: str = typer.Option(layout.DEFAULT_BRANCH, help="The branch to move"),
+    working: Path = Working,
     message: str | None = typer.Option(None, "-m", "--message", help="Why (default: Revert to version <seq>)"),
     author: str = typer.Option(..., help="Who made it"),
 ) -> None:
-    """Make a new version on a branch that holds what an earlier version held.
+    """Commit a new version that holds what an earlier version held.
 
-    The branch moves forward: the versions in between stay in its history and
-    can still be read. Tables changed since are written again from the earlier
-    version's rows; their data files stay until expire. To take out data that
-    must not be published, use withdraw instead.
+    The working catalog is written back to the earlier version's tables, and
+    the new version builds on the one it was checked out at, so the branch
+    moves forward when you push: the versions in between stay in its history.
+    Changes not committed are lost. To take out data that must not be
+    published, use withdraw instead.
     """
-    store = _store(remote)
-    work = Path(tempfile.mkdtemp(prefix="fdl-revert-"))
-    working = work / "work.sqlite"
-    local = None if repo.writes_data_files(store) else work / "work.sqlite.data"
+    state = _read_state(working)
+    store = _store(state["remote"])
     try:
         target = _version(store, version_id)
         if repo.is_expired(store, target.id):
             raise repo.RepoError(f"{target.id} is past retention or withdrawn and cannot come back")
-        base = repo.checkout(store, working, ref=ref, local_data=local)
+        base = repo.read_version(store, state["base"]) if state["base"] else None
         if base is None or not repo.is_ancestor(store, target.id, base):
-            raise repo.RepoError(f"{target.id} is not in the history of {ref}")
-        data = local.resolve().as_posix() + "/" if local else repo.data_url(store)
+            raise repo.RepoError(f"{target.id} is not in the history of {base.id if base else 'the working catalog'}")
         catalog.restore(
-            working, target.ducklake.snapshot_id, data_path=data, setup=_read_setup(store)
+            working,
+            target.ducklake.snapshot_id,
+            data_path=_written(store, state) or repo.data_url(store),
+            setup=_read_setup(store) + _storage_setup(state.get("storage")),
         )
         declared = diffs.described(store, target)
         if declared is None:
             raise repo.RepoError(f"{target.id} has no dataset.json to bring back")
         listed = (diffs.listed(store, target) or {}).get("entries", [])
-        state = {"remote": remote, "ref": ref, "base": base.id}
-        if local:
-            state["data"] = str(local)
-        _write_state(working, state)
         version = _commit(
             store,
             working,
@@ -299,16 +346,16 @@ def revert(
             declared=declared,
             listed=listed,
             local_objects={},
+            assets_dir=None,
             allow_empty=False,
         )
     except repo.NothingToCommit:
-        typer.echo(f"Nothing to revert: {ref} already holds what {target.id} (version {target.seq}) held")
+        typer.echo(f"Nothing to revert: {base.id} already holds what {target.id} (version {target.seq}) held")
         return
     except (*ERRORS, catalog.CatalogError) as exc:
         raise _fail(exc) from exc
-    finally:
-        shutil.rmtree(work, ignore_errors=True)
-    typer.echo(f"{ref} -> {version.id} (version {version.seq}), holding what version {target.seq} held")
+    typer.echo(f"Committed {version.id} (version {version.seq}), holding what version {target.seq} held. Push it with:")
+    typer.echo(f"  fdl push {working}")
 
 
 def _drop_uploaded(store, working: Path, local: Path, version) -> None:
@@ -520,6 +567,8 @@ def status(
         typer.echo(json.dumps(result, ensure_ascii=False, indent=2))
         return
     typer.echo(f"On {state['ref']} of {state['remote']}, from " + (f"{base.id} (version {base.seq})" if base else "no version yet"))
+    if state.get("pending"):
+        typer.echo(f"Committed, not pushed: {state['pending']['id']} (fdl push {working})")
     for line in diffs.lines(result) or ["Nothing to commit"]:
         typer.echo(line)
 

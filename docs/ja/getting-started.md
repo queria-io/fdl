@@ -76,13 +76,14 @@ SELECT * FROM 'towns.csv';
 
 必須なのは `name` と `title` だけです。`fdl commit` がこのファイルをカタログと照らし合わせ、表ごとの行数と列ごとの型を書き足します。
 
-## コミットする
+## コミットして push する
 
 ```bash
 fdl commit work/lake.sqlite -m "First towns" --author alice
+fdl push work/lake.sqlite
 ```
 
-`commit` は作業カタログを固めてバージョンにし、アップロードして、`main` をそこへ動かします。`refs/heads/main -> 019a3c4e-… (version 1)` と表示します。リポジトリは次のようになります。
+`commit` は作業カタログを固めて手元でバージョンにします。`push` はそれをアップロードして `main` をそこへ動かし、`refs/heads/main -> 019a3c4e-… (version 1)` と表示します。リポジトリは次のようになります。
 
 ```
 towns/
@@ -134,8 +135,9 @@ INSERT INTO lake.main.towns SELECT * FROM 'towns-2026.csv';
 
 ```bash
 fdl commit work/lake.sqlite -m "Add 2026" --author alice
+fdl push work/lake.sqlite
 ```
 
 新しいバージョンは、最初のバージョンを親として記録します。最初の Parquet ファイルは両方のカタログが参照し、新しいファイルは 2 つめのカタログだけが参照します。
 
-途中でほかの人がコミットしていたら、このコミットは断られます。新しいバージョンが、いまの `main` の上に積まれていないためです。チェックアウトし直して、変更をやり直してください。理由は[バージョンと ref](/ja/concepts/versions-and-refs) で説明しています。
+途中でほかの人が push していたら、この push は断られます。新しいバージョンが、いまの `main` の上に積まれていないためです。チェックアウトし直して、変更をやり直してください。理由は[バージョンと ref](/ja/concepts/versions-and-refs) で説明しています。

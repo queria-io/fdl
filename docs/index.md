@@ -45,7 +45,7 @@ FDL keeps a catalog's versions the way Git keeps a project's commits. If you kno
 | Branch, tag, `HEAD` | `refs/heads/`, `refs/tags/`, `HEAD` |
 | Working tree | Working catalog (SQLite on your disk) |
 | `git init --bare` | `fdl init` |
-| `git commit` and `git push` | `fdl commit` |
+| `git commit`, `git push` | `fdl commit`, `fdl push` |
 | `git log`, `git tag` | `fdl log`, `fdl tag` |
 
 FDL does not merge, so a version has one parent. [From write to read](/internals/from-write-to-read) follows the files through a commit, step by step.

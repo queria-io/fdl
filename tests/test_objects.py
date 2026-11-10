@@ -24,6 +24,11 @@ def run(*args) -> str:
     return result.output
 
 
+def commit(working, *args) -> str:
+    """Commit and push, as one step used to."""
+    return run("commit", working, *args) + run("push", working)
+
+
 def fails(*args) -> str:
     result = runner.invoke(app, [str(a) for a in args])
     assert result.exit_code == 1, result.output
@@ -58,7 +63,7 @@ def test_the_readme_and_docs_go_in_the_tree(tmp_path: Path, repository) -> None:
     (tmp_path / "dataset.yml").write_text("name: towns\ntitle: Towns\n")
     write(working, store, "CREATE TABLE lake.main.towns AS SELECT 1 AS id")
 
-    run("commit", working, "-m", "first", "--author", "t")
+    commit(working, "-m", "first", "--author", "t")
 
     version = repo.head(store, "refs/heads/main")
     assert version.tree is not None
@@ -71,9 +76,9 @@ def test_the_readme_and_docs_go_in_the_tree(tmp_path: Path, repository) -> None:
     assert "attachments" not in json.loads(store.get(f"versions/{version.id}/dataset.json"))
 
     # The same tree again is nothing to commit; a changed README is a new version.
-    assert "Nothing to commit" in run("commit", working, "-m", "same", "--author", "t")
+    assert "Nothing to commit" in commit(working, "-m", "same", "--author", "t")
     (tmp_path / "README.md").write_text(readme + "More.\n")
-    run("commit", working, "-m", "readme", "--author", "t")
+    commit(working, "-m", "readme", "--author", "t")
     assert repo.head(store, "refs/heads/main").tree.sha256 != version.tree.sha256
 
 
@@ -81,7 +86,7 @@ def test_a_version_without_a_readme_has_no_tree(tmp_path: Path, repository) -> N
     store, working = repository
     (tmp_path / "dataset.yml").write_text("name: towns\ntitle: Towns\n")
     write(working, store, "CREATE TABLE lake.main.towns AS SELECT 1 AS id")
-    run("commit", working, "-m", "first", "--author", "t")
+    commit(working, "-m", "first", "--author", "t")
     version = repo.head(store, "refs/heads/main")
     assert version.tree is None
     assert f"versions/{version.id}/tree.json" not in set(store.list(f"versions/{version.id}/"))
@@ -122,15 +127,16 @@ def test_assets_are_uploaded_from_the_folder_and_checked(tmp_path: Path, reposit
     )
 
     # Without the folder, the files are nowhere to be had.
-    assert "neither in the repository" in fails("commit", working, "-m", "m", "--author", "t")
-    run("commit", working, "-m", "m", "--author", "t", "--assets", folder)
+    run("commit", working, "-m", "m", "--author", "t")
+    assert "neither in the repository" in fails("push", working)
+    commit(working, "-m", "m", "--author", "t", "--assets", folder)
 
     for row in listed:
         assert store.get(objects.asset_key(row["sha256"])) == (folder / row["path"]).read_bytes()
 
     # The next version finds them in the repository and needs no folder.
     write(working, store, "INSERT INTO lake.main.reports SELECT * FROM lake.main.reports LIMIT 1")
-    run("commit", working, "-m", "again", "--author", "t")
+    commit(working, "-m", "again", "--author", "t")
 
 
 def test_an_asset_column_holds_only_sha256(tmp_path: Path, repository) -> None:
@@ -194,10 +200,10 @@ def test_withdrawal_deletes_the_assets_only_the_withdrawn_versions_reach(tmp_pat
         store,
         f"CREATE TABLE lake.main.reports AS SELECT path, sha256 FROM read_csv('{tmp_path / 'files.csv'}', all_varchar = true)",
     )
-    run("commit", working, "-m", "leak", "--author", "t", "--assets", folder)
+    commit(working, "-m", "leak", "--author", "t", "--assets", folder)
     leaked = repo.head(store, "refs/heads/main")
     write(working, store, "DELETE FROM lake.main.reports WHERE path = 'leak.pdf'")
-    run("commit", working, "-m", "clean", "--author", "t")
+    commit(working, "-m", "clean", "--author", "t")
     rows = {row["path"]: row["sha256"] for row in csv.DictReader(io.StringIO(run("assets", folder)))}
     readme = objects.asset_key(objects.sha256_of(tmp_path / "README.md"))
 

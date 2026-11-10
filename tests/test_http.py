@@ -44,6 +44,11 @@ def run(*args: object) -> str:
     return result.output
 
 
+def commit(working, *args) -> str:
+    """Commit and push, as one step used to."""
+    return run("commit", working, *args) + run("push", working)
+
+
 def write(working: Path, sql: str) -> None:
     state = json.loads(working.with_name(working.name + ".fdl.json").read_text())
     data = Path(state["data"]).resolve().as_posix() + "/"
@@ -85,14 +90,14 @@ def test_the_round_trip_over_http(served, tmp_path: Path) -> None:
     working = tmp_path / "work" / "lake.sqlite"
     run("checkout", url, working)
     write(working, "CREATE TABLE lake.main.towns AS SELECT 1 AS id")
-    run("commit", working, "-m", "first", "--author", "tester")
+    commit(working, "-m", "first", "--author", "tester")
 
     # A second working catalog reads the published file where it is, and
     # writes its new one locally.
     again = tmp_path / "again" / "lake.sqlite"
     run("checkout", url, again)
     write(again, "CREATE TABLE lake.main.roads AS SELECT count(*) AS towns FROM lake.main.towns")
-    run("commit", again, "-m", "second", "--author", "tester")
+    commit(again, "-m", "second", "--author", "tester")
 
     first, second = reversed(list(repo.log(local)))
     described = json.loads(local.get(layout.version_dir(first.id) + "dataset.json"))
@@ -135,7 +140,7 @@ def test_data_files_go_straight_to_storage_when_the_host_signs_urls(tmp_path: Pa
     working = tmp_path / "work" / "lake.sqlite"
     run("checkout", url, working)
     write(working, "CREATE TABLE lake.main.towns AS SELECT 1 AS id")
-    run("commit", working, "-m", "first", "--author", "tester")
+    commit(working, "-m", "first", "--author", "tester")
     server.shutdown()
 
     data_puts = [key for method, key in server.requests if method == "PUT" and ".parquet" in key]
@@ -166,7 +171,7 @@ def test_a_rebuild_of_the_same_rows_over_http_is_nothing_to_commit(served, tmp_p
     working = tmp_path / "work" / "lake.sqlite"
     run("checkout", url, working)
     write(working, "CREATE SCHEMA lake.s; CREATE TABLE lake.s.towns AS SELECT 1 AS id")
-    run("commit", working, "-m", "first", "--author", "tester")
+    commit(working, "-m", "first", "--author", "tester")
     # The way dbt rebuilds a table: a new table beside it, then renames.
     again = tmp_path / "again" / "lake.sqlite"
     run("checkout", url, again)
@@ -287,13 +292,13 @@ def test_a_commit_over_http_frees_the_local_data_files(served, tmp_path: Path) -
     working = tmp_path / "work" / "lake.sqlite"
     run("checkout", url, working)
     write(working, "CREATE TABLE lake.main.towns AS SELECT 1 AS id")
-    run("commit", working, "-m", "first", "--author", "tester")
+    commit(working, "-m", "first", "--author", "tester")
     folder = working.with_name(working.name + ".data")
     assert folder.is_dir() and not any(p.is_file() for p in folder.rglob("*"))
 
     # The same working catalog goes on: the first file is read from the repository.
     write(working, "INSERT INTO lake.main.towns SELECT id + 1 FROM lake.main.towns")
-    run("commit", working, "-m", "second", "--author", "tester")
+    commit(working, "-m", "second", "--author", "tester")
     second = repo.head(local)
     assert second.seq == 2
     frozen = tmp_path / "frozen.duckdb"
@@ -325,9 +330,9 @@ def test_a_checkout_with_storage_writes_data_files_there(served, tmp_path: Path)
     build("CREATE TABLE lake.main.towns AS SELECT 1 AS id")
     # Written into the repository before the commit: nothing to upload.
     assert list((Path(local.root) / "data").rglob("*.parquet"))
-    run("commit", working, "-m", "first", "--author", "tester")
+    commit(working, "-m", "first", "--author", "tester")
     build("INSERT INTO lake.main.towns VALUES (2)")
-    run("commit", working, "-m", "second", "--author", "tester")
+    commit(working, "-m", "second", "--author", "tester")
 
     second = repo.head(local)
     frozen = tmp_path / "frozen.duckdb"

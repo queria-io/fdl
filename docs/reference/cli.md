@@ -37,9 +37,9 @@ fdl checkout <remote> <working.sqlite> [--ref refs/heads/main] [--storage s3://b
 
 Makes a working catalog (DuckLake in SQLite) from the catalog of the version the branch holds, or an empty one before the first version. Beside it, `<working.sqlite>.fdl.json` remembers the repository, the branch and the version it was made from. It prints the `ATTACH` statement to write with.
 
-For a repository over HTTP, new data files are written to `<working.sqlite>.data/` and uploaded by the commit. Files already in the repository are read over HTTP where they are. Once a commit has uploaded them, it makes the working catalog again from the new version and deletes the local copies, so the folder holds only what has not been committed.
+For a repository over HTTP, new data files are written to `<working.sqlite>.data/` and uploaded by the push. Files already in the repository are read over HTTP where they are. Once a push has uploaded them, it makes the working catalog again from the new version and deletes the local copies, so the folder holds only what has not been pushed.
 
-With `--storage`, the working catalog reads and writes the data files in the repository's own storage instead: `--storage` is the repository's root there, and new files go straight under its `data_dir`, so the commit has none to upload. The keys come from the `AWS_*` variables (`AWS_ENDPOINT_URL` for R2 and other S3-compatible stores), or from a DuckDB secret of your own. The build that writes to the working catalog needs them too.
+With `--storage`, the working catalog reads and writes the data files in the repository's own storage instead: `--storage` is the repository's root there, and new files go straight under its `data_dir`, so the push has none to upload. The keys come from the `AWS_*` variables (`AWS_ENDPOINT_URL` for R2 and other S3-compatible stores), or from a DuckDB secret of your own. The build that writes to the working catalog needs them too.
 
 Refused when the version is past retention, when its catalog's sha256 is not the one `version.json` records, or when the catalog names a data file outside the data folder.
 
@@ -49,25 +49,41 @@ Refused when the version is past retention, when its catalog's sha256 is not the
 fdl commit <working.sqlite> -m "What changed" --author alice [--dataset dataset.json] [--allow-empty] [--assets files/]
 ```
 
-Freezes the working catalog into a new version whose parent is the version it was checked out at, uploads it, and moves the branch on condition. It prints the branch, the new version ID and its `seq`.
+Freezes the working catalog into a new version whose parent is the version it was checked out at (or last pushed), and keeps it in `<working.sqlite>.pending/` until `fdl push` sends it. Nothing in the repository changes. It prints the new version ID and its `seq`. Committing again before pushing replaces the version not pushed yet.
 
 Every version is described by a `dataset.json` (see [Versions](/spec/versions#datasetjson)), read from `--dataset` or else from `dataset.json` or `dataset.yml` in the current directory. Tables described in `*.table.yml` (or `*.table.json`) files below that folder are added to it; hidden folders are skipped. The command checks it against the catalog and fills in the column types, row counts and catalog comments.
 
-The command puts `README.md` beside the description and every file below `docs/` there (hidden ones left out) in the version's tree: it writes `tree.json` with their paths from that folder and uploads those the repository lacks to `assets/<sha256>`, as written (see [tree.json](/spec/versions#treejson)).
+The command puts `README.md` beside the description and every file below `docs/` there (hidden ones left out) in the version's tree: it writes `tree.json` with their paths from that folder and the push uploads those the repository lacks to `assets/<sha256>`, as written (see [tree.json](/spec/versions#treejson)).
 
 It also writes a profile of each table (see [profiles/](/spec/versions#profiles)), reading only the tables whose data files or columns changed since the parent. A table it cannot read gets none, and the commit goes on with a warning.
 
-Columns marked `asset: true` hold the sha256 of files (see [Assets](/spec/versions#assets)). The command reads the values those columns hold and uploads the files the repository lacks from the `--assets` folder to `assets/<sha256>`, by their content: file names in the folder do not matter.
+Columns marked `asset: true` hold the sha256 of files (see [Assets](/spec/versions#assets)). The command reads the values those columns hold, and the push uploads the files the repository lacks from the `--assets` folder to `assets/<sha256>`, by their content: file names in the folder do not matter.
 
-When the version would hold what its parent holds (see [When nothing changed](/spec/writing#when-nothing-changed)), it prints `Nothing to commit`, leaves the branch where it is and exits 0. A rebuild that writes the same rows to new files counts as unchanged. `--allow-empty` makes the version anyway. If the rows cannot be read to tell, it warns and makes the version.
+When the version would hold what its parent holds (see [When nothing changed](/spec/writing#when-nothing-changed)), it prints `Nothing to commit`, makes nothing and exits 0. A rebuild that writes the same rows to new files counts as unchanged. `--allow-empty` makes the version anyway. If the rows cannot be read to tell, it warns and makes the version.
 
 Refused when:
 
 - there is no `dataset.json`, or it describes a table or column the catalog lacks. Keys the format does not define are kept as written, with a warning
-- the branch has moved since the checkout. Check out again and redo the work
 - the working catalog holds inlined rows
+- an asset column is not `varchar`, or holds a value that is not a sha256
+
+## fdl push
+
+```bash
+fdl push <working.sqlite>
+```
+
+Uploads the version `fdl commit` made and moves the branch to it on condition (see [Order of writes](/spec/writing#order-of-writes)). It prints the branch, the version ID and its `seq`. With nothing committed, it prints `Nothing to push`.
+
+Data files the working catalog wrote into the repository are there before the push, but no version names them until it. Files never pushed are deleted after the grace period.
+
+Refused when:
+
+- the branch has moved since the checkout. Check out again and redo the work
 - a data file the catalog names is not in the repository
-- an asset column is not `varchar`, holds a value that is not a sha256, or points at a file that is neither in the repository nor in `--assets`
+- an asset column points at a file that is neither in the repository nor in `--assets`
+
+A refused push leaves the committed version in place, so it can be sent again once the cause is fixed.
 - a data file is recorded with an absolute path outside the data directory
 
 ## fdl assets
@@ -92,7 +108,7 @@ Versions from the one the ref holds back to the first, by first parent. Each sho
 fdl status <working.sqlite> [--json]
 ```
 
-What the working catalog changed since it was checked out, in the same kinds as `fdl diff`. `Nothing to commit` when it holds what the version it came from holds. The words of `dataset.json` are not compared until the commit.
+What the working catalog changed since it was checked out, in the same kinds as `fdl diff`. `Nothing to commit` when it holds what the version it came from holds. The words of `dataset.json` are not compared until the commit. A version committed and not pushed yet is named first.
 
 ## fdl diff
 
@@ -140,15 +156,16 @@ fdl tag <remote> <name> [<version>]    # tag a version (default: the one HEAD ho
 fdl tag <remote> <name> --delete
 ```
 
-`<version>` is a version ID or a ref such as `refs/heads/main`. A tag is created once and never moved: tagging a name that is already there at another version is refused. A version past retention cannot be tagged. Creating or deleting a tag rewrites `refs.json`, as `fdl commit` does after moving a branch.
+`<version>` is a version ID or a ref such as `refs/heads/main`. A tag is created once and never moved: tagging a name that is already there at another version is refused. A version past retention cannot be tagged. Creating or deleting a tag rewrites `refs.json`, as `fdl push` does after moving a branch.
 
 ## fdl revert
 
 ```bash
-fdl revert <version> <remote> --author <name> [-m <message>] [--ref refs/heads/main]
+fdl revert <version> <working.sqlite> --author <name> [-m <message>]
+fdl push <working.sqlite>
 ```
 
-Makes a new version on the branch that holds what `<version>` held: its tables, views, `dataset.json` and `tree.json`. The branch moves forward, so the versions in between stay in its history and can still be read. A table unchanged since `<version>` keeps its data files; any other is written again from its rows there. `<version>` is a version ID or a ref, and must be in the branch's history and in retention. When the branch already holds what `<version>` held, nothing is made.
+Writes the working catalog back to what `<version>` held (its tables and views) and commits a new version with `<version>`'s `dataset.json` and `tree.json`, as `fdl commit` does. Changes in the working catalog not committed are lost. `fdl push` then moves the branch forward, so the versions in between stay in its history and can still be read. A table unchanged since `<version>` keeps its data files; any other is written again from its rows there. `<version>` is a version ID or a ref, and must be in the history of the version the working catalog was checked out at, and in retention. When that version already holds what `<version>` held, nothing is made.
 
 To take out data that must not be published, use `fdl withdraw`: a revert leaves the versions in between, and their data files, as they are.
 

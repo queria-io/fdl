@@ -45,7 +45,7 @@ FDL は、Git がプロジェクトのコミットを残すのと同じ形で、
 | ブランチ・タグ・`HEAD` | `refs/heads/`・`refs/tags/`・`HEAD` |
 | 作業ツリー | 作業カタログ（手元の SQLite） |
 | `git init --bare` | `fdl init` |
-| `git commit` と `git push` | `fdl commit` |
+| `git commit`、`git push` | `fdl commit`、`fdl push` |
 | `git log`・`git tag` | `fdl log`・`fdl tag` |
 
 FDL はマージをしないので、バージョンの親は 1 つです。[書いてから読まれるまで](/ja/internals/from-write-to-read)で、コミットのときにファイルがどう動くかを順に追えます。

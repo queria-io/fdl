@@ -57,6 +57,7 @@ Then make a version and move `main` to it:
 
 ```bash
 fdl commit work/lake.sqlite -m "First towns" --author alice
+fdl push work/lake.sqlite
 fdl log s3://my-bucket/towns/
 ```
 
@@ -80,7 +81,8 @@ Credentials and the endpoint come from boto3's usual places (`AWS_*` environment
 | --- | --- |
 | `fdl init <remote>` | Start a repository (`fdl.json` and `HEAD`) |
 | `fdl checkout <remote> <working>` | Make a working catalog from the version `main` holds |
-| `fdl commit <working> -m … --author …` | Freeze the working catalog into a version and push it |
+| `fdl commit <working> -m … --author …` | Freeze the working catalog into a version |
+| `fdl push <working>` | Upload the committed version and move `main` to it |
 | `fdl log <remote>` | List versions from `main` back to the first |
 | `fdl status <working>` | What the working catalog changed since the checkout |
 | `fdl diff <remote> [version]` | What a version changed since its parent: tables, rows, columns, data files, descriptions |
