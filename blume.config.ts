@@ -7,7 +7,7 @@ export default defineConfig({
     accent: "#673ab7",
   },
   deployment: {
-    site: "https://fdl.flo8s.com",
+    site: "https://fdl.queria.io",
   },
   content: {
     root: "docs",

@@ -19,8 +19,8 @@ dependencies = [
 s3 = ["boto3>=1.36"]
 
 [project.urls]
-Homepage = "https://fdl.flo8s.com/"
-Documentation = "https://fdl.flo8s.com/"
+Homepage = "https://fdl.queria.io/"
+Documentation = "https://fdl.queria.io/"
 Repository = "https://github.com/queria-io/fdl"
 Changelog = "https://github.com/queria-io/fdl/blob/main/CHANGELOG.md"
 
