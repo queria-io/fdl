@@ -16,7 +16,7 @@ from typing import Any
 import duckdb
 import yaml
 
-from . import layout
+from . import layout, lineage
 
 #: Where `fdl commit` looks when no file is named, in this order.
 DEFAULT_FILES = (layout.DATASET, "dataset.yml", "dataset.yaml")
@@ -24,7 +24,7 @@ DEFAULT_FILES = (layout.DATASET, "dataset.yml", "dataset.yaml")
 DATASET_KEYS = {
     "name", "title", "description", "keywords", "language", "homepage", "issued",
     "update_frequency", "licenses", "sources", "contributors", "temporal_coverage",
-    "spatial_coverage", "schemas", "tables", "annotations",
+    "spatial_coverage", "schemas", "tables", "catalogs", "annotations",
 }
 TABLE_KEYS = {
     "schema", "name", "title", "description", "keywords", "sql", "depends_on",
@@ -117,7 +117,18 @@ def describe(declared: dict[str, Any], frozen: Path) -> dict[str, Any]:
         described[key] = table
     tables = [_merge(described.get(key, {}), physical) for key, physical in found.items()]
     tables += [_merge_view(described.get(key, {}), view) for key, view in views.items()]
-    return {**declared, "tables": tables}
+    return {**declared, "tables": lineage.fill(tables, _catalogs(declared))}
+
+
+def _catalogs(declared: dict[str, Any]) -> dict[str, str]:
+    """`catalogs`: the alias each other dataset is attached under, to its repository URL."""
+    catalogs = declared.get("catalogs", {})
+    if not isinstance(catalogs, dict) or not all(
+        isinstance(alias, str) and isinstance(url, str) and "#" not in url
+        for alias, url in catalogs.items()
+    ):
+        raise DatasetError("catalogs maps each alias to the URL of a repository (without #)")
+    return catalogs
 
 
 def _renamed(declared: dict[str, Any]) -> dict[str, Any]:

@@ -149,3 +149,80 @@ def test_views_are_listed_with_their_sql(frozen: Path) -> None:
     assert named["fields"] == [{"name": "code", "title": "Code"}]
     assert tables["plain"]["kind"] == "view"
     assert tables["plain"]["description"] == "Just one"
+
+
+def _views(frozen: Path, *statements: str) -> None:
+    con = duckdb.connect()
+    con.execute("INSTALL ducklake; LOAD ducklake;")
+    con.execute(f"ATTACH 'ducklake:{frozen}' AS lake")
+    for statement in statements:
+        con.execute(statement)
+    con.close()
+
+
+def test_depends_on_is_read_from_the_sql(frozen: Path) -> None:
+    _views(
+        frozen,
+        "CREATE VIEW lake.main.named AS SELECT code FROM lake.main.towns WHERE name IS NOT NULL",
+        "CREATE VIEW lake.main.top AS WITH n AS (SELECT * FROM named) SELECT * FROM n JOIN towns USING (code)",
+    )
+    tables = {t["name"]: t for t in describe({"name": "t", "title": "T"}, frozen)["tables"]}
+    assert "depends_on" not in tables["towns"]
+    assert tables["named"]["depends_on"] == ["main.towns"]
+    assert tables["top"]["depends_on"] == ["main.named", "main.towns"]
+
+
+def test_other_datasets_are_named_by_their_repository(frozen: Path) -> None:
+    declared = {
+        "name": "t",
+        "title": "T",
+        "catalogs": {"census": "https://example.org/census/"},
+        "tables": [
+            {"schema": "main", "name": "towns", "sql": "SELECT * FROM census.small_area.population JOIN census.areas USING (code) JOIN unknown.main.x USING (code)"}
+        ],
+    }
+    (table,) = describe(declared, frozen)["tables"]
+    assert table["depends_on"] == [
+        "https://example.org/census/#main.areas",
+        "https://example.org/census/#small_area.population",
+    ]
+
+
+def test_the_writer_wins_and_unreadable_sql_is_left_alone(frozen: Path) -> None:
+    written = {"schema": "main", "name": "towns", "sql": "SELECT 1", "depends_on": ["main.other"]}
+    (table,) = describe({"name": "t", "title": "T", "tables": [written]}, frozen)["tables"]
+    assert table["depends_on"] == ["main.other"]
+    broken = {"schema": "main", "name": "towns", "sql": "{{ ref('x') }}"}
+    (table,) = describe({"name": "t", "title": "T", "tables": [broken]}, frozen)["tables"]
+    assert "depends_on" not in table
+
+
+def test_catalogs_map_aliases_to_repositories(frozen: Path) -> None:
+    with pytest.raises(DatasetError, match="catalogs"):
+        describe({"name": "t", "title": "T", "catalogs": {"census": "https://example.org/census/#main.x"}}, frozen)
+
+
+def test_names_are_read_as_duckdb_binds_them(frozen: Path) -> None:
+    _views(
+        frozen,
+        "CREATE SCHEMA lake.s",
+        "CREATE TABLE lake.s.towns AS SELECT 1 AS code",
+        "USE lake.s",
+        "CREATE VIEW lake.s.near AS SELECT * FROM towns "
+        "UNION ALL SELECT * FROM (WITH towns AS (SELECT 2 AS code) SELECT * FROM towns)",
+    )
+    declared = {
+        "name": "t",
+        "title": "T",
+        "catalogs": {"census": "https://example.org/census/"},
+        "tables": [
+            {
+                "schema": "main",
+                "name": "towns",
+                "sql": "SELECT * FROM Census.main.areas JOIN S.Towns USING (code)",
+            }
+        ],
+    }
+    tables = {(t["schema"], t["name"]): t for t in describe(declared, frozen)["tables"]}
+    assert tables[("s", "near")]["depends_on"] == ["s.towns"]
+    assert tables[("main", "towns")]["depends_on"] == ["https://example.org/census/#main.areas", "s.towns"]

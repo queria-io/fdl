@@ -262,6 +262,7 @@ profile は、`ducklake.snapshot_id` の時点の 1 つのテーブルの要約�
   "temporal_coverage": { "start": "2025", "end": "2025" },
   "spatial_coverage": ["JP"],
   "schemas": [{ "name": "main", "title": "Tables" }],
+  "catalogs": { "census": "https://example.org/census/" },
   "tables": [
     {
       "schema": "main",
@@ -269,7 +270,7 @@ profile は、`ducklake.snapshot_id` の時点の 1 つのテーブルの要約�
       "title": "Population",
       "description": "One row per town, age group and sex",
       "primary_key": ["town_code", "age_group", "sex"],
-      "depends_on": [],
+      "depends_on": ["https://example.org/census/#main.towns"],
       "sql": "SELECT …",
       "rows": 120000,
       "fields": [
@@ -285,6 +286,8 @@ profile は、`ducklake.snapshot_id` の時点の 1 つのテーブルの要約�
 - 書き手は説明を YAML（`dataset.yml`）で持ってもよく、テーブルごとに別のファイル（`<name>.table.yml`、`tables` の 1 項目）に分けてもよい。バージョンには常に説明全体が 1 つの JSON で入る
 - `licenses` の各要素は SPDX の識別子か、`id` に書き手が足したいもの（`spdx`・`url`・`title`）を添えたオブジェクト
 - `tables` には、カタログの最後のスナップショットにある表をすべて並べる。書き手が説明しなかった表は、書き手のツールがカタログから分かることで足す。カタログに無い表や列を説明していたら断る
+- `depends_on` は、その表の元になった表を並べる。このデータセットの表は `schema.name`、他のデータセットの表はそのリポジトリの URL・`#`・`schema.name` を続けて書く（`https://example.org/census/#main.towns`）。`sql` を持ち `depends_on` を持たない表は、書き手のツールが SQL から読む。SQL が読む表を並べ、自分以外のカタログは `catalogs` で URL に直す。SQL から解決できない参照は入れない
+- `catalogs` は、SQL で他のデータセットを ATTACH している名前から、そのリポジトリの URL への対応（`{"census": "https://example.org/census/"}`）。読み手は、それを使うビューを読むために各リポジトリをこの名前で ATTACH できる
 - カタログのビューは表のあとに `"kind": "view"` を付けて並べ、`sql` はカタログのものを入れる。カタログはビューの列を記録しないので、ビューの `fields` は書き手が書いたままで、`type`・`nullable`・`rows` を持たない。表には `kind` を付けない
 - カタログから取るもの: 表ごとの `rows`、列ごとの `type`（DuckLake の型名）と `nullable`。書き手が `description` を書かなかったところには、カタログのコメント（`COMMENT ON`）を使う
 - 読み手は、この仕様が決めていないキーを無視する。書き手の道具は、綴りの誤りに気づけるよう、そのキーを断ってもよい。形式が解釈しない情報は、最上位・表・列それぞれの `annotations` に、読む側の名前をキーにして置く。書き手は書かれたまま残す

@@ -262,6 +262,7 @@ The writer describes; the writer's tool checks the description against the froze
   "temporal_coverage": { "start": "2025", "end": "2025" },
   "spatial_coverage": ["JP"],
   "schemas": [{ "name": "main", "title": "Tables" }],
+  "catalogs": { "census": "https://example.org/census/" },
   "tables": [
     {
       "schema": "main",
@@ -269,7 +270,7 @@ The writer describes; the writer's tool checks the description against the froze
       "title": "Population",
       "description": "One row per town, age group and sex",
       "primary_key": ["town_code", "age_group", "sex"],
-      "depends_on": [],
+      "depends_on": ["https://example.org/census/#main.towns"],
       "sql": "SELECT …",
       "rows": 120000,
       "fields": [
@@ -285,6 +286,8 @@ The writer describes; the writer's tool checks the description against the froze
 - A writer may keep its description as YAML (`dataset.yml`), and may keep each table in its own file (`<name>.table.yml`, one entry of `tables`). The version always holds the whole description as one JSON
 - Each of `licenses` is an SPDX identifier, or an object with `id` and what the writer wants to add (`spdx`, `url`, `title`)
 - `tables` lists every table of the catalog's last snapshot. The writer's tool adds the tables the writer did not describe, with what the catalog knows of them, and refuses a described table or column the catalog lacks
+- `depends_on` lists the tables a table is made from. A table of this dataset is `schema.name`; a table of another dataset is the URL of its repository, `#` and `schema.name` (`https://example.org/census/#main.towns`). When a table has `sql` and no `depends_on`, the writer's tool reads it from the SQL: the tables it reads, with each catalog other than its own named through `catalogs`. What the SQL does not let it resolve is left out
+- `catalogs` maps the name another dataset is attached under in the SQL to the URL of its repository (`{"census": "https://example.org/census/"}`). A reader can attach each under that name to read the views that use it
 - A view of the catalog is listed after the tables with `"kind": "view"` and its `sql` from the catalog. The catalog records no columns for a view, so its `fields` are the writer's, without `type`, `nullable` or `rows`. `kind` is left out for a table
 - From the catalog: each table's `rows`, and each field's `type` (DuckLake's type name) and `nullable`. Comments in the catalog (`COMMENT ON`) are used where the writer gave no `description`
 - A reader ignores keys this specification does not define. A writer's tool may refuse them, to catch a misspelt key. What the format does not interpret goes under `annotations`, keyed by the name of whoever reads it, at the top, in a table or in a field. Writers keep it as written
