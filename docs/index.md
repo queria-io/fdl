@@ -32,7 +32,27 @@ FDL is meant for data that is published, read by many and written by few:
 
 It is not a transactional database. Writers do not merge rows. Two people who push at once are settled by the store: the first push wins and the second is refused and has to build again on the new version.
 
-## How the documentation is organised
+## FDL and Git
+
+FDL keeps a catalog's versions the way Git keeps a project's commits. If you know Git, most of FDL maps onto it:
+
+| Git | FDL |
+| --- | --- |
+| A bare repository on a server | A repository: a prefix of a bucket, or a folder |
+| Commit | Version (`versions/<ID>/version.json`) |
+| Tree | The frozen catalog (`ducklake.duckdb`) |
+| Blob | Data file (Parquet), asset |
+| Branch, tag, `HEAD` | `refs/heads/`, `refs/tags/`, `HEAD` |
+| Working tree | Working catalog (SQLite on your disk) |
+| `git init --bare` | `fdl init` |
+| `git commit` and `git push` | `fdl commit` |
+| `git log`, `git tag` | `fdl log`, `fdl tag` |
+
+FDL does not merge, so a version has one parent. [From write to read](/internals/from-write-to-read) follows the files through a commit, step by step.
+
+FDL is in beta. [Stability](/stability) says what stays the same across releases.
+
+## How the documentation is organized
 
 - [Getting started](/getting-started) makes a repository, writes a first version and reads it back
 - [Concepts](/concepts/repositories) explains repositories, versions, refs and working catalogs
@@ -40,6 +60,7 @@ It is not a transactional database. Writers do not merge rows. Two people who pu
 - [Guides](/guides/stores) cover stores, serving over HTTP, mirrors and building a host
 - The [specification](/spec) is the normative description of the format. Tools are written against it
 - The [reference](/reference/cli) lists the commands and the Python API
+- [Stability](/stability) says what a repository written today can rely on
 
 The `fdl` command and the `fdl` Python package are the reference implementation. They are published on PyPI as `fdl-cli` under the MIT license.
 

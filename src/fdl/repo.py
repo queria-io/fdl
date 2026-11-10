@@ -229,8 +229,9 @@ def checkout(
     *,
     ref: str = layout.HEAD,
     local_data: Path | None = None,
+    version: Version | None = None,
 ) -> Version | None:
-    """Make a working catalog from the version ``ref`` holds.
+    """Make a working catalog from the version ``ref`` holds, or from ``version`` when given.
 
     Before the first version there is nothing to copy, and an empty working
     catalog is created instead. Returns the version checked out, which a
@@ -250,7 +251,7 @@ def checkout(
     else:
         Path(local_data).mkdir(parents=True, exist_ok=True)
         data_path = Path(local_data).resolve().as_posix() + "/"
-    version = head(store, ref)
+    version = version or head(store, ref)
     if version is None:
         catalog.create(working, alias="lake", data_path=data_path)
         return None
@@ -260,12 +261,30 @@ def checkout(
     frozen = working.with_name(f".{working.name}.{version.id}.duckdb")
     try:
         frozen.write_bytes(store.get(layout.version_catalog(version.id)))
+        check_catalog(frozen, version)
         if data_path != remote_data:
             catalog.pin_files(frozen, remote_data)
         catalog.convert(frozen, working, data_path=data_path)
     finally:
         frozen.unlink(missing_ok=True)
     return version
+
+
+def check_catalog(frozen: Path, version: Version) -> None:
+    """Refuse a catalog that is not the one ``version`` records, or that names
+    a data file outside the repository's data folder.
+
+    A reader that trusted such a catalog would read files the repository does
+    not hold, with the reader's own credentials.
+    """
+    if _sha256(frozen) != version.catalog.sha256:
+        raise RepoError(f"{version.id}: the catalog's sha256 is not the one version.json records")
+    absolute = catalog.absolute_paths(frozen)
+    if absolute:
+        raise RepoError(f"{version.id}: the catalog names a data file by an absolute path: {absolute[0].path}")
+    for key in catalog.data_files(frozen):
+        if key.startswith("/") or "\\" in key or any(part in ("", ".", "..") for part in key.split("/")):
+            raise RepoError(f"{version.id}: the catalog names a data file outside the data folder: {key}")
 
 
 def writes_data_files(store: Store) -> bool:
@@ -324,6 +343,7 @@ def record(
                 path=layout.DATASET, bytes=written.stat().st_size, sha256=_sha256(written)
             )
         indexed = _write_files_index(target, copied, last)
+        changes = catalog.column_changes(copied, parent.ducklake.snapshot_id, last) if parent else []
         listed = None
         if tree:
             written = target / layout.TREE
@@ -344,6 +364,7 @@ def record(
             ),
             ducklake=DuckLake(format=recorded, snapshot_id=last, snapshots=(first, last)),
             files=indexed,
+            changes=tuple(changes),
             inputs=tuple(inputs),
             annotations=dict(annotations or {}),
             dataset=described,

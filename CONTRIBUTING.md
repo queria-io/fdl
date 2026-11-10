@@ -18,17 +18,25 @@ uv run pytest
 ## Project structure
 
 ```
-docs/spec.md          — the format
+docs/                 — the documentation site (Blume); docs/spec/ is the specification, docs/ja/ the Japanese mirror
 src/fdl/
 ├── layout.py         — where each file of a repository sits
 ├── version.py        — version.json and version IDs
 ├── refs.py           — reading refs and moving them on condition
 ├── catalog.py        — DuckLake catalogs in SQLite and DuckDB, and the conversion
-├── repo.py           — init, checkout, commit, push, log, expire
+├── dataset.py        — dataset.json: reading the description and checking it against the catalog
+├── objects.py        — assets and tree.json
+├── profiles.py       — the profile of each table
+├── repo.py           — init, checkout, commit, push, log, expire, withdraw
 ├── store.py          — what a store has to provide
-├── stores.py         — a folder and S3 as stores
+├── stores.py         — a folder, S3 and a host over HTTP as stores
 └── cli.py            — the fdl command
+tests/                — pytest; tests/http_repo.py is a small host over HTTP for the tests
 ```
+
+Change the specification first, then the code. Every page in `docs/` has a Japanese counterpart under `docs/ja/`; change both in the same pull request. Check the docs with `npm ci && npm run check`.
+
+Report a vulnerability privately, as [SECURITY.md](SECURITY.md) says.
 
 ## Commit conventions
 
@@ -49,7 +57,7 @@ Do not manually edit the version in pyproject.toml or modify CHANGELOG.md — th
 
 ## Documentation
 
-Documentation is built with [Zensical](https://zensical.com/) and deployed to [fdl.flo8s.com](https://fdl.flo8s.com/).
+Documentation is built with [Zensical](https://zensical.com/) and deployed to [fdl.queria.io](https://fdl.queria.io/).
 
 To preview locally:
 

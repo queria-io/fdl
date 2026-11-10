@@ -15,6 +15,7 @@ for version in repo.log(store):
 | Module | Holds |
 | --- | --- |
 | `fdl.repo` | the operations: `init`, `checkout`, `commit`, `push`, `log`, `expire`, `prune` |
+| `fdl.diff` | what changed between two versions (`diff.versions`) or in a working catalog (`diff.working`) |
 | `fdl.refs` | reading and moving refs under their conditions |
 | `fdl.version` | `Version`, the record in `version.json`, and new IDs |
 | `fdl.catalog` | DuckLake catalogs in DuckDB and SQLite, and the copy between them |
@@ -44,10 +45,10 @@ repo.init(store, *, data_dir="data/") -> Config
 Start a repository. An existing one is left as it is and its settings returned.
 
 ```python
-repo.checkout(store, working, *, ref="HEAD") -> Version | None
+repo.checkout(store, working, *, ref="HEAD", local_data=None, version=None) -> Version | None
 ```
 
-Make a working catalog at `working` from the version `ref` holds. Returns that version, or `None` before the first one.
+Make a working catalog at `working` from the version `ref` holds, or from `version` when given. Returns that version, or `None` before the first one. A store over HTTP needs `local_data`, the folder new data files go to. Refuses a catalog whose sha256 is not the one `version.json` records, or that names a data file outside the data folder.
 
 ```python
 repo.commit(working, out_dir, *, parent, data_path, author, message, inputs=(), annotations=None, dataset=None) -> Version
@@ -108,6 +109,16 @@ repo.withdraw(store, version_ids, *, plan=None) -> Withdrawal
 ```
 
 Withdraw versions that hold data that must not be published. `plan_withdrawal` changes nothing and returns the tags, the data files to delete, and the files kept because a kept version reads them. `withdraw` deletes the tags, the data files and the catalogs, in that order. Both raise `RepoError` while a branch or a request points at one of the versions.
+
+## fdl.diff
+
+```python
+diff.versions(store, old, new) -> dict
+diff.working(working, base) -> dict
+diff.lines(result) -> list[str]
+```
+
+`versions` compares two versions (`old` is `None` before the first one) from their `dataset.json`, `files.json` and `changes`. `working` compares a working catalog with `base`, the version it was checked out at. Both return `tables` (`added`, `dropped`), `rows`, `columns`, `data` and `descriptions`, as `fdl diff --json` prints them. `lines` gives the lines `fdl diff` prints.
 
 ## fdl.refs
 

@@ -87,8 +87,10 @@ def test_commit_push_and_read_back(tmp_path: Path, remote) -> None:
 
     assert repo.head(remote) == first
     assert first.seq == 1 and first.parents == ()
-    assert first.catalog.storage.startswith("duckdb-v")
-    assert not first.catalog.storage.endswith("+")
+    # Whatever DuckDB writes it, the catalog is in the format readers on
+    # DuckDB 1.5 open.
+    assert first.catalog.storage == "duckdb-v1.5.0"
+    assert first.ducklake.format == "1.0"
     assert remote.get("refs/heads/main") == f"{first.id}\n".encode()
     assert read_rows(remote, first.id) == [(1,)]
 
@@ -410,3 +412,68 @@ def test_a_file_a_kept_version_still_reads_is_not_deleted(tmp_path: Path, remote
     plan = repo.plan_withdrawal(remote, [first.id])
     assert plan.deleted == () and len(plan.still_read) == 1
     assert repo.head(remote) == second
+
+
+def _pushed(tmp_path: Path, remote) -> str:
+    build(tmp_path / "work.sqlite", remote, "CREATE TABLE lake.main.towns AS SELECT 1 AS id")
+    version = commit(tmp_path, remote)
+    repo.push(remote, tmp_path / "local" / version.id, version)
+    return version.id
+
+
+def test_checkout_refuses_a_catalog_that_is_not_the_one_recorded(tmp_path: Path, remote) -> None:
+    version_id = _pushed(tmp_path, remote)
+    path = remote.root / layout.version_catalog(version_id)
+    path.write_bytes(path.read_bytes() + b"\0")
+    with pytest.raises(repo.RepoError, match="sha256"):
+        repo.checkout(remote, tmp_path / "again.sqlite")
+
+
+def test_checkout_refuses_a_catalog_naming_files_outside_the_data_folder(tmp_path: Path, remote) -> None:
+    import hashlib
+
+    version_id = _pushed(tmp_path, remote)
+    path = remote.root / layout.version_catalog(version_id)
+    con = duckdb.connect(str(path))
+    con.execute("UPDATE ducklake_data_file SET path = '../../elsewhere/a.parquet'")
+    con.close()
+    # Recorded as if the writer had made it so: only the paths give it away.
+    record = json.loads(remote.get(layout.version_record(version_id)))
+    record["catalog"]["sha256"] = hashlib.sha256(path.read_bytes()).hexdigest()
+    record["catalog"]["bytes"] = path.stat().st_size
+    (remote.root / layout.version_record(version_id)).write_text(json.dumps(record))
+    with pytest.raises(repo.RepoError, match="outside the data folder"):
+        repo.checkout(remote, tmp_path / "again.sqlite")
+
+
+def test_a_version_records_its_column_changes(tmp_path: Path, remote) -> None:
+    build(tmp_path / "work.sqlite", remote, "CREATE TABLE lake.main.towns AS SELECT 1::INTEGER AS id, 'a' AS name, 2 AS pop, 3 AS area")
+    first = commit(tmp_path, remote)
+    repo.push(remote, tmp_path / "local" / first.id, first)
+    build(
+        tmp_path / "work.sqlite",
+        remote,
+        "ALTER TABLE lake.main.towns ADD COLUMN note VARCHAR;"
+        "ALTER TABLE lake.main.towns RENAME COLUMN name TO town;"
+        "ALTER TABLE lake.main.towns DROP COLUMN area;"
+        "ALTER TABLE lake.main.towns ALTER id SET TYPE BIGINT;",
+    )
+    second = commit(tmp_path, remote, parent=first)
+    assert first.changes == ()
+    assert sorted(second.changes, key=lambda c: c["kind"]) == [
+        {"table": "main.towns", "kind": "add_column", "column": "note", "breaking": False},
+        {"table": "main.towns", "kind": "change_type", "column": "id", "from_type": "int32", "to_type": "int64", "breaking": False},
+        {"table": "main.towns", "kind": "drop_column", "column": "area", "breaking": True},
+        {"table": "main.towns", "kind": "rename_column", "column": "town", "from": "name", "breaking": True},
+    ]
+
+
+def test_a_rebuilt_table_is_compared_by_column_name(tmp_path: Path, remote) -> None:
+    build(tmp_path / "work.sqlite", remote, "CREATE TABLE lake.main.towns AS SELECT 1 AS id, 2 AS pop")
+    first = commit(tmp_path, remote)
+    repo.push(remote, tmp_path / "local" / first.id, first)
+    build(tmp_path / "work.sqlite", remote, "CREATE OR REPLACE TABLE lake.main.towns AS SELECT 1 AS id, 'x' AS pop")
+    second = commit(tmp_path, remote, parent=first)
+    assert second.changes == (
+        {"table": "main.towns", "kind": "change_type", "column": "pop", "from_type": "int32", "to_type": "varchar", "breaking": True},
+    )

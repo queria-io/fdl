@@ -35,6 +35,17 @@ ssh-keygen -Y verify -f allowed_signers -I alice@example.org -n fdl \
 
 The catalog's `data_path` is the absolute URL of the data folder where the writer published. A reader must pass `DATA_PATH '<root><data_dir>'` and `OVERRIDE_DATA_PATH true`, where `<root>` is wherever it reads the repository from. The statement is then the same at the origin and at a mirror, and a repository copied to another host is read without changing its catalogs.
 
+## Checking a catalog
+
+A catalog is written by whoever can write the repository, and DuckDB reads every file it names with the reader's credentials. Before a reader attaches a catalog with credentials that reach more than the repository, it should check that:
+
+- the catalog's sha256 is `catalog.sha256` in `version.json`
+- every data file it names is recorded relative to the data path, with no empty, `.` or `..` segment
+
+A catalog that names a file by an absolute path, or outside `data_dir`, makes the reader fetch whatever it points at.
+
+Over HTTP, a reader sends its token only to the origin of the repository, and only over `https` unless the host is the reader's own machine. A redirect to another origin goes without the token.
+
 ## Caching
 
 - A version's files never change except as described in [Versions](/spec/versions), so its catalog may be cached forever

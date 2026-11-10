@@ -8,7 +8,7 @@ uv run fdl --help
 uv run pytest
 ```
 
-Docs (Blume, served at https://fdl.flo8s.com):
+Docs (Blume, served at https://fdl.queria.io):
 
 ```bash
 npm ci

@@ -37,6 +37,40 @@ def _version() -> str:
 #: Sent with every request. Some hosts refuse the default ``Python-urllib/x.y``.
 USER_AGENT = f"fdl/{_version()}"
 
+#: Hosts a repository may be reached at over plain ``http://``: this machine only.
+LOOPBACK = {"localhost", "127.0.0.1", "::1"}
+
+
+def _origin(url: str) -> tuple[str, str]:
+    parsed = urlparse(url)
+    return parsed.scheme, parsed.netloc
+
+
+class _SameOriginRedirects(urllib.request.HTTPRedirectHandler):
+    """Follow a redirect, but send the token only back to where it was meant for.
+
+    urllib copies every header to the new URL, ``Authorization`` included,
+    wherever it points. A redirect to another origin goes without it, and one
+    from ``https`` to ``http`` is refused.
+    """
+
+    def redirect_request(self, req, fp, code, msg, headers, newurl):
+        new = super().redirect_request(req, fp, code, msg, headers, newurl)
+        if new is None:
+            return None
+        if _origin(req.full_url)[0] == "https" and _origin(newurl)[0] != "https":
+            raise urllib.error.HTTPError(newurl, code, "refused a redirect from https to http", headers, fp)
+        if _origin(newurl) != _origin(req.full_url):
+            new.remove_header("Authorization")
+        return new
+
+
+_opener = urllib.request.build_opener(_SameOriginRedirects)
+
+
+def _open(request: urllib.request.Request):
+    return _opener.open(request)
+
 
 class StoreError(RuntimeError):
     def __init__(self, message: str, *, status: int | None = None) -> None:
@@ -218,6 +252,9 @@ class HttpStore:
     PART_SIZE = 64 * 1024 * 1024
 
     def __init__(self, url: str, *, token: str | None = None, part_size: int | None = None) -> None:
+        parsed = urlparse(url)
+        if parsed.scheme != "https" and not (parsed.scheme == "http" and parsed.hostname in LOOPBACK):
+            raise StoreError(f"{url}: a repository over HTTP has to be https (plain http only on this machine)")
         self.root = url.rstrip("/") + "/"
         self.token = token if token is not None else credentials_for(self.root)
         self.part_size = part_size or self.PART_SIZE
@@ -242,7 +279,7 @@ class HttpStore:
         if self.token:
             request.add_header("Authorization", f"Bearer {self.token}")
         try:
-            return urllib.request.urlopen(request)
+            return _open(request)
         except urllib.error.HTTPError as exc:
             detail = exc.read().decode(errors="replace").strip()
             raise StoreError(
@@ -416,7 +453,7 @@ class HttpStore:
                         **action.get("header", {}),
                     },
                 )
-                urllib.request.urlopen(request).close()
+                _open(request).close()
         except urllib.error.HTTPError as exc:
             # Written once: one already there is this one.
             if exc.code != 412:

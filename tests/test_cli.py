@@ -201,3 +201,59 @@ def test_withdraw_says_what_it_would_do_until_told_yes(tmp_path: Path) -> None:
     assert repo.is_expired(store, leak.id) is False
     assert "Withdrew 1 version(s) and deleted 1 file(s)" in run("withdraw", remote, leak.id, "--yes")
     assert repo.is_expired(store, leak.id)
+
+
+def test_status_diff_and_show(tmp_path: Path, described: Path) -> None:
+    import json
+
+    remote, working = tmp_path / "remote", tmp_path / "work" / "lake.sqlite"
+    store = LocalStore(remote)
+    run("init", remote)
+    run("checkout", remote, working)
+    write(working, store, "CREATE TABLE lake.main.towns AS SELECT 1 AS id, 'a' AS name")
+    assert "+ table main.towns" in run("status", working)
+    run("commit", working, "-m", "first", "--author", "tester")
+    assert "Nothing to commit" in run("status", working)
+
+    write(
+        working,
+        store,
+        "INSERT INTO lake.main.towns VALUES (2, 'b'); ALTER TABLE lake.main.towns RENAME COLUMN name TO town",
+    )
+    described.write_text('{"name": "towns", "title": "Towns and their codes"}')
+    status = run("status", working)
+    assert "~ rows main.towns: 1 -> 2" in status
+    assert "~ column main.towns.name -> town  (breaking)" in status
+    run("commit", working, "-m", "second", "--author", "tester")
+
+    lines = run("diff", remote).splitlines()
+    assert lines == [
+        "~ rows main.towns: 1 -> 2",
+        "~ column main.towns.name -> town  (breaking)",
+        "~ data main.towns",
+        "~ description dataset",
+    ]
+    first = list(repo.log(store))[-1]
+    assert run("diff", remote, "--against", first.id).splitlines() == lines
+    as_json = json.loads(run("diff", remote, "--json"))
+    assert as_json["columns"] == [
+        {"table": "main.towns", "kind": "rename_column", "column": "town", "from": "name", "breaking": True}
+    ]
+
+    shown = run("show", remote)
+    assert "version 2" in shown and "second" in shown and "main.towns  2 rows" in shown
+    assert "+ table main.towns" in run("show", remote, first.id)
+
+
+def test_url_prints_the_attach_statement(tmp_path: Path) -> None:
+    remote, working = tmp_path / "remote", tmp_path / "work" / "lake.sqlite"
+    store = LocalStore(remote)
+    run("init", remote)
+    run("checkout", remote, working)
+    write(working, store, "CREATE TABLE lake.main.towns AS SELECT 1 AS id")
+    run("commit", working, "-m", "first", "--author", "tester")
+    statement = run("url", remote, "--attach", "--alias", "towns").strip()
+    con = duckdb.connect()
+    con.execute("INSTALL ducklake; LOAD ducklake;")
+    con.execute(statement)
+    assert con.execute("SELECT count(*) FROM towns.main.towns").fetchone() == (1,)

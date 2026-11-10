@@ -38,6 +38,27 @@ DATA_INLINING_ROW_LIMIT = 0
 #: under 1 MB and the requests from 29 to 9.
 PUBLISHED_BLOCK_SIZE = 16384
 
+#: The DuckLake format and DuckDB storage version every catalog is written in,
+#: whatever DuckDB writes it. DuckDB 2.0 would otherwise write format 1.1 in
+#: storage v2.0.0, which DuckDB 1.5 (and the DuckDB-WASM built on it) cannot
+#: open.
+DUCKLAKE_FORMAT = "1.0"
+PUBLISHED_STORAGE_VERSION = "v1.5.0"
+
+
+def _duckdb_major() -> int:
+    import duckdb
+
+    return int(duckdb.__version__.split(".")[0])
+
+
+def _format_options() -> list[str]:
+    """The option that makes a new catalog in `DUCKLAKE_FORMAT`.
+
+    DuckDB 1.5 writes that format already and rejects the option.
+    """
+    return [f"DUCKLAKE_VERSION '{DUCKLAKE_FORMAT}'"] if _duckdb_major() >= 2 else []
+
 
 class CatalogError(RuntimeError):
     """The catalog could not be created, opened or converted."""
@@ -75,7 +96,11 @@ def _attach_options(
 
 
 def attach_sql(
-    catalog_path: Path, *, alias: str, data_path: str, read_only: bool = False
+    catalog_path: Path,
+    *,
+    alias: str,
+    data_path: str,
+    read_only: bool = False,
 ) -> list[str]:
     """The statements that open a catalog, in the order they must run.
 
@@ -88,6 +113,9 @@ def attach_sql(
         "sqlite" if catalog_path.suffix == ".sqlite" else "duckdb"
     )
     options = _attach_options(data_path, meta_type)
+    if not catalog_path.exists():
+        # A new catalog, made in the format every reader can open.
+        options.extend(_format_options())
     if read_only:
         options.append("READ_ONLY")
     return [
@@ -162,6 +190,33 @@ def _refuse_inline_rows(con) -> None:
         )
 
 
+def _downgrade_storage(path: Path) -> None:
+    """Rewrite a DuckDB file in `PUBLISHED_STORAGE_VERSION`.
+
+    DuckDB 2.0 upgrades the file's storage when DuckLake attaches to it, even
+    one created older. A copy into a file created in the old version keeps it.
+    """
+    import duckdb
+
+    copy = path.with_name(path.name + ".old")
+    for leftover in [copy, *_sidecars(copy)]:
+        if leftover.exists():
+            leftover.unlink()
+    con = duckdb.connect()
+    try:
+        con.execute(f"ATTACH '{_escape(str(path))}' AS src (READ_ONLY)")
+        con.execute(
+            f"ATTACH '{_escape(str(copy))}' AS dst "
+            f"(STORAGE_VERSION '{PUBLISHED_STORAGE_VERSION}', "
+            f"BLOCK_SIZE {PUBLISHED_BLOCK_SIZE})"
+        )
+        con.execute("COPY FROM DATABASE src TO dst")
+        con.execute("CHECKPOINT dst")
+    finally:
+        con.close()
+    copy.replace(path)
+
+
 def convert(
     source: Path,
     target: Path,
@@ -213,7 +268,7 @@ def convert(
             # extension does not expose.
             con.execute(
                 f"ATTACH 'ducklake:{_escape(str(tmp))}' AS dst "
-                f"({', '.join(_attach_options(data_path, target_type))})"
+                f"({', '.join(_attach_options(data_path, target_type) + _format_options())})"
             )
             con.execute("DETACH dst")
 
@@ -261,6 +316,8 @@ def convert(
             con.execute("CHECKPOINT dst")
         finally:
             con.close()
+        if target_type == "duckdb" and _duckdb_major() >= 2:
+            _downgrade_storage(tmp)
 
         if target.exists():
             target.unlink()
@@ -505,12 +562,14 @@ def storage_version(catalog_path: Path) -> str:
     return f"duckdb-{row[0].rstrip('+')}"
 
 
-def table_files(catalog_path: Path, snapshot_id: int) -> dict[str, dict]:
+def table_files(catalog_path: Path, snapshot_id: int, *, absolute: bool = False) -> dict[str, dict]:
     """Each table's files at ``snapshot_id``, keyed ``schema.table``.
 
     For readers without DuckDB: what to read for a table, the rows each data
     file has deleted, and whether a column was ever renamed. Paths are
-    relative to the data path, as in `data_files`.
+    relative to the data path, as in `data_files`. A working catalog reads
+    files already in a repository over HTTP by their URL: ``absolute`` keeps
+    those as they are rather than refusing them.
     """
     con = _open(Path(catalog_path))
     live = "begin_snapshot <= ? AND (end_snapshot IS NULL OR end_snapshot > ?)"
@@ -570,6 +629,8 @@ def table_files(catalog_path: Path, snapshot_id: int) -> dict[str, dict]:
 
     def where(table_id: int, path: str, relative: bool) -> dict:
         if not relative:
+            if absolute:
+                return {"path": path}
             raise CatalogError(f"{catalog_path} names a data file by an absolute path: {path}")
         return {"path": prefixes[table_id] + path}
 
@@ -602,6 +663,124 @@ def table_files(catalog_path: Path, snapshot_id: int) -> dict[str, dict]:
     }
 
 
+#: Type changes that keep every value: SQL written for the old type still runs.
+_WIDENINGS = {
+    ("int8", "int16"), ("int8", "int32"), ("int8", "int64"),
+    ("int16", "int32"), ("int16", "int64"),
+    ("int32", "int64"),
+    ("uint8", "uint16"), ("uint8", "uint32"), ("uint8", "uint64"),
+    ("uint8", "int16"), ("uint8", "int32"), ("uint8", "int64"),
+    ("uint16", "uint32"), ("uint16", "uint64"), ("uint16", "int32"), ("uint16", "int64"),
+    ("uint32", "uint64"), ("uint32", "int64"),
+    ("float32", "float64"),
+}
+
+
+def is_breaking_type_change(old: str, new: str) -> bool:
+    """Whether SQL written for a column of type ``old`` may fail on ``new``."""
+    return (old, new) not in _WIDENINGS
+
+
+def table_columns(catalog_path: Path, snapshot: int) -> dict[str, dict[str, str]]:
+    """Each table's top-level columns and their types at ``snapshot``, keyed ``schema.table``."""
+    con = _open(Path(catalog_path))
+    try:
+        rows = con.execute(
+            """
+            SELECT s.schema_name || '.' || t.table_name, c.column_name, c.column_type
+            FROM ducklake_column c
+            JOIN ducklake_table t ON t.table_id = c.table_id
+              AND t.begin_snapshot <= ? AND (t.end_snapshot IS NULL OR t.end_snapshot > ?)
+            JOIN ducklake_schema s ON s.schema_id = t.schema_id
+              AND s.begin_snapshot <= ? AND (s.end_snapshot IS NULL OR s.end_snapshot > ?)
+            WHERE c.parent_column IS NULL
+              AND c.begin_snapshot <= ? AND (c.end_snapshot IS NULL OR c.end_snapshot > ?)
+            ORDER BY 1, c.column_order
+            """,
+            [snapshot] * 6,
+        ).fetchall()
+    except Exception as exc:  # noqa: BLE001 - duckdb raises several types
+        raise CatalogError(f"{catalog_path} is not a DuckLake catalog: {exc}") from exc
+    finally:
+        con.close()
+    found: dict[str, dict[str, str]] = {}
+    for table, column, kind in rows:
+        found.setdefault(table, {})[column] = kind
+    return found
+
+
+def column_changes(catalog_path: Path, before: int, after: int) -> list[dict]:
+    """The column differences between two snapshots of one catalog, as
+    ``changes`` in version.json records them.
+
+    Tables are matched by name. A table kept under the same id is compared
+    column by column id, so a rename shows as one; one made again (as a
+    rebuild does) is compared by column name. Tables added or dropped are not
+    listed. Nested fields are not compared.
+    """
+    con = _open(Path(catalog_path))
+    live = "begin_snapshot <= ? AND (end_snapshot IS NULL OR end_snapshot > ?)"
+    try:
+        if not con.execute(
+            "SELECT count(*) FROM ducklake_snapshot WHERE snapshot_id = ?", [before]
+        ).fetchone()[0]:
+            return []
+
+        def tables(snapshot: int) -> dict[str, int]:
+            return dict(
+                con.execute(
+                    """
+                    SELECT s.schema_name || '.' || t.table_name, t.table_id
+                    FROM ducklake_table t JOIN ducklake_schema s ON s.schema_id = t.schema_id
+                    WHERE t.begin_snapshot <= ? AND (t.end_snapshot IS NULL OR t.end_snapshot > ?)
+                      AND s.begin_snapshot <= ? AND (s.end_snapshot IS NULL OR s.end_snapshot > ?)
+                    """,
+                    [snapshot] * 4,
+                ).fetchall()
+            )
+
+        def columns(table_id: int, snapshot: int) -> list[tuple[int, str, str]]:
+            return con.execute(
+                f"""
+                SELECT column_id, column_name, column_type FROM ducklake_column
+                WHERE table_id = ? AND parent_column IS NULL AND {live}
+                ORDER BY column_order
+                """,
+                [table_id, snapshot, snapshot],
+            ).fetchall()
+
+        old, new = tables(before), tables(after)
+        found: list[dict] = []
+        for name in sorted(old.keys() & new.keys()):
+            was, now = columns(old[name], before), columns(new[name], after)
+            same_table = old[name] == new[name]
+            key = (lambda c: c[0]) if same_table else (lambda c: c[1])
+            was_by, now_by = {key(c): c for c in was}, {key(c): c for c in now}
+            for _, column, _ in (c for c in now if key(c) not in was_by):
+                found.append({"table": name, "kind": "add_column", "column": column, "breaking": False})
+            for _, column, _ in (c for c in was if key(c) not in now_by):
+                found.append({"table": name, "kind": "drop_column", "column": column, "breaking": True})
+            for k in (key(c) for c in now if key(c) in was_by):
+                _, old_name, old_type = was_by[k]
+                _, new_name, new_type = now_by[k]
+                if old_name != new_name:
+                    found.append({
+                        "table": name, "kind": "rename_column", "column": new_name,
+                        "from": old_name, "breaking": True,
+                    })
+                if old_type != new_type:
+                    found.append({
+                        "table": name, "kind": "change_type", "column": new_name,
+                        "from_type": old_type, "to_type": new_type,
+                        "breaking": is_breaking_type_change(old_type, new_type),
+                    })
+    except Exception as exc:  # noqa: BLE001 - duckdb raises several types
+        raise CatalogError(f"{catalog_path} is not a DuckLake catalog: {exc}") from exc
+    finally:
+        con.close()
+    return found
+
+
 def snapshot_range(catalog_path: Path, after: int | None) -> tuple[int, int]:
     """The first and last snapshot past ``after`` (the parent's last one).
 
@@ -628,7 +807,7 @@ def snapshot_range(catalog_path: Path, after: int | None) -> tuple[int, int]:
 # -- whether anything changed --------------------------------------------------
 
 
-def _working_data_path(working: Path) -> str:
+def working_data_path(working: Path) -> str:
     import sqlite3
 
     con = sqlite3.connect(f"file:{working}?mode=ro", uri=True)
@@ -683,7 +862,7 @@ def same_contents(working: Path, since: int, *, data_path: str | None = None) ->
         for statement in attach_sql(
             working,
             alias="lake",
-            data_path=data_path or _working_data_path(working),
+            data_path=data_path or working_data_path(working),
             read_only=True,
         ):
             if statement:
