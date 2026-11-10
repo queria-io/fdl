@@ -142,6 +142,16 @@ fdl tag <remote> <name> --delete
 
 `<version>` is a version ID or a ref such as `refs/heads/main`. A tag is created once and never moved: tagging a name that is already there at another version is refused. A version past retention cannot be tagged. Creating or deleting a tag rewrites `refs.json`, as `fdl commit` does after moving a branch.
 
+## fdl revert
+
+```bash
+fdl revert <version> <remote> --author <name> [-m <message>] [--ref refs/heads/main]
+```
+
+Makes a new version on the branch that holds what `<version>` held: its tables, views, `dataset.json` and `tree.json`. The branch moves forward, so the versions in between stay in its history and can still be read. A table unchanged since `<version>` keeps its data files; any other is written again from its rows there. `<version>` is a version ID or a ref, and must be in the branch's history and in retention. When the branch already holds what `<version>` held, nothing is made.
+
+To take out data that must not be published, use `fdl withdraw`: a revert leaves the versions in between, and their data files, as they are.
+
 ## fdl withdraw
 
 ```bash

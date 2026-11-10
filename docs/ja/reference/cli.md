@@ -142,6 +142,16 @@ fdl tag <remote> <name> --delete
 
 `<version>` にはバージョン ID か、`refs/heads/main` のような ref を渡します。タグは一度作ると動かしません。別のバージョンを指す同じ名前のタグがあるときは断られます。保持期間を過ぎたバージョンにはタグを付けられません。タグを作るか消すと `refs.json` を書き直します。`fdl commit` もブランチを動かしたあとに書き直します。
 
+## fdl revert
+
+```bash
+fdl revert <version> <remote> --author <name> [-m <message>] [--ref refs/heads/main]
+```
+
+`<version>` が持っていたテーブル・ビュー・`dataset.json`・`tree.json` を持つ新しいバージョンを作り、ブランチを前に進めます。間のバージョンは履歴に残り、読み続けられます。`<version>` から変わっていないテーブルはデータファイルをそのまま使い、変わったテーブルは `<version>` の時点の行から書き直します。`<version>` にはバージョン ID か ref を渡し、ブランチの履歴にあって保持期間内のバージョンを指定します。ブランチがすでに `<version>` と同じものを持つときは、何も作りません。
+
+公開してはいけないデータを除くときは `fdl withdraw` を使います。revert は間のバージョンとそのデータファイルをそのまま残します。
+
 ## fdl withdraw
 
 ```bash

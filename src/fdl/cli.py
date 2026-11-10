@@ -147,12 +147,51 @@ def commit(
     """
     state = _read_state(working)
     store = _store(state["remote"])
-    out = Path(tempfile.mkdtemp(prefix="fdl-"))
     try:
         description = describe or dataset.find()
         declared = dataset.gather(description)
         root = Path(description).resolve().parent
         listed = objects.tree(root)
+        local_objects = objects.ByContent(
+            {item["sha256"]: root / item["path"] for item in listed},
+            assets_dir,
+        )
+        version = _commit(
+            store,
+            working,
+            state,
+            message=message,
+            author=author,
+            declared=declared,
+            listed=listed,
+            local_objects=local_objects,
+            allow_empty=allow_empty,
+        )
+    except repo.NothingToCommit as exc:
+        # The branch may have moved on since the checkout, so say what the
+        # working catalog matches rather than where the branch is.
+        typer.echo(f"Nothing to commit: {exc}; {state['ref']} was not moved")
+        return
+    except ERRORS as exc:
+        raise _fail(exc) from exc
+    typer.echo(f"{state['ref']} -> {version.id} (version {version.seq})")
+
+
+def _commit(
+    store,
+    working: Path,
+    state: dict,
+    *,
+    message: str,
+    author: str,
+    declared: dict,
+    listed: list[dict],
+    local_objects,
+    allow_empty: bool,
+):
+    """Freeze the working catalog into a version, push it and remember it as the base."""
+    out = Path(tempfile.mkdtemp(prefix="fdl-"))
+    try:
         parent = repo.read_version(store, state["base"]) if state["base"] else None
         parent_dataset = diffs.described(store, parent) if parent else None
 
@@ -195,10 +234,6 @@ def commit(
             repo.write_profiles(store, out / version.id, parent, working, data_path=reading, setup=setup)
         except Exception as exc:  # noqa: BLE001 - a profile is never worth a failed commit
             typer.echo(f"warning: tables were not profiled ({exc})", err=True)
-        local_objects = objects.ByContent(
-            {item["sha256"]: root / item["path"] for item in listed},
-            assets_dir,
-        )
         repo.push(
             store,
             out / version.id,
@@ -208,20 +243,72 @@ def commit(
             assets=held,
             local_objects=local_objects,
         )
-    except repo.NothingToCommit as exc:
-        # The branch may have moved on since the checkout, so say what the
-        # working catalog matches rather than where the branch is.
-        typer.echo(f"Nothing to commit: {exc}; {state['ref']} was not moved")
-        return
-    except ERRORS as exc:
-        raise _fail(exc) from exc
     finally:
         shutil.rmtree(out, ignore_errors=True)
     # The version is pushed: record it before anything else can fail.
     _write_state(working, {**state, "base": version.id})
     if state.get("data"):
         _drop_uploaded(store, working, Path(state["data"]), version)
-    typer.echo(f"{state['ref']} -> {version.id} (version {version.seq})")
+    return version
+
+
+@app.command()
+def revert(
+    version_id: str = typer.Argument(help="The version whose contents come back: a version ID, or a ref"),
+    remote: str = Remote,
+    ref: str = typer.Option(layout.DEFAULT_BRANCH, help="The branch to move"),
+    message: str | None = typer.Option(None, "-m", "--message", help="Why (default: Revert to version <seq>)"),
+    author: str = typer.Option(..., help="Who made it"),
+) -> None:
+    """Make a new version on a branch that holds what an earlier version held.
+
+    The branch moves forward: the versions in between stay in its history and
+    can still be read. Tables changed since are written again from the earlier
+    version's rows; their data files stay until expire. To take out data that
+    must not be published, use withdraw instead.
+    """
+    store = _store(remote)
+    work = Path(tempfile.mkdtemp(prefix="fdl-revert-"))
+    working = work / "work.sqlite"
+    local = None if repo.writes_data_files(store) else work / "work.sqlite.data"
+    try:
+        target = _version(store, version_id)
+        if repo.is_expired(store, target.id):
+            raise repo.RepoError(f"{target.id} is past retention or withdrawn and cannot come back")
+        base = repo.checkout(store, working, ref=ref, local_data=local)
+        if base is None or not repo.is_ancestor(store, target.id, base):
+            raise repo.RepoError(f"{target.id} is not in the history of {ref}")
+        data = local.resolve().as_posix() + "/" if local else repo.data_url(store)
+        catalog.restore(
+            working, target.ducklake.snapshot_id, data_path=data, setup=_read_setup(store)
+        )
+        declared = diffs.described(store, target)
+        if declared is None:
+            raise repo.RepoError(f"{target.id} has no dataset.json to bring back")
+        listed = (diffs.listed(store, target) or {}).get("entries", [])
+        state = {"remote": remote, "ref": ref, "base": base.id}
+        if local:
+            state["data"] = str(local)
+        _write_state(working, state)
+        version = _commit(
+            store,
+            working,
+            state,
+            message=message or f"Revert to version {target.seq}",
+            author=author,
+            declared=declared,
+            listed=listed,
+            local_objects={},
+            allow_empty=False,
+        )
+    except repo.NothingToCommit:
+        typer.echo(f"Nothing to revert: {ref} already holds what {target.id} (version {target.seq}) held")
+        return
+    except (*ERRORS, catalog.CatalogError) as exc:
+        raise _fail(exc) from exc
+    finally:
+        shutil.rmtree(work, ignore_errors=True)
+    typer.echo(f"{ref} -> {version.id} (version {version.seq}), holding what version {target.seq} held")
 
 
 def _drop_uploaded(store, working: Path, local: Path, version) -> None:

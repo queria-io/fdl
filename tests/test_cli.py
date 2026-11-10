@@ -257,3 +257,63 @@ def test_url_prints_the_attach_statement(tmp_path: Path) -> None:
     con.execute("INSTALL ducklake; LOAD ducklake;")
     con.execute(statement)
     assert con.execute("SELECT count(*) FROM towns.main.towns").fetchone() == (1,)
+
+
+def rows(store: LocalStore, sql: str) -> list[tuple]:
+    con = duckdb.connect()
+    con.execute("INSTALL ducklake; LOAD ducklake;")
+    con.execute(f"ATTACH 'ducklake:{store.root / layout.version_catalog(repo.head(store).id)}' AS v (READ_ONLY)")
+    found = con.execute(sql).fetchall()
+    con.close()
+    return found
+
+
+def test_revert_moves_the_branch_forward_to_what_a_version_held(tmp_path: Path, described: Path) -> None:
+    remote, working = tmp_path / "remote", tmp_path / "lake.sqlite"
+    store = LocalStore(remote)
+    run("init", remote)
+    run("checkout", remote, working)
+    write(working, store, "CREATE TABLE lake.main.towns AS SELECT * FROM (VALUES (1), (2)) v(id)")
+    write(working, store, "CREATE TABLE lake.main.kept AS SELECT 1 AS id")
+    write(working, store, "CREATE VIEW lake.main.ids AS SELECT id FROM lake.main.towns")
+    run("commit", working, "-m", "good", "--author", "t")
+    good = repo.head(store)
+
+    described.write_text('{"name": "towns", "title": "Wrong"}')
+    write(working, store, "CREATE OR REPLACE TABLE lake.main.towns AS SELECT 9 AS id")
+    write(working, store, "DROP VIEW lake.main.ids")
+    write(working, store, "CREATE TABLE lake.main.extra AS SELECT 1 AS id")
+    run("commit", working, "-m", "bad", "--author", "t")
+    bad = repo.head(store)
+
+    out = run("revert", good.id, remote, "--author", "t")
+    reverted = repo.head(store)
+    assert "holding what version 1 held" in out
+    assert reverted.seq == 3 and reverted.parents == (bad.id,)
+    assert reverted.message == "Revert to version 1"
+    assert rows(store, "SELECT id FROM v.main.ids ORDER BY id") == [(1,), (2,)]
+    assert rows(store, "SELECT count(*) FROM v.main.kept") == [(1,)]
+    assert rows(
+        store, "SELECT count(*) FROM duckdb_tables() WHERE database_name = 'v' AND table_name = 'extra'"
+    ) == [(0,)]
+    assert reverted.dataset.sha256 == good.dataset.sha256
+    # The version in between is still in the history.
+    assert [v.message for v in repo.log(store)] == ["Revert to version 1", "bad", "good"]
+
+    assert "Nothing to revert" in run("revert", good.id, remote, "--author", "t")
+    assert repo.head(store).id == reverted.id
+
+
+def test_revert_refuses_a_version_outside_the_branch(tmp_path: Path) -> None:
+    remote, working = tmp_path / "remote", tmp_path / "lake.sqlite"
+    store = LocalStore(remote)
+    run("init", remote)
+    run("checkout", remote, working)
+    write(working, store, "CREATE TABLE lake.main.towns AS SELECT 1 AS id")
+    run("commit", working, "-m", "first", "--author", "t")
+    first = repo.head(store)
+    run("tag", remote, "v1", first.id)
+
+    result = runner.invoke(app, ["revert", "0" * 8, str(remote), "--author", "t"])
+    assert result.exit_code == 1
+    assert "Nothing to revert" in run("revert", "refs/tags/v1", remote, "--author", "t")

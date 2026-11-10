@@ -36,6 +36,12 @@ A writer should not make a version that holds what its parent holds, as Git make
 
 A table rebuilt from the same input is written to new data files, so comparing files or catalog bytes is not enough. A writer compares the files first and reads the rows only of tables whose files differ. A writer that cannot read the rows makes the version. A writer may make one anyway when asked, as `git commit --allow-empty` does.
 
+## Reverting
+
+A writer that brings back what an earlier version held makes a new version, as `git revert` makes a new commit. It does not move a branch back: a branch moves only forward by default (see [Refs](/spec/refs)), and readers may already hold the versions in between.
+
+The new version's parent is the version the branch holds now. Its tables and views are those of the earlier version at its snapshot, with the same columns and rows, and its `dataset.json` and `tree.json` are the earlier version's. The working catalog gets there in a new snapshot: tables the earlier version did not hold are dropped, and tables changed since are written again from their rows at the earlier snapshot. The earlier snapshot must still be in the catalog.
+
 ## Order of writes
 
 1. Data files and assets
