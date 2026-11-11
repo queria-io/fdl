@@ -177,7 +177,7 @@ fdl revert <version> <working.sqlite> --author <name> [-m <message>]
 fdl push <working.sqlite>
 ```
 
-Writes the working catalog back to what `<version>` held (its tables and views) and commits a new version with `<version>`'s `dataset.json` and `tree.json`, as `fdl commit` does. Changes in the working catalog not committed are lost. `fdl push` then moves the branch forward, so the versions in between stay in its history and can still be read. A table unchanged since `<version>` keeps its data files; any other is written again from its rows there. `<version>` is a version ID or a ref, and must be in the history of the version the working catalog was checked out at, and in retention. When that version already holds what `<version>` held, nothing is made.
+Writes the working catalog back to what `<version>` held (its tables and views) and commits a new version with `<version>`'s `dataset.json` and `tree.json`, as `fdl commit` does. Changes in the working catalog not committed are lost. `fdl push` then moves the branch forward, so the versions in between stay in its history and can still be read. A table unchanged since `<version>` keeps its data files; any other is written again from its rows there. `<version>` is a version ID or a ref, and must be in the first-parent history of the version the working catalog was checked out at (a version only a merge brought in is not), and in retention. When that version already holds what `<version>` held, nothing is made.
 
 To take out data that must not be published, use `fdl withdraw`: a revert leaves the versions in between, and their data files, as they are.
 
@@ -194,7 +194,7 @@ Merges another branch into the branch the working catalog was checked out from (
 - When the working catalog's version is in the history of `<theirs>`, the working catalog is checked out at `<theirs>` and no version is made. `fdl push` then moves the branch there (a fast-forward)
 - Otherwise it writes the merge into the working catalog and commits a merge version, whose `parents` are the working catalog's version and `<theirs>`. `fdl push` uploads it as it does a commit. The message defaults to `Merge <theirs>`
 
-A table only `<theirs>` changed, added or dropped since the base comes over as `<theirs>` holds it, written to new data files. Rows of a table both sides changed are merged by the `primary_key` both declare in `dataset.json`: a row only `<theirs>` added, changed or deleted takes that change. `dataset.json` and `tree.json` are merged key by key; the row counts, types and nulls are written again from the merged catalog. The command lists the tables that came over and how many rows came from `<theirs>`.
+A table only `<theirs>` changed, added or dropped since the base comes over as `<theirs>` holds it, written to new data files. Rows of a table both sides changed are merged by the `primary_key` both declare in `dataset.json`: a row only `<theirs>` added, changed or deleted takes that change. `dataset.json` and `tree.json` are merged key by key; the row counts, types and nulls are written again from the merged catalog. The command lists the tables that came over and how many rows `<theirs>` added, changed or deleted. `fdl commit` reads the description from your local files, so when `<theirs>` changed `dataset.json` or `tree.json`, the command warns: bring those changes into your local files before the next commit.
 
 When anything conflicts, the command lists each conflict, by table and, for rows, by the values of the primary key, exits with 1 and changes nothing. A conflict is:
 

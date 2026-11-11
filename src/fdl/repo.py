@@ -634,6 +634,23 @@ def is_ancestor(store: Store, ancestor_id: str, descendant: Version) -> bool:
     return False
 
 
+def in_history(store: Store, ancestor_id: str, descendant: Version) -> bool:
+    """Whether ``ancestor_id`` is ``descendant`` or behind it by first parent.
+
+    The first-parent history is the one a working catalog's snapshots follow;
+    a version reached only through a merge's second parent has snapshots of
+    another catalog. ``seq`` falls by one at each step, so the walk stops
+    once it is below the ancestor's.
+    """
+    target = read_version(store, ancestor_id)
+    current: Version | None = descendant
+    while current is not None and current.seq >= target.seq:
+        if current.id == ancestor_id:
+            return True
+        current = read_version(store, current.parents[0]) if current.parents else None
+    return False
+
+
 def ancestors(store: Store, version: Version) -> dict[str, Version]:
     """``version`` and every version behind it, through every parent, by ID."""
     found: dict[str, Version] = {}

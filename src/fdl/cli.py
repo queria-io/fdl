@@ -355,8 +355,9 @@ def revert(
         if repo.is_expired(store, target.id):
             raise repo.RepoError(f"{target.id} is past retention or withdrawn and cannot come back")
         base = repo.read_version(store, state["base"]) if state["base"] else None
-        if base is None or not repo.is_ancestor(store, target.id, base):
-            raise repo.RepoError(f"{target.id} is not in the history of {base.id if base else 'the working catalog'}")
+        # By first parent: the snapshots of a version merged in belong to another catalog.
+        if base is None or not repo.in_history(store, target.id, base):
+            raise repo.RepoError(f"{target.id} is not in the first-parent history of {base.id if base else 'the working catalog'}")
         # Read before the working catalog is written back, so a refusal leaves it as it was.
         declared = diffs.described(store, target)
         if declared is None:
@@ -443,7 +444,13 @@ def merge(
     for key in plan.dropped:
         typer.echo(f"  dropped      {'.'.join(key)}")
     for key, count in plan.rows.items():
-        typer.echo(f"  rows merged  {'.'.join(key)} ({count:,} row(s) from theirs)")
+        typer.echo(f"  rows merged  {'.'.join(key)} ({count:,} row(s) added, changed or deleted by theirs)")
+    if plan.described:
+        typer.echo(
+            f"warning: theirs changed {' and '.join(plan.described)}. Bring those changes into your local "
+            "description before the next fdl commit, which reads it from there",
+            err=True,
+        )
     typer.echo(f"Committed {version.id} (version {version.seq}), merging {theirs.id}. Push it with:")
     typer.echo(f"  fdl push {working}")
 
@@ -478,7 +485,8 @@ def _merge(store, working: Path, state: dict, ours, theirs, base, *, message: st
             data_path=_written(store, state),
             repository_data=repo.data_url(store),
             setup=_read_setup(store) + _storage_setup(state.get("storage")),
-            write=not conflicts,
+            # Written only when a version can be committed from it.
+            write=not conflicts and declared is not merging.MISSING,
         )
     conflicts += plan.conflicts
     if conflicts:
@@ -498,6 +506,14 @@ def _merge(store, working: Path, state: dict, ours, theirs, base, *, message: st
         allow_empty=True,
         merged=theirs,
     )
+    plan.described = [
+        name
+        for name, merged, own in (
+            ("dataset.json", declared, merging.declared(described["ours"])),
+            ("tree.json", tree, listed["ours"] or merging.MISSING),
+        )
+        if merged != own
+    ]
     return version, plan
 
 
@@ -678,6 +694,8 @@ def show(
         return
     typer.echo(f"version {version.seq}  {version.id}" + ("  (expired)" if expired else ""))
     typer.echo(f"parent    {version.parents[0] if version.parents else '-'}")
+    for merged in version.parents[1:]:
+        typer.echo(f"merged    {merged}")
     typer.echo(f"author    {version.author.get('name', '')}")
     typer.echo(f"date      {version.created_at}")
     typer.echo("")

@@ -81,7 +81,7 @@ def test_rows_each_side_changed_are_merged_by_primary_key(branches) -> None:
     ours, theirs = repo.head(store, "refs/heads/main"), repo.head(store, "refs/heads/feature")
 
     out = run("merge", "refs/heads/feature", main, "--author", "tester")
-    assert "rows merged  main.towns (1 row(s) from theirs)" in out
+    assert "rows merged  main.towns (1 row(s) added, changed or deleted by theirs)" in out
     assert "from theirs  main.extra" in out
     run("push", main)
 
@@ -165,7 +165,8 @@ def test_descriptions_are_merged_key_by_key(branches, described: Path) -> None:
     sql(main, store, "INSERT INTO lake.main.towns VALUES (4, 'd')")
     save(main, "main")
 
-    run("merge", "refs/heads/feature", main, "--author", "tester")
+    out = run("merge", "refs/heads/feature", main, "--author", "tester")
+    assert "warning: theirs changed dataset.json" in out
     run("push", main)
     merged = repo.head(store, "refs/heads/main")
     written = json.loads(store.get(f"versions/{merged.id}/dataset.json"))
@@ -283,3 +284,53 @@ def test_a_merge_base_is_the_newest_common_ancestor(tmp_path: Path) -> None:
     # Two criss-cross merges leave two bases.
     x, y = put(a1, b1), put(b1, a1)
     assert {v.id for v in repo.merge_bases(store, x, y)} == {a1.id, b1.id}
+
+
+def test_conflicts_in_two_tables_merged_by_rows_are_both_listed(branches, described: Path) -> None:
+    store, main, feature = branches
+    two = {**DESCRIBED, "tables": [*DESCRIBED["tables"], {"schema": "main", "name": "s", "primary_key": ["id"]}]}
+    described.write_text(json.dumps(two))
+    sql(main, store, "CREATE TABLE lake.main.s AS SELECT * FROM (VALUES (1, 'a'), (2, 'b')) t(id, name)")
+    save(main, "s")
+    run("merge", "refs/heads/main", feature, "--author", "tester")
+    run("push", feature)
+    for working, value in ((feature, "x"), (main, "y")):
+        sql(working, store, f"UPDATE lake.main.towns SET name = '{value}' WHERE id = 2")
+        sql(working, store, f"UPDATE lake.main.s SET name = '{value}' WHERE id = 2")
+        save(working, value)
+
+    out = run("merge", "refs/heads/feature", main, "--author", "tester", code=1)
+    assert "main.s: both sides changed 1 row(s) differently: id=2" in out
+    assert "main.towns: both sides changed 1 row(s) differently: id=2" in out
+
+
+def test_rows_of_a_table_named_s_are_merged_by_key(branches, described: Path) -> None:
+    store, main, feature = branches
+    two = {**DESCRIBED, "tables": [*DESCRIBED["tables"], {"schema": "main", "name": "s", "primary_key": ["id"]}]}
+    described.write_text(json.dumps(two))
+    sql(main, store, "CREATE TABLE lake.main.s AS SELECT * FROM (VALUES (1, 'a'), (2, 'b'), (3, 'c')) t(id, name)")
+    save(main, "s")
+    run("merge", "refs/heads/main", feature, "--author", "tester")
+    run("push", feature)
+    sql(feature, store, "UPDATE lake.main.s SET name = 'B' WHERE id = 2")
+    save(feature, "feature")
+    sql(main, store, "UPDATE lake.main.s SET name = 'C' WHERE id = 3")
+    save(main, "main")
+
+    run("merge", "refs/heads/feature", main, "--author", "tester")
+    run("push", main)
+    assert sql(main, store, "SELECT * FROM lake.main.s ORDER BY id") == [(1, "a"), (2, "B"), (3, "C")]
+
+
+def test_a_revert_refuses_a_version_only_a_merge_brought_in(branches) -> None:
+    store, main, feature = branches
+    sql(feature, store, "INSERT INTO lake.main.towns VALUES (5, 'e')")
+    save(feature, "feature")
+    theirs = repo.head(store, "refs/heads/feature")
+    sql(main, store, "INSERT INTO lake.main.towns VALUES (4, 'd')")
+    save(main, "main")
+    run("merge", "refs/heads/feature", main, "--author", "tester")
+    run("push", main)
+
+    out = run("revert", theirs.id, main, "--author", "tester", code=1)
+    assert "not in the first-parent history" in out

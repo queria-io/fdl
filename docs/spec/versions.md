@@ -80,7 +80,7 @@ A version is the files under `versions/<version ID>/`. They must not change once
 | `fdl` | must | The specification version it was written for |
 | `id` | must | The same ID as the directory. A reader must not read a version where they differ |
 | `seq` | must | The number shown to people: 1 for the first, the first parent's `seq` plus 1 after |
-| `parents` | must | Parent version IDs. Empty for the first version, one after |
+| `parents` | must | Parent version IDs. Empty for the first version, one after, two for a merge |
 | `created_at` | must | UTC, ISO 8601 |
 | `author` | must | Who made it. `name` is required; `email` and others are optional |
 | `message` | must | What changed |

@@ -168,6 +168,8 @@ class Plan:
     dropped: list[tuple[str, str]] = field(default_factory=list)
     #: Tables whose rows were merged by primary key: the keys of rows from theirs.
     rows: dict[tuple[str, str], int] = field(default_factory=dict)
+    #: The description files theirs changed: the writer's own copies lack those changes.
+    described: list[str] = field(default_factory=list)
 
 
 def tables(
@@ -219,6 +221,11 @@ def _quoted(identifier: str) -> str:
     return '"' + identifier.replace('"', '""') + '"'
 
 
+def _same_key(primary: list[str], outer: str) -> str:
+    """The condition that the staged row ``s`` has the key of ``outer``'s row."""
+    return " AND ".join(f"s.{_quoted(column)} = {outer}.{_quoted(column)}" for column in primary)
+
+
 def _literal(text: str) -> str:
     return "'" + text.replace("'", "''") + "'"
 
@@ -231,6 +238,8 @@ class _Merging:
         self.keys = keys
         self.repository_data = repository_data
         self.staged: dict[tuple[str, str], str] = {}
+        #: Temp tables made so far, kept or not, so each gets a name of its own.
+        self.made = 0
 
     # What each catalog holds at its last snapshot.
 
@@ -364,7 +373,8 @@ class _Merging:
             if bad[0] or bad[1]:
                 plan.conflicts.append(f"{label}: the primary key ({', '.join(primary)}) holds NULL or repeats in {_SIDES[alias]}")
                 return
-        staged = f"__fdl_merge_{len(self.staged)}"
+        staged = f"__fdl_merge_{self.made}"
+        self.made += 1
         joined = f"""
             WITH b AS (SELECT {keys}, {whole} AS r FROM {sources['base']}),
                  o AS (SELECT {keys}, {whole} AS r FROM {sources['lake']}),
@@ -409,15 +419,15 @@ class _Merging:
             if key in self.ids["theirs"]:
                 self._take_table(key)
         for key, staged in self.staged.items():
-            table = _quoted(key[1])
-            same = " AND ".join(f"s.{_quoted(column)} = {{0}}.{_quoted(column)}" for column in self.keys[key])
+            primary = self.keys[key]
+            # Aliased, so a table named like the staged one's alias still binds to the outer row.
             con.execute(
-                f"DELETE FROM {self.name('lake', key)} "
-                f"WHERE EXISTS (SELECT 1 FROM {staged} s WHERE {same.format(table)})"
+                f"DELETE FROM {self.name('lake', key)} AS __fdl_target "
+                f"WHERE EXISTS (SELECT 1 FROM {staged} s WHERE {_same_key(primary, '__fdl_target')})"
             )
             con.execute(
                 f"INSERT INTO {self.name('lake', key)} SELECT x.* FROM {self.name('theirs', key)} x "
-                f"WHERE EXISTS (SELECT 1 FROM {staged} s WHERE s.present AND {same.format('x')})"
+                f"WHERE EXISTS (SELECT 1 FROM {staged} s WHERE s.present AND {_same_key(primary, 'x')})"
             )
         for key in plan.taken:
             if key in self.views["theirs"]:

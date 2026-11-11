@@ -80,7 +80,7 @@ description: バージョン ID、version.json の項目、固めたカタログ
 | `fdl` | must | 書いたときの仕様のバージョン |
 | `id` | must | ディレクトリと同じ ID。違っていたら読み手は読んではいけない |
 | `seq` | must | 人に見せる番号。最初は 1、そのあとは最初の親の `seq` に 1 を足す |
-| `parents` | must | 親のバージョン ID。最初のバージョンでは空、そのあとは 1 つ |
+| `parents` | must | 親のバージョン ID。最初のバージョンでは空、そのあとは 1 つ、マージでは 2 つ |
 | `created_at` | must | UTC、ISO 8601 |
 | `author` | must | 作った人。`name` は必須、`email` などは任意 |
 | `message` | must | 何を変えたか |
