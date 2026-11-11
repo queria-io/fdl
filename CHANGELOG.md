@@ -1,6 +1,41 @@
 # CHANGELOG
 
 
+## v0.23.0 (2026-11-11)
+
+### Bug Fixes
+
+- Re-ask the credential helper on 401, check IDs and paths, and specify merging
+  ([#50](https://github.com/queria-io/fdl/pull/50),
+  [`74b2d9b`](https://github.com/queria-io/fdl/commit/74b2d9b88dcf77f7ff6eb1c184919ccf62f51d88))
+
+- Restore, pending commits, status and gc after review
+  ([#49](https://github.com/queria-io/fdl/pull/49),
+  [`73799be`](https://github.com/queria-io/fdl/commit/73799bedd7baedbd67054910b161e46cf5ea3883))
+
+### Features
+
+- Fdl merge and fdl branch ([#51](https://github.com/queria-io/fdl/pull/51),
+  [`5e88708`](https://github.com/queria-io/fdl/commit/5e88708ade5ac84131a2a69dc285886c25af2fc6))
+
+* feat: fdl merge and fdl branch
+
+fdl merge merges another branch into the working catalog's branch, as the spec's Merging section
+  describes: a table only one side changed comes over, rows of a table both changed are merged by
+  the primary key both declare, and anything both changed differently is a conflict that makes no
+  version. A merge whose base is ours checks out theirs, and push then moves the branch there. fdl
+  branch lists, starts and deletes branches.
+
+A push is now accepted when the version descends from what the branch holds, through every parent,
+  and is_ancestor no longer stops at seq, which a merge does not raise past the version it merged.
+
+* fix: merge review findings: revert by first parent, temp names, table aliases, warnings
+
+- Fdl revert, fdl push separate from fdl commit, and fdl gc
+  ([#48](https://github.com/queria-io/fdl/pull/48),
+  [`6e3ade9`](https://github.com/queria-io/fdl/commit/6e3ade956131cc9a5cd70fe1da6ebffb0aaa3bb7))
+
+
 ## v0.22.0 (2026-11-10)
 
 ### Features
