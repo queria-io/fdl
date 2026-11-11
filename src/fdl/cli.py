@@ -21,6 +21,7 @@ from urllib.parse import urlparse
 import typer
 
 from . import catalog, dataset, layout, objects, refs, repo
+from . import merge as merging
 from . import diff as diffs
 from .stores import StoreError, open_store
 from .version import VersionError, is_id
@@ -195,6 +196,7 @@ def _commit(
     local_objects: dict[str, str],
     assets_dir: Path | None,
     allow_empty: bool,
+    merged=None,
 ):
     """Freeze the working catalog into a version beside it, to push later.
 
@@ -220,6 +222,7 @@ def _commit(
                 allow_empty=allow_empty,
                 working_data=written,
                 parent_dataset=parent_dataset,
+                merged=merged,
             )
 
         try:
@@ -282,11 +285,14 @@ def push(working: Path = Working) -> None:
     """Upload the committed version and move the branch to it.
 
     Refused when someone else moved the branch since the checkout: check out
-    again, redo the work, commit and push.
+    again, redo the work, commit and push, or merge the branch into your work.
     """
     state = _read_state(working)
     pending = state.get("pending")
     if not pending:
+        if state.get("forward"):
+            _push_forward(working, state)
+            return
         typer.echo("Nothing to push: commit first")
         return
     store = _store(state["remote"])
@@ -309,9 +315,21 @@ def push(working: Path = Working) -> None:
     except (*ERRORS, OSError) as exc:
         raise _fail(exc) from exc
     # The version is pushed: record it before anything else can fail.
-    _drop_pending(working, state, base=version.id)
+    _drop_pending(working, {key: value for key, value in state.items() if key != "forward"}, base=version.id)
     if state.get("data"):
         _drop_uploaded(store, working, Path(state["data"]), version)
+    typer.echo(f"{state['ref']} -> {version.id} (version {version.seq})")
+
+
+def _push_forward(working: Path, state: dict) -> None:
+    """Move the branch to the version a fast-forward merge checked out."""
+    store = _store(state["remote"])
+    try:
+        version = repo.read_version(store, state["base"])
+        repo.forward(store, state["ref"], version)
+    except ERRORS as exc:
+        raise _fail(exc) from exc
+    _write_state(working, {key: value for key, value in state.items() if key != "forward"})
     typer.echo(f"{state['ref']} -> {version.id} (version {version.seq})")
 
 
@@ -337,8 +355,9 @@ def revert(
         if repo.is_expired(store, target.id):
             raise repo.RepoError(f"{target.id} is past retention or withdrawn and cannot come back")
         base = repo.read_version(store, state["base"]) if state["base"] else None
-        if base is None or not repo.is_ancestor(store, target.id, base):
-            raise repo.RepoError(f"{target.id} is not in the history of {base.id if base else 'the working catalog'}")
+        # By first parent: the snapshots of a version merged in belong to another catalog.
+        if base is None or not repo.in_history(store, target.id, base):
+            raise repo.RepoError(f"{target.id} is not in the first-parent history of {base.id if base else 'the working catalog'}")
         # Read before the working catalog is written back, so a refusal leaves it as it was.
         declared = diffs.described(store, target)
         if declared is None:
@@ -369,6 +388,133 @@ def revert(
         raise _fail(exc) from exc
     typer.echo(f"Committed {version.id} (version {version.seq}), holding what version {target.seq} held. Push it with:")
     typer.echo(f"  fdl push {working}")
+
+
+@app.command()
+def merge(
+    theirs_name: str = typer.Argument(..., metavar="THEIRS", help="What to merge: a ref such as refs/heads/<name>, or a version ID"),
+    working: Path = Working,
+    message: str | None = typer.Option(None, "-m", "--message", help="What the merge brings (default: Merge <THEIRS>)"),
+    author: str = typer.Option(..., help="Who made it"),
+) -> None:
+    """Merge another branch into the working catalog's branch.
+
+    Tables, rows and descriptions only the other branch changed come over.
+    Rows of a table both branches changed are merged by the primary key both
+    declare in dataset.json; anything both changed differently is a conflict,
+    and then nothing is changed. The merge version waits beside the working
+    catalog until you push it.
+    """
+    state = _read_state(working)
+    store = _store(state["remote"])
+    if state.get("pending"):
+        raise _fail(repo.RepoError(f"a version is committed and not pushed: fdl push {working} first"))
+    try:
+        theirs = _version(store, theirs_name)
+        ours = repo.read_version(store, state["base"]) if state["base"] else None
+        if ours is None:
+            raise repo.RepoError(f"{state['ref']} holds no version yet, so there is nothing to merge into")
+        if catalog.last_snapshot(working) != ours.ducklake.snapshot_id:
+            raise repo.RepoError(f"the working catalog has changes not committed: commit and push them, or check out again")
+        bases = repo.merge_bases(store, ours, theirs)
+        if not bases:
+            raise repo.RepoError(f"{ours.id} and {theirs.id} have no version in common")
+        if len(bases) > 1:
+            raise repo.RepoError(f"{ours.id} and {theirs.id} have more than one merge base: " + ", ".join(v.id for v in bases))
+        base = bases[0]
+        if base.id == theirs.id:
+            typer.echo(f"Already up to date: {theirs.id} (version {theirs.seq}) is in the history of {ours.id}")
+            return
+        if base.id == ours.id:
+            _fast_forward(store, working, state, theirs)
+            return
+        for version in (base, theirs):
+            if repo.is_expired(store, version.id):
+                raise repo.RepoError(f"{version.id} is past retention, so the merge cannot read it")
+        version, plan = _merge(store, working, state, ours, theirs, base, message=message or f"Merge {theirs_name}", author=author)
+    except merging.Conflicts as exc:
+        typer.echo(f"Merging {theirs_name} into {state['ref']}: {len(exc.conflicts)} conflict(s). Nothing was changed.", err=True)
+        for conflict in exc.conflicts:
+            typer.echo(f"  conflict  {conflict}", err=True)
+        raise typer.Exit(1) from exc
+    except (*ERRORS, catalog.CatalogError) as exc:
+        raise _fail(exc) from exc
+    for key in plan.taken:
+        typer.echo(f"  from theirs  {'.'.join(key)}")
+    for key in plan.dropped:
+        typer.echo(f"  dropped      {'.'.join(key)}")
+    for key, count in plan.rows.items():
+        typer.echo(f"  rows merged  {'.'.join(key)} ({count:,} row(s) added, changed or deleted by theirs)")
+    if plan.described:
+        typer.echo(
+            f"warning: theirs changed {' and '.join(plan.described)}. Bring those changes into your local "
+            "description before the next fdl commit, which reads it from there",
+            err=True,
+        )
+    typer.echo(f"Committed {version.id} (version {version.seq}), merging {theirs.id}. Push it with:")
+    typer.echo(f"  fdl push {working}")
+
+
+def _fast_forward(store, working: Path, state: dict, theirs) -> None:
+    """Check the working catalog out at ``theirs``, for push to move the branch there."""
+    local = Path(state["data"]) if state.get("data") else None
+    repo.checkout(store, working, local_data=local, version=theirs, storage=state.get("storage"))
+    _write_state(working, {**state, "base": theirs.id, "forward": True})
+    typer.echo(f"Fast-forward to {theirs.id} (version {theirs.seq}). Move {state['ref']} there with:")
+    typer.echo(f"  fdl push {working}")
+
+
+def _merge(store, working: Path, state: dict, ours, theirs, base, *, message: str, author: str):
+    """Write the merge into the working catalog and commit it, or raise `merging.Conflicts`."""
+    described = {name: diffs.described(store, version) for name, version in (("base", base), ("ours", ours), ("theirs", theirs))}
+    listed = {name: diffs.listed(store, version) for name, version in (("base", base), ("ours", ours), ("theirs", theirs))}
+    declared, conflicts = merging.values(*(merging.declared(described[name]) for name in ("base", "ours", "theirs")))
+    tree, tree_conflicts = merging.values(*(listed[name] or merging.MISSING for name in ("base", "ours", "theirs")))
+    conflicts = [f"dataset.json: {item}" for item in conflicts] + [f"tree.json: {item}" for item in tree_conflicts]
+    with tempfile.TemporaryDirectory(prefix="fdl-merge-") as tmp:
+        frozen = {}
+        for name, version in (("base", base), ("theirs", theirs)):
+            frozen[name] = Path(tmp) / f"{name}.duckdb"
+            frozen[name].write_bytes(store.get(layout.version_catalog(version.id)))
+            repo.check_catalog(frozen[name], version)
+        plan = merging.tables(
+            working,
+            frozen["base"],
+            frozen["theirs"],
+            keys=merging.primary_keys(described["base"], described["ours"], described["theirs"]),
+            data_path=_written(store, state),
+            repository_data=repo.data_url(store),
+            setup=_read_setup(store) + _storage_setup(state.get("storage")),
+            # Written only when a version can be committed from it.
+            write=not conflicts and declared is not merging.MISSING,
+        )
+    conflicts += plan.conflicts
+    if conflicts:
+        raise merging.Conflicts(conflicts)
+    if declared is merging.MISSING:
+        raise repo.RepoError(f"{ours.id} has no dataset.json")
+    version = _commit(
+        store,
+        working,
+        state,
+        message=message,
+        author=author,
+        declared=declared,
+        listed=[] if tree is merging.MISSING else tree.get("entries", []),
+        local_objects={},
+        assets_dir=None,
+        allow_empty=True,
+        merged=theirs,
+    )
+    plan.described = [
+        name
+        for name, merged, own in (
+            ("dataset.json", declared, merging.declared(described["ours"])),
+            ("tree.json", tree, listed["ours"] or merging.MISSING),
+        )
+        if merged != own
+    ]
+    return version, plan
 
 
 def _drop_uploaded(store, working: Path, local: Path, version) -> None:
@@ -548,6 +694,8 @@ def show(
         return
     typer.echo(f"version {version.seq}  {version.id}" + ("  (expired)" if expired else ""))
     typer.echo(f"parent    {version.parents[0] if version.parents else '-'}")
+    for merged in version.parents[1:]:
+        typer.echo(f"merged    {merged}")
     typer.echo(f"author    {version.author.get('name', '')}")
     typer.echo(f"date      {version.created_at}")
     typer.echo("")
@@ -591,8 +739,37 @@ def status(
     typer.echo(f"On {state['ref']} of {state['remote']}, from " + (f"{base.id} (version {base.seq})" if base else "no version yet"))
     if pending:
         typer.echo(f"Committed, not pushed: {pending.id} (version {pending.seq}); fdl push {working}")
+    elif state.get("forward"):
+        typer.echo(f"Fast-forwarded, not pushed: fdl push {working} moves {state['ref']} there")
     for line in diffs.lines(result) or ["Nothing to commit"]:
         typer.echo(line)
+
+
+@app.command()
+def branch(
+    remote: str = Remote,
+    name: str | None = typer.Argument(None, help="The branch, without refs/heads/. Omit to list the branches"),
+    target: str = typer.Argument(layout.HEAD, help="A version ID, or the ref whose version to start at"),
+    delete: bool = typer.Option(False, "-d", "--delete", help="Delete the branch"),
+) -> None:
+    """List branches, start a branch at a version, or delete a branch."""
+    store = _store(remote)
+    try:
+        if name is None:
+            for branch_name, version_id in repo.branches(store).items():
+                typer.echo(f"{branch_name}  {version_id}")
+            return
+        if delete:
+            repo.delete_branch(store, name)
+            typer.echo(f"Deleted refs/heads/{name}")
+            return
+        version_id = target if is_id(target) else refs.resolve(store, target)[1]
+        if version_id is None:
+            raise repo.RepoError(f"{target} holds no version yet")
+        repo.branch(store, name, version_id)
+    except ERRORS as exc:
+        raise _fail(exc) from exc
+    typer.echo(f"refs/heads/{name} -> {version_id}")
 
 
 @app.command()

@@ -382,3 +382,32 @@ def test_a_refused_token_is_asked_for_again(tmp_path: Path, monkeypatch) -> None
         server.shutdown()
     assert (tmp_path / "a.txt").read_bytes() == b"a"
     assert not (tmp_path / "b.txt").exists()
+
+
+def test_a_merge_over_http(served, tmp_path: Path) -> None:
+    local, url, _ = served
+    main, feature = tmp_path / "main" / "lake.sqlite", tmp_path / "feature" / "lake.sqlite"
+    run("checkout", url, main)
+    write(main, "CREATE TABLE lake.main.towns AS SELECT * FROM range(3) t(id)")
+    commit(main, "-m", "first", "--author", "tester")
+    run("branch", url, "feature")
+    run("checkout", url, feature, "--ref", "refs/heads/feature")
+    write(feature, "INSERT INTO lake.main.towns VALUES (3)")
+    commit(feature, "-m", "feature", "--author", "tester")
+    write(main, "CREATE TABLE lake.main.roads AS SELECT 1 AS id")
+    commit(main, "-m", "main", "--author", "tester")
+
+    assert "from theirs  main.towns" in run("merge", "refs/heads/feature", main, "--author", "tester")
+    run("push", main)
+
+    merged = repo.head(local, "refs/heads/main")
+    assert len(merged.parents) == 2
+    frozen = tmp_path / "frozen.duckdb"
+    frozen.write_bytes(local.get(layout.version_catalog(merged.id)))
+    con = duckdb.connect()
+    con.execute("INSTALL ducklake; LOAD ducklake;")
+    con.execute(
+        f"ATTACH 'ducklake:{frozen}' AS v (READ_ONLY, DATA_PATH '{repo.data_url(local)}', OVERRIDE_DATA_PATH true)"
+    )
+    assert con.execute("SELECT count(*) FROM v.main.towns").fetchone() == (4,)
+    assert con.execute("SELECT count(*) FROM v.main.roads").fetchone() == (1,)

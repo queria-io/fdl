@@ -89,12 +89,14 @@ Credentials and the endpoint come from boto3's usual places (`AWS_*` environment
 | `fdl show <remote> [version]` | A version's record, its tables and its changes |
 | `fdl url <remote> [--attach]` | Print the catalog URL of the version `main` holds, or the whole `ATTACH` statement |
 | `fdl tag <remote> [name] [version]` | List tags, tag a version, or delete a tag (`-d`) |
+| `fdl branch <remote> [name] [version]` | List branches, start a branch at a version, or delete a branch (`-d`) |
+| `fdl merge <ref> <working> --author …` | Merge another branch into the working catalog's branch, rows matched by primary key |
 | `fdl expire <remote> --keep N` | Mark older versions as past retention and delete their catalogs |
 | `fdl gc <remote> --yes` | Delete data files no live version reaches, after the grace period |
 | `fdl withdraw <remote> <version>…` | Remove versions that hold data that must not be published |
 | `fdl assets <folder>` | List files for an asset column (path, sha256, bytes, media type) |
 
-A push that is not built on what `main` holds now is refused: check out again and redo the work.
+A push that is not built on what `main` holds now is refused: check out again and redo the work, or work on a branch and merge it.
 
 ## Python
 

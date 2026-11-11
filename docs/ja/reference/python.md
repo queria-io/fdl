@@ -74,7 +74,22 @@ repo.head(store, name="HEAD") -> Version | None
 repo.is_ancestor(store, ancestor_id, descendant) -> bool
 ```
 
-最初の親をたどる、ref が指すバージョンを読む、あるバージョンが別のバージョンより前にあるかを確かめる、の 3 つです。
+最初の親をたどる、ref が指すバージョンを読む、あるバージョンが別のバージョンより前にあるかをすべての親をたどって確認する、の 3 つです。
+
+```python
+repo.merge_bases(store, ours, theirs) -> list[Version]
+repo.forward(store, ref, version) -> None
+```
+
+`merge_bases` は、2 つのバージョンの共通の祖先のうち、ほかの共通の祖先の祖先でないものを返します。マージにはちょうど 1 つ要ります。`forward` は、リポジトリにすでにあり、いまの位置の子孫であるバージョンへブランチを動かします。基点がブランチ自身のバージョンであるマージ向けです。
+
+```python
+merge.values(base, ours, theirs) -> tuple[value, list[str]]
+merge.primary_keys(base, ours, theirs) -> dict[tuple[str, str], list[str]]
+merge.tables(working, base, theirs, *, keys, repository_data, data_path=None, setup=(), write=True) -> Plan
+```
+
+`fdl merge` の部品です。`values` は `dataset.json` か `tree.json` をキーごとにマージし、衝突を返します。`merge.MISSING` は、そのバージョンに無い値を表します。`primary_keys` は、行をマージできるテーブルを返します。`tables` は、固めたカタログ `theirs` が `base` から変えた内容を、作業カタログに 1 つのスナップショットで書きます。衝突があるときは何も書きません。`Plan` は衝突と取り込んだものを持ちます。マージのバージョンは、`repo.commit` と `repo.record` に `merged=<theirs>` を渡して作ります。
 
 ```python
 repo.readable(store, name="HEAD") -> Version
@@ -96,6 +111,14 @@ repo.tags(store) -> dict[str, str]
 ```
 
 バージョンに `refs/tags/<name>` を作る、消す、タグと指すバージョンを並べる、の 3 つです。タグは動かしません。同じ名前のタグが別のバージョンにあれば、`tag` は `RepoError` を出します。
+
+```python
+repo.branch(store, name, version_id) -> None
+repo.delete_branch(store, name) -> None
+repo.branches(store) -> dict[str, str]
+```
+
+`refs/heads/<name>` に対して同じことをします。`delete_branch` は `HEAD` が指すブランチを残します。
 
 ```python
 repo.update_refs_index(store) -> None

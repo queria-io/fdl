@@ -74,7 +74,22 @@ repo.head(store, name="HEAD") -> Version | None
 repo.is_ancestor(store, ancestor_id, descendant) -> bool
 ```
 
-Walk the first-parent line, read the version a ref holds, and check whether a version is behind another.
+Walk the first-parent line, read the version a ref holds, and check whether a version is behind another, through every parent.
+
+```python
+repo.merge_bases(store, ours, theirs) -> list[Version]
+repo.forward(store, ref, version) -> None
+```
+
+The common ancestors of two versions that no other common ancestor descends from: a merge needs exactly one. `forward` moves a branch to a version already in the repository that descends from where it is, for a merge whose base is the branch's own version.
+
+```python
+merge.values(base, ours, theirs) -> tuple[value, list[str]]
+merge.primary_keys(base, ours, theirs) -> dict[tuple[str, str], list[str]]
+merge.tables(working, base, theirs, *, keys, repository_data, data_path=None, setup=(), write=True) -> Plan
+```
+
+The pieces of `fdl merge`. `values` merges `dataset.json` or `tree.json` key by key and returns the conflicts; `merge.MISSING` stands for a value a version does not hold. `primary_keys` gives the tables whose rows may be merged. `tables` writes into the working catalog, in one snapshot, what the frozen catalog `theirs` changed since `base`, or nothing when there is a conflict; `Plan` lists the conflicts and what came over. `repo.commit` and `repo.record` take `merged=<theirs>` to make the merge version.
 
 ```python
 repo.readable(store, name="HEAD") -> Version
@@ -96,6 +111,14 @@ repo.tags(store) -> dict[str, str]
 ```
 
 Create `refs/tags/<name>` at a version, delete it, or list the tags with the versions they hold. A tag is never moved: `tag` raises `RepoError` when the name is already there at another version.
+
+```python
+repo.branch(store, name, version_id) -> None
+repo.delete_branch(store, name) -> None
+repo.branches(store) -> dict[str, str]
+```
+
+The same for `refs/heads/<name>`. `delete_branch` keeps the branch `HEAD` names.
 
 ```python
 repo.update_refs_index(store) -> None

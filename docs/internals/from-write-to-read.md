@@ -30,7 +30,7 @@ Three things differ on purpose:
 
 - A version's ID is a UUIDv7, not a hash of its content. Two DuckDB releases can write the same catalog as different bytes, so a content hash would change with the tool. The sha256 in `version.json` checks the content instead
 - There are no packfiles. Each file is its own object in the store, so a reader fetches only the parts of a Parquet file it needs
-- There is no merge. A version has one parent, and a writer whose push is refused builds again on the newer version
+- A merge matches rows by the primary key that `dataset.json` declares, not by lines or files. Two branches that changed the same table without one are a conflict (see [Merging](/spec/writing#merging))
 
 ## Writing a version
 
