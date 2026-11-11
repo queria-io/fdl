@@ -142,6 +142,7 @@ def commit(
     allow_empty: bool = True,
     working_data: str | None = None,
     parent_dataset: dict | None = None,
+    merged: Version | None = None,
 ) -> Version:
     """Freeze the working catalog into a version under ``out_dir/<ID>/``.
 
@@ -164,6 +165,8 @@ def commit(
 
     ``parent_dataset`` is the parent's `dataset.json`, which the version's
     ``diff`` compares descriptions with (see `record`).
+
+    ``merged`` is the version a merge brought in: the second parent.
     """
     Path(out_dir).mkdir(parents=True, exist_ok=True)
     frozen = Path(out_dir) / f".freezing-{new_id()}.duckdb"
@@ -205,6 +208,7 @@ def commit(
             dataset=dataset,
             tree=tree,
             parent_dataset=parent_dataset,
+            merged=merged,
         )
     finally:
         frozen.unlink(missing_ok=True)
@@ -336,6 +340,7 @@ def record(
     dataset: dict | None = None,
     tree: list[dict] | None = None,
     parent_dataset: dict | None = None,
+    merged: Version | None = None,
 ) -> Version:
     """Make a version out of a catalog that is already frozen.
 
@@ -345,7 +350,11 @@ def record(
     The version's ``diff`` compares the catalog at the parent's snapshot with
     the frozen one. Its descriptions are compared only when both ``dataset``
     and ``parent_dataset`` (the parent's `dataset.json`) are given.
+
+    ``merged`` is the second parent of a merge version; ``seq`` follows the first.
     """
+    if merged is not None and parent is None:
+        raise RepoError("a merge version needs the version of its own branch as first parent")
     if not author.get("name"):
         raise RepoError("a version needs an author name")
     version_id = new_id()
@@ -385,7 +394,7 @@ def record(
         version = Version(
             id=version_id,
             seq=parent.seq + 1 if parent else 1,
-            parents=(parent.id,) if parent else (),
+            parents=(parent.id, *([merged.id] if merged else [])) if parent else (),
             created_at=utc_now(),
             author=dict(author),
             message=message,
@@ -456,7 +465,7 @@ def push(
         # have stopped before rewriting refs.json.
         update_refs_index(store)
         return
-    _refuse_unless_fast_forward(current_ref, version)
+    _refuse_unless_fast_forward(store, current_ref, version)
 
     frozen = Path(local) / layout.CATALOG
     if local_data is not None:
@@ -608,23 +617,46 @@ def log(store: Store, name: str = layout.HEAD) -> Iterator[Version]:
 
 
 def is_ancestor(store: Store, ancestor_id: str, descendant: Version) -> bool:
-    """Whether ``ancestor_id`` is ``descendant`` or behind it.
+    """Whether ``ancestor_id`` is ``descendant`` or behind it, through every parent.
 
-    Stops once ``seq`` falls below the ancestor's, so a check costs the
-    distance between the two rather than the whole history.
+    Breadth first, so a parent is found in one step. ``seq`` is no bound: a
+    merge's ``seq`` follows its first parent, so it can be lower than that of
+    the version it merged.
     """
-    target = read_version(store, ancestor_id)
     pending = [descendant]
     seen: set[str] = set()
     while pending:
-        current = pending.pop()
-        if current.id == ancestor_id:
+        if any(current.id == ancestor_id for current in pending):
             return True
-        if current.id in seen or current.seq <= target.seq:
-            continue
-        seen.add(current.id)
-        pending.extend(read_version(store, parent) for parent in current.parents)
+        seen.update(current.id for current in pending)
+        parents = dict.fromkeys(parent for current in pending for parent in current.parents if parent not in seen)
+        pending = [read_version(store, parent) for parent in parents]
     return False
+
+
+def ancestors(store: Store, version: Version) -> dict[str, Version]:
+    """``version`` and every version behind it, through every parent, by ID."""
+    found: dict[str, Version] = {}
+    pending = [version]
+    while pending:
+        current = pending.pop()
+        if current.id in found:
+            continue
+        found[current.id] = current
+        pending.extend(read_version(store, parent) for parent in current.parents if parent not in found)
+    return found
+
+
+def merge_bases(store: Store, ours: Version, theirs: Version) -> list[Version]:
+    """The common ancestors of ``ours`` and ``theirs`` that no other common ancestor descends from.
+
+    Every parent of a common ancestor is a common ancestor too, so those that
+    are no common ancestor's parent are the ones asked for.
+    """
+    mine, other = ancestors(store, ours), ancestors(store, theirs)
+    common = {version_id: mine[version_id] for version_id in mine.keys() & other.keys()}
+    behind = {parent for version in common.values() for parent in version.parents}
+    return sorted((version for version_id, version in common.items() if version_id not in behind), key=lambda v: v.id)
 
 
 def is_expired(store: Store, version_id: str) -> bool:
@@ -984,7 +1016,7 @@ def _instant(value: str) -> dt.datetime:
     return dt.datetime.fromisoformat(value.replace("Z", "+00:00"))
 
 
-def _refuse_unless_fast_forward(current: refs.Ref | None, version: Version) -> None:
+def _refuse_unless_fast_forward(store: Store, current: refs.Ref | None, version: Version) -> None:
     if current is None:
         if version.parents:
             raise NotFastForward(
@@ -992,11 +1024,62 @@ def _refuse_unless_fast_forward(current: refs.Ref | None, version: Version) -> N
                 f"has no version yet"
             )
         return
-    if current.target not in version.parents:
+    if not is_ancestor(store, current.target, version):
         raise NotFastForward(
             f"{current.name} is at {current.target}, which {version.id} is not "
             f"built on. Pull and build again."
         )
+
+
+def forward(store: Store, ref: str, version: Version) -> None:
+    """Move a branch to a version already in the repository that descends from where it is.
+
+    For a merge whose base is the branch's own version: no new version is
+    made, the branch moves to the other one.
+    """
+    current = refs.read(store, layout.check_ref(ref))
+    if current is not None and current.target == version.id:
+        update_refs_index(store)
+        return
+    _refuse_unless_fast_forward(store, current, version)
+    read_version(store, version.id)
+    try:
+        refs.write(store, ref, version.id, expected=current)
+    except refs.RefConflict as exc:
+        now = refs.read(store, ref)
+        if now is None or now.target != version.id:
+            raise NotFastForward(f"{ref} moved meanwhile. Pull and merge again.") from exc
+    update_refs_index(store)
+
+
+def branch(store: Store, name: str, version_id: str) -> None:
+    """Create ``refs/heads/<name>`` at a version. A branch that is there is not moved."""
+    ref = layout.check_ref(f"refs/heads/{name}")
+    read_version(store, version_id)
+    if is_expired(store, version_id):
+        raise RepoError(f"{version_id} is out of retention, so a branch cannot start there")
+    try:
+        refs.write(store, ref, version_id, expected=None)
+    except refs.RefConflict as exc:
+        now = refs.read(store, ref)
+        if now is None or now.target != version_id:
+            raise RepoError(f"{ref} is already there, at {now.target if now else '?'}") from exc
+    update_refs_index(store)
+
+
+def delete_branch(store: Store, name: str) -> None:
+    """Delete ``refs/heads/<name>``. The branch HEAD names is kept."""
+    ref = layout.check_ref(f"refs/heads/{name}")
+    if refs.resolve(store, layout.HEAD)[0] == ref:
+        raise RepoError(f"HEAD names {ref}, so it is kept")
+    refs.delete(store, ref)
+    update_refs_index(store)
+
+
+def branches(store: Store) -> dict[str, str]:
+    """Each branch's name (after ``refs/heads/``) and the version it holds."""
+    prefix = "refs/heads/"
+    return {name[len(prefix) :]: target for name, target in refs.listed(store).items() if name.startswith(prefix)}
 
 
 def _missing_data_files(store: Store, config: Config, frozen: Path) -> list[str]:

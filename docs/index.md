@@ -30,7 +30,7 @@ FDL is meant for data that is published, read by many and written by few:
 - a dataset maintained by a team, where a change has to be reviewed before readers see it
 - copies of the same dataset on several hosts (mirrors)
 
-It is not a transactional database. Writers do not merge rows. Two people who push at once are settled by the store: the first push wins and the second is refused and has to build again on the new version.
+It is not a transactional database. Two people who push at once are settled by the store: the first push wins and the second is refused. The second builds again on the new version, or works on a branch of its own and merges it, rows matched by the table's primary key.
 
 ## FDL and Git
 
@@ -47,8 +47,9 @@ FDL keeps a catalog's versions the way Git keeps a project's commits. If you kno
 | `git init --bare` | `fdl init` |
 | `git commit`, `git push` | `fdl commit`, `fdl push` |
 | `git log`, `git tag` | `fdl log`, `fdl tag` |
+| `git branch`, `git merge` | `fdl branch`, `fdl merge` |
 
-FDL does not merge, so a version has one parent. [From write to read](/internals/from-write-to-read) follows the files through a commit, step by step.
+A version has one parent, or two when it merges another branch. [From write to read](/internals/from-write-to-read) follows the files through a commit, step by step.
 
 FDL is in beta. [Stability](/stability) says what stays the same across releases.
 

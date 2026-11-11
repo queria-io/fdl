@@ -56,7 +56,7 @@ Refs are the only files in a repository that change. Everything else is written 
 
 ## Moving a branch
 
-A branch moves forward only. A new version can become `main` when its `parents` include the version `main` holds now. This is a fast-forward in Git's terms.
+A branch moves forward only. A new version can become `main` when it descends from the version `main` holds now: that version is reached by following `parents`. This is a fast-forward in Git's terms.
 
 ```
 main → A
@@ -64,9 +64,20 @@ main → A
            Bob checked out A too, commits C (parent A), pushes: refused
 ```
 
-Bob's push is refused because C is not built on B. If it were accepted, B would vanish from the history of `main` with no one deciding that. Bob checks out B and makes his change again.
+Bob's push is refused because C is not built on B. If it were accepted, B would vanish from the history of `main` with no one deciding that. Bob checks out B and makes his change again. Redoing the change on the new version is usually a matter of running the same SQL again.
 
-FDL does not merge rows. Merging two DuckLake catalogs would mean deciding which row wins when both sides changed it, and DuckLake gives tables no identity across catalogs that would make that safe. Redoing the change on the new version is usually a matter of running the same SQL again.
+## Merging
+
+Work that takes longer goes on a branch of its own, and is merged into `main` when it is ready:
+
+```
+main → A → B
+        \
+feature   C
+           fdl merge refs/heads/feature on main makes M (parents B, C): main → M
+```
+
+The merge compares each table in three versions: B, C and their common ancestor A. A table only one branch changed comes over as that branch holds it. When both changed the same table, the rows are matched by the `primary_key` both declare in `dataset.json`, and a row only one branch changed comes over. A row both changed differently, or a table without a primary key that both changed, is a conflict, and then no version is made. A row number added for the merge is not a primary key: it does not say which rows are the same row. See [Merging](/spec/writing#merging).
 
 Moving a branch back, to undo a version, is allowed only when asked for explicitly. The version that was undone stays in the repository and in the history.
 

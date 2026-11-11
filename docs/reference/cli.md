@@ -75,18 +75,18 @@ Refused when:
 fdl push <working.sqlite>
 ```
 
-Uploads the version `fdl commit` made and moves the branch to it on condition (see [Order of writes](/spec/writing#order-of-writes)). It prints the branch, the version ID and its `seq`. With nothing committed, it prints `Nothing to push`.
+Uploads the version `fdl commit` made and moves the branch to it on condition (see [Order of writes](/spec/writing#order-of-writes)). It prints the branch, the version ID and its `seq`. After a fast-forward `fdl merge`, it moves the branch to the version merged, uploading nothing. With nothing committed, it prints `Nothing to push`.
 
 Data files the working catalog wrote into the repository are there before the push, but no version names them until it. Files never pushed are deleted after the grace period.
 
 Refused when:
 
-- the branch has moved since the checkout. Check out again and redo the work
+- the branch has moved since the checkout, so the version does not descend from what the branch holds now. Check out again and redo the work
 - a data file the catalog names is not in the repository
 - an asset column points at a file that is neither in the repository nor in `--assets`
+- a data file is recorded with an absolute path outside the data directory
 
 A refused push leaves the committed version in place, so it can be sent again once the cause is fixed.
-- a data file is recorded with an absolute path outside the data directory
 
 ## fdl assets
 
@@ -110,7 +110,7 @@ Versions from the one the ref holds back to the first, by first parent. Each sho
 fdl status <working.sqlite> [--json]
 ```
 
-What the working catalog changed since it was checked out, in the same kinds as `fdl diff`. `Nothing to commit` when it holds what the version it came from holds. The words of `dataset.json` are not compared until the commit. When a version is committed and not pushed yet, it is named first and the changes are counted from it; `--json` gives its ID as `pending`.
+What the working catalog changed since it was checked out, in the same kinds as `fdl diff`. `Nothing to commit` when it holds what the version it came from holds. The words of `dataset.json` are not compared until the commit. When a version is committed and not pushed yet, it is named first and the changes are counted from it; `--json` gives its ID as `pending`. After a fast-forward `fdl merge`, it says that `fdl push` will move the branch.
 
 ## fdl diff
 
@@ -160,6 +160,16 @@ fdl tag <remote> <name> --delete
 
 `<version>` is a version ID or a ref such as `refs/heads/main`. A tag is created once and never moved: tagging a name that is already there at another version is refused. A version past retention cannot be tagged. Creating or deleting a tag rewrites `refs.json`, as `fdl push` does after moving a branch.
 
+## fdl branch
+
+```bash
+fdl branch <remote>                       # list the branches
+fdl branch <remote> <name> [<version>]    # start a branch at a version (default: the one HEAD holds)
+fdl branch <remote> <name> --delete
+```
+
+`<version>` is a version ID or a ref such as `refs/heads/main`. Creating a branch that is already there at another version is refused; at the same version, nothing changes. A version past retention cannot start a branch. The branch `HEAD` names cannot be deleted. Check a branch out with `fdl checkout --ref refs/heads/<name>`. Creating or deleting a branch rewrites `refs.json`.
+
 ## fdl revert
 
 ```bash
@@ -170,6 +180,33 @@ fdl push <working.sqlite>
 Writes the working catalog back to what `<version>` held (its tables and views) and commits a new version with `<version>`'s `dataset.json` and `tree.json`, as `fdl commit` does. Changes in the working catalog not committed are lost. `fdl push` then moves the branch forward, so the versions in between stay in its history and can still be read. A table unchanged since `<version>` keeps its data files; any other is written again from its rows there. `<version>` is a version ID or a ref, and must be in the history of the version the working catalog was checked out at, and in retention. When that version already holds what `<version>` held, nothing is made.
 
 To take out data that must not be published, use `fdl withdraw`: a revert leaves the versions in between, and their data files, as they are.
+
+## fdl merge
+
+```bash
+fdl merge <theirs> <working.sqlite> --author <name> [-m <message>]
+fdl push <working.sqlite>
+```
+
+Merges another branch into the branch the working catalog was checked out from (see [Merging](/spec/writing#merging)). `<theirs>` is a ref such as `refs/heads/feature`, or a version ID. The base is the common ancestor of the two versions.
+
+- When `<theirs>` is already in the history of the working catalog's version, it prints `Already up to date` and makes nothing
+- When the working catalog's version is in the history of `<theirs>`, the working catalog is checked out at `<theirs>` and no version is made. `fdl push` then moves the branch there (a fast-forward)
+- Otherwise it writes the merge into the working catalog and commits a merge version, whose `parents` are the working catalog's version and `<theirs>`. `fdl push` uploads it as it does a commit. The message defaults to `Merge <theirs>`
+
+A table only `<theirs>` changed, added or dropped since the base comes over as `<theirs>` holds it, written to new data files. Rows of a table both sides changed are merged by the `primary_key` both declare in `dataset.json`: a row only `<theirs>` added, changed or deleted takes that change. `dataset.json` and `tree.json` are merged key by key; the row counts, types and nulls are written again from the merged catalog. The command lists the tables that came over and how many rows came from `<theirs>`.
+
+When anything conflicts, the command lists each conflict, by table and, for rows, by the values of the primary key, exits with 1 and changes nothing. A conflict is:
+
+- a table both sides changed differently, without a primary key both declare (a view is compared by its SQL, as such a table)
+- a table one side dropped and the other changed
+- a table both sides changed whose columns or types differ between the two, or changed on both sides
+- a row both sides changed differently, or a primary key that holds `NULL` or repeats
+- a value of `dataset.json` or `tree.json` both sides changed differently
+
+Change one of the branches so that the two no longer conflict, and merge again.
+
+Refused when the working catalog has changes not committed, when a version is committed and not pushed, when the two versions have more than one common ancestor that no other descends from, and when the base or `<theirs>` is past retention.
 
 ## fdl withdraw
 
