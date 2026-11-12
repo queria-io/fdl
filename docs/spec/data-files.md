@@ -37,6 +37,17 @@ A version's catalog names data files at every snapshot it keeps, not only at `du
 
 DuckLake's own cleanup (`ducklake_cleanup_old_files`, `ducklake_expire_snapshots`) sees only one catalog, so it must not be used to delete from a repository. Deleting is for a process that sees the whole repository.
 
+## Deleting safely
+
+A deleted shared object cannot be brought back, and every version that reaches it can no longer be read. A process that deletes shared objects follows these rules:
+
+1. Delete nothing it cannot account for. When it cannot tell what a live version reaches, because a `version.json`, `files.json` or `tree.json` cannot be read or parsed, or `files.json` has no `named` and the catalog cannot be opened, it deletes none of that kind: no data file when it cannot tell which data files the version reaches, no asset when it cannot tell which assets. Stopping without deleting anything also meets this. An object kept too long only costs storage; an object deleted too early breaks a version
+2. Read the versions again right before deleting. A writer may make a version while the process decides. Objects a version it did not see when deciding reaches are kept
+3. Delete the objects it decided on, one key at a time. It never deletes by prefix or a whole directory
+4. Implementations of this page agree on the cases in [Collection cases](/spec/collection-cases): for each repository there, the objects to delete are the same
+
+A process may move an object to a place readers never read from, such as a separate bucket, and delete it there after a set time, so that a mistake can be undone. A writer does not count an object there as present.
+
 ## Past retention
 
 A version is taken out of retention in this order:
