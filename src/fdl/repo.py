@@ -462,7 +462,10 @@ def push(
     current_ref = refs.read(store, layout.check_ref(ref))
     if current_ref is not None and current_ref.target == version.id:
         # This push again, after a run whose answer was lost. That run may
-        # have stopped before rewriting refs.json.
+        # have stopped before rewriting refs.json, and a host that does its
+        # own work when a ref moves may have stopped after moving it.
+        if move_ref:
+            _write_ref_again(store, current_ref)
         update_refs_index(store)
         return
     _refuse_unless_fast_forward(store, current_ref, version)
@@ -490,6 +493,20 @@ def push(
         if now is None or now.target != version.id:
             raise NotFastForward(f"{ref} moved during the push. Pull and build again.") from exc
     update_refs_index(store)
+
+
+def _write_ref_again(store: Store, ref: refs.Ref) -> None:
+    """Write ``ref`` to the version it holds, so a host finishes the move.
+
+    A ref that moved meanwhile was moved by a later push, which did the
+    host's work for its own version: nothing is left to finish.
+    """
+    if not ref.etag:
+        return
+    try:
+        refs.write(store, ref.name, ref.target, expected=ref)
+    except refs.RefConflict:
+        pass
 
 
 def tag(store: Store, name: str, version_id: str) -> None:
