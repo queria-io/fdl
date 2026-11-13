@@ -153,6 +153,21 @@ def test_a_parent_without_columns_in_its_files_keeps_its_profile(repository, mon
     monkeypatch.setattr(profiles, "build", spy)
     commit(working, "-m", "again", "--author", "t")
     assert built == ["other"]
+    assert profile_of(store, "towns")["rows"] == 1
+
+
+def test_a_column_dropped_and_added_again_is_profiled_again(repository) -> None:
+    store, working = repository
+    write(working, store, "CREATE TABLE lake.main.towns AS SELECT i AS id, i AS c FROM range(5) t(i)")
+    write(working, store, "CREATE TABLE lake.main.other AS SELECT 1 AS id")
+    commit(working, "-m", "m", "--author", "t")
+    # The same name and type, and the same data files, but a new column with no values.
+    write(working, store, "ALTER TABLE lake.main.towns DROP COLUMN c")
+    write(working, store, "ALTER TABLE lake.main.towns ADD COLUMN c BIGINT")
+    write(working, store, "INSERT INTO lake.main.other VALUES (2)")
+    commit(working, "-m", "again", "--author", "t")
+    c = {column["name"]: column for column in profile_of(store)["columns"]}["c"]
+    assert c.get("max") is None
 
 
 def test_expiry_deletes_the_profiles(repository) -> None:

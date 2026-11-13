@@ -568,10 +568,12 @@ def write_profiles(
         key = f"{table['schema']}.{table['name']}"
         relative = profiles.path(table["schema"], table["name"])
         previous = None
-        # Compare only the data files: profiles.reusable checks the columns, and a
-        # parent written before files.json listed the columns would never match.
-        unchanged = files_before.get(key, {}).get("files") == files_now.get(key, {}).get("files")
-        if parent is not None and key in files_before and unchanged:
+        before, now = files_before.get(key), files_now.get(key, {})
+        if before is not None and "columns" not in before:
+            # A parent written before files.json listed the columns: compare the
+            # rest, and leave the names and types to profiles.reusable.
+            now = {name: value for name, value in now.items() if name != "columns"}
+        if parent is not None and before is not None and before == now:
             try:
                 previous = store.get(layout.version_dir(parent.id) + relative)
             except Exception as exc:  # noqa: BLE001
