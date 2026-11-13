@@ -162,7 +162,12 @@ description: バージョン ID、version.json の項目、固めたカタログ
         }
       ]
     }
-  }
+  },
+  "named": [
+    "main/population/ducklake-019a3c4e-….parquet",
+    "main/population/ducklake-019a3c4f-…-delete.parquet",
+    "main/population/ducklake-0199f2a1-….parquet"
+  ]
 }
 ```
 
@@ -172,6 +177,7 @@ description: バージョン ID、version.json の項目、固めたカタログ
 - `deletes` は、そのデータファイルから行を消したときの削除ファイルです
 - `columns` は、そのスナップショットでの表の列をカタログの順に並べたものです。`id` は DuckLake の列 ID で、DuckLake はこれをどの Parquet データファイルにも列の `field_id` として書きます。列の名前を変えても `id` は変わりません。`type` は DuckLake の型名で、`nullable` は `NOT NULL` の列で `false` になります。`default` は、列を追加する前に書いたデータファイルの行がその列に持つ値を文字列にしたもので、NULL でないときだけ書きます。`struct` はフィールドを、`list` は `element` を、`map` は `key` と `value` を `children` に持ちます。fdl-cli 0.24 より前の書き手は `columns` を書きません
 - `renamed_columns` は、その表の列の名前を変えたことがあるときに `true` にします。名前を変える前に書いたデータファイルは、古い名前のままです
+- `named` には、カタログがどのスナップショットででも名指しするデータファイルと削除ファイルを、`data_dir` からの相対パスですべて入れます。これがそのバージョンから到達するデータファイルです（[データファイル](/ja/spec/data-files)）。カタログが古いスナップショットを残しているときは、`tables` より多くなります
 
 DuckLake を使わずに Parquet ファイルを読む読み手は、`deletes` を持つファイルがある表や、`renamed_columns` が `true` の表を読んではいけません。DuckLake と同じように削除と改名を当てはめる場合は読んでかまいません。当てはめずに読むと、消した行が返ったり、名前を変えた列が欠けたりします。`columns` の `id` を使い、データファイルの列を `field_id` で探す読み手は、名前を変えた列も DuckLake と同じように読めます。
 

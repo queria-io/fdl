@@ -422,9 +422,9 @@ def record(
 
 
 def _write_files_index(target: Path, frozen: Path, snapshot_id: int) -> File:
-    """Write `files.json`: each table's files at the frozen snapshot, from the catalog."""
+    """Write `files.json`: each table's files at the frozen snapshot, and every file the catalog names."""
     written = target / layout.FILES
-    index = {"tables": catalog.table_files(frozen, snapshot_id)}
+    index = {"tables": catalog.table_files(frozen, snapshot_id), "named": catalog.data_files(frozen)}
     written.write_bytes((json.dumps(index, ensure_ascii=False, indent=2) + "\n").encode())
     return File(path=layout.FILES, bytes=written.stat().st_size, sha256=_sha256(written))
 
@@ -810,19 +810,23 @@ def plan_withdrawal(store: Store, version_ids: Iterable[str], *, setup: Iterable
 
 
 def _reached_by(store: Store, config: Config, version: Version, tmp: Path, setup: list[str]) -> set[str]:
-    """The shared objects a live version reaches, as store keys."""
-    # files.json lists what the version reads, without its catalog.
-    indexed = _indexed_files(store, version)
+    """The shared objects a live version reaches, as store keys.
+
+    A version reaches every data file its catalog names, at any snapshot the
+    catalog keeps, not only those it reads at its own snapshot.
+    """
+    # files.json names them without the catalog, when it holds `named`.
+    named = _named_files(store, version)
     local = None
-    if indexed is None or _asset_columns(store, version):
+    if named is None or _asset_columns(store, version):
         local = _fetch_catalog(store, version.id, tmp)
     reached: set[str] = set()
-    if indexed is not None:
-        reached.update(config.data_dir + key for key in indexed)
+    if named is not None:
+        reached.update(config.data_dir + key for key in named)
     elif local is not None:
-        reached.update(config.data_dir + key for key in _read_files(local, version))
+        reached.update(config.data_dir + key for key in catalog.data_files(local))
     else:
-        raise RepoError(f"{version.id} is live but has neither files.json nor a catalog to say what it reads")
+        raise RepoError(f"{version.id} is live but has neither files.json with `named` nor a catalog to say what it reaches")
     reached.update(_reached_assets(store, version, local, setup))
     if local is not None:
         local.unlink()
@@ -961,8 +965,12 @@ def _fetch_catalog(store: Store, version_id: str, tmp: Path) -> Path | None:
     return local
 
 
-def _indexed_files(store: Store, version: Version) -> set[str] | None:
-    """What the version's `files.json` says it reads, or ``None`` without one."""
+def _named_files(store: Store, version: Version) -> set[str] | None:
+    """Every data file the version's catalog names, from `named` in its `files.json`.
+
+    ``None`` without a `files.json`, or with one written before `named`: its
+    `tables` hold only the files at the version's snapshot.
+    """
     if version.files is None:
         return None
     try:
@@ -971,17 +979,8 @@ def _indexed_files(store: Store, version: Version) -> set[str] | None:
         if is_missing(exc):
             return None
         raise
-    return _paths_of(index["tables"].values())
-
-
-def _read_files(local: Path, version: Version) -> set[str]:
-    """The data and delete files a reader of the version reads, at its snapshot."""
-    return _paths_of(catalog.table_files(local, version.ducklake.snapshot_id).values())
-
-
-def _paths_of(tables: Iterable[dict]) -> set[str]:
-    files = [file for table in tables for file in table["files"]]
-    return {file["path"] for file in files} | {file["deletes"]["path"] for file in files if "deletes" in file}
+    named = index.get("named")
+    return None if named is None else set(named)
 
 
 def prune(

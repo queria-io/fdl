@@ -403,7 +403,8 @@ def test_withdraw_removes_the_data_from_live_versions(tmp_path: Path, remote) ->
     with pytest.raises(repo.RepoError, match="refs/heads/main"):
         repo.plan_withdrawal(remote, [first.id, second.id])
 
-    build(tmp_path / "work.sqlite", remote, "DROP TABLE lake.main.towns")
+    # A catalog reaches every file it names: the clean one keeps no snapshot with the data.
+    build(tmp_path / "work.sqlite", remote, "DROP TABLE lake.main.towns; CALL ducklake_expire_snapshots('lake', older_than => now())")
     clean = commit(tmp_path, remote, parent=second)
     repo.push(remote, tmp_path / "local" / clean.id, clean)
     kept = set(remote.list("data/")) - leaked
@@ -424,7 +425,11 @@ def test_withdraw_removes_the_data_from_live_versions(tmp_path: Path, remote) ->
 def test_withdrawing_a_version_past_retention_deletes_unread_files_at_once(tmp_path: Path, remote) -> None:
     first = pushed(tmp_path, remote)
     leaked = set(remote.list("data/"))
-    build(tmp_path / "work.sqlite", remote, "DROP TABLE lake.main.towns; CREATE TABLE lake.main.kept AS SELECT 1 AS id")
+    build(
+        tmp_path / "work.sqlite",
+        remote,
+        "DROP TABLE lake.main.towns; CREATE TABLE lake.main.kept AS SELECT 1 AS id; CALL ducklake_expire_snapshots('lake', older_than => now())",
+    )
     second = commit(tmp_path, remote, parent=first)
     repo.push(remote, tmp_path / "local" / second.id, second)
     kept = set(remote.list("data/")) - leaked
@@ -574,6 +579,41 @@ def test_collection_leaves_files_that_are_not_shared_objects(tmp_path: Path, rem
     later = dt.datetime.now(dt.timezone.utc) + dt.timedelta(days=1)
     plan = repo.plan_collection(remote, grace=dt.timedelta(0), now=later)
     assert "data/README.txt" not in plan.deleted and "assets/notes.txt" not in plan.deleted
+
+
+def test_collection_keeps_files_only_an_older_snapshot_of_the_catalog_names(tmp_path: Path, remote) -> None:
+    import datetime as dt
+
+    # The working catalog keeps the table's first snapshot, so the catalog names
+    # its first data file though the version reads only the second.
+    build(tmp_path / "work.sqlite", remote, "CREATE TABLE lake.main.towns AS SELECT 1 AS id")
+    build(tmp_path / "work.sqlite", remote, "CREATE OR REPLACE TABLE lake.main.towns AS SELECT 2 AS id")
+    version = commit(tmp_path, remote)
+    repo.push(remote, tmp_path / "local" / version.id, version)
+    index = json.loads(remote.get(layout.version_dir(version.id) + layout.FILES))
+    read = {file["path"] for table in index["tables"].values() for file in table["files"]}
+    assert set(index["named"]) > read
+
+    later = dt.datetime.now(dt.timezone.utc) + dt.timedelta(days=1)
+    plan = repo.plan_collection(remote, grace=dt.timedelta(0), now=later)
+    assert not {"data/" + key for key in index["named"]} & set(plan.deleted)
+
+
+def test_collection_reads_the_catalog_for_a_files_json_without_named(tmp_path: Path, remote) -> None:
+    import datetime as dt
+
+    build(tmp_path / "work.sqlite", remote, "CREATE TABLE lake.main.towns AS SELECT 1 AS id")
+    build(tmp_path / "work.sqlite", remote, "CREATE OR REPLACE TABLE lake.main.towns AS SELECT 2 AS id")
+    version = commit(tmp_path, remote)
+    repo.push(remote, tmp_path / "local" / version.id, version)
+    key = layout.version_dir(version.id) + layout.FILES
+    index = json.loads(remote.get(key))
+    # As written before `named`. The record's sha256 no longer matches, which collect does not check.
+    remote.put(key, json.dumps({"tables": index["tables"]}).encode())
+
+    later = dt.datetime.now(dt.timezone.utc) + dt.timedelta(days=1)
+    plan = repo.plan_collection(remote, grace=dt.timedelta(0), now=later)
+    assert not {"data/" + key for key in index["named"]} & set(plan.deleted)
 
 
 def test_a_push_sent_again_rewrites_refs_json(tmp_path: Path, remote) -> None:

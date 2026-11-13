@@ -203,7 +203,14 @@ def test_withdraw_says_what_it_would_do_until_told_yes(tmp_path: Path) -> None:
     write(working, store, "CREATE TABLE lake.main.towns AS SELECT 1 AS id")
     commit(working, "-m", "leak", "--author", "tester")
     leak = repo.head(store)
-    write(working, store, "DROP TABLE lake.main.towns; CREATE TABLE lake.main.ok AS SELECT 1 AS id")
+    # The clean version's catalog must not keep the snapshot that held the data:
+    # a catalog reaches every file it names, at any snapshot.
+    write(
+        working,
+        store,
+        "DROP TABLE lake.main.towns; CREATE TABLE lake.main.ok AS SELECT 1 AS id; "
+        "CALL ducklake_expire_snapshots('lake', older_than => now())",
+    )
     commit(working, "-m", "clean", "--author", "tester")
 
     assert "Nothing was changed" in run("withdraw", remote, leak.id)
@@ -419,7 +426,14 @@ def test_gc_deletes_what_no_live_version_reaches(tmp_path: Path) -> None:
     write(working, store, "CREATE TABLE lake.main.towns AS SELECT 1 AS id")
     commit(working, "-m", "first", "--author", "t")
     first_files = set(store.list(layout.DEFAULT_DATA_DIR))
-    write(working, store, "CREATE OR REPLACE TABLE lake.main.towns AS SELECT 2 AS id")
+    # The second catalog drops the first snapshot, so it no longer names the first file.
+    # A catalog that kept it would reach it, and gc would keep it.
+    write(
+        working,
+        store,
+        "CREATE OR REPLACE TABLE lake.main.towns AS SELECT 2 AS id; "
+        "CALL ducklake_expire_snapshots('lake', older_than => now())",
+    )
     commit(working, "-m", "second", "--author", "t")
     # Written and never pushed.
     write(working, store, "CREATE OR REPLACE TABLE lake.main.towns AS SELECT 3 AS id")
