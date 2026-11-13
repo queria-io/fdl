@@ -1,6 +1,32 @@
 # CHANGELOG
 
 
+## v0.24.1 (2026-11-13)
+
+### Bug Fixes
+
+- A version reaches every data file its catalog names
+  ([#52](https://github.com/queria-io/fdl/pull/52),
+  [`88a2bbc`](https://github.com/queria-io/fdl/commit/88a2bbcfa40c71742642eaf61e394fadad781f98))
+
+* fix: a version reaches every data file its catalog names
+
+The spec says a version reaches a data file when its catalog names it, and fdl push checks every
+  such file. gc counted only the files in files.json's tables, which are those at the version's
+  snapshot, and so deleted files that older snapshots in a live catalog still name. The next push of
+  that catalog was refused for missing files.
+
+files.json gains named: every data and delete file the catalog names. gc keeps those, and opens the
+  catalog for a files.json without named. The spec says so, and that a withdrawal's clean version
+  must expire the snapshots that held the data.
+
+* docs(spec): rules for deleting shared objects safely, and shared collection cases
+
+Deleting is the one step that cannot be undone. Write down that a process deletes nothing it cannot
+  account for, reads the versions again before deleting, deletes by key, and agrees with every other
+  implementation on the cases in cases/collection.json.
+
+
 ## v0.24.0 (2026-11-13)
 
 ### Features
