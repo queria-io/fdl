@@ -1,6 +1,17 @@
 # CHANGELOG
 
 
+## v0.24.0 (2026-11-13)
+
+### Features
+
+- List each table's columns in files.json ([#53](https://github.com/queria-io/fdl/pull/53),
+  [`98ae9fd`](https://github.com/queria-io/fdl/commit/98ae9fde19ec660778dd653add508b77bd882b54))
+
+Readers without DuckDB can map Parquet columns by field_id from the catalog's column IDs and types,
+  without reading every file's footer.
+
+
 ## v0.23.0 (2026-11-11)
 
 ### Bug Fixes
