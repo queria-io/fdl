@@ -1,6 +1,27 @@
 # CHANGELOG
 
 
+## v0.24.3 (2026-11-13)
+
+### Bug Fixes
+
+- Write the ref again when a push finds it already at the version
+  ([#56](https://github.com/queria-io/fdl/pull/56),
+  [`a11abaf`](https://github.com/queria-io/fdl/commit/a11abaf3643d914167ee4ef41421daa68b769955))
+
+* fix: write the ref again when a push finds it already at the version
+
+A host that does its own work when a ref moves may stop after moving it. Pushing again returned
+  early because the ref already held the version, so the host never finished. The writer now writes
+  the ref again, to the same version and on condition of the ETag it read.
+
+* fix: write the ref again after a retried write and in forward
+
+A ref write whose first attempt moved the ref, with its answer lost, may leave the host stopped
+  after the move. forward returned early on the same version as push did. Both now write the ref
+  again, and the test checks the write is conditional on the ETag read.
+
+
 ## v0.24.2 (2026-11-13)
 
 ### Bug Fixes
