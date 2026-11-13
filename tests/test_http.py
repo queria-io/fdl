@@ -411,3 +411,20 @@ def test_a_merge_over_http(served, tmp_path: Path) -> None:
     )
     assert con.execute("SELECT count(*) FROM v.main.towns").fetchone() == (4,)
     assert con.execute("SELECT count(*) FROM v.main.roads").fetchone() == (1,)
+
+
+def test_a_host_that_stops_answering_fails_instead_of_waiting(monkeypatch) -> None:
+    import socket
+    import threading
+
+    listener = socket.socket()
+    listener.bind(("127.0.0.1", 0))
+    listener.listen()
+    accepted = []
+    threading.Thread(target=lambda: accepted.append(listener.accept()), daemon=True).start()
+    monkeypatch.setattr(stores, "TIMEOUT", 0.5)
+    try:
+        with pytest.raises(StoreError, match="no answer"):
+            HttpStore(f"http://127.0.0.1:{listener.getsockname()[1]}/").get("fdl.json")
+    finally:
+        listener.close()
