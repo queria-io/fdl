@@ -152,6 +152,14 @@ A reader can tell from `version.json` alone whether it can open a version.
           "footer_bytes": 2048,
           "deletes": { "path": "main/population/ducklake-019a3c4f-…-delete.parquet", "rows": 3, "bytes": 812 }
         }
+      ],
+      "columns": [
+        { "id": 1, "name": "code", "type": "varchar", "nullable": false },
+        { "id": 2, "name": "population", "type": "int64", "nullable": true, "default": "0" },
+        {
+          "id": 3, "name": "tags", "type": "list", "nullable": true,
+          "children": [{ "id": 4, "name": "element", "type": "varchar", "nullable": true }]
+        }
       ]
     }
   }
@@ -162,9 +170,10 @@ A reader can tell from `version.json` alone whether it can open a version.
 - `path` is relative to the repository's `data_dir`. Files are in the catalog's order
 - `rows` and `bytes` are the row count and size the catalog records. `footer_bytes` is the size of the Parquet footer, when recorded
 - `deletes` is the delete file for that data file, if rows were deleted from it
+- `columns` lists the table's columns at the snapshot, in the catalog's order. `id` is DuckLake's column ID, which DuckLake writes as the `field_id` of the column in every Parquet data file; it stays the same when the column is renamed. `type` is DuckLake's type name, and `nullable` is `false` for a `NOT NULL` column. `default` is the value, as text, that rows of data files written before the column was added hold, when it is not NULL. A `struct` has its fields in `children`, a `list` its `element`, and a `map` its `key` and `value`. Writers before fdl-cli 0.24 do not write `columns`
 - `renamed_columns` is `true` when a column of the table was ever renamed. Data files written before the rename carry the old name
 
-A reader that reads the Parquet files without DuckLake must not read a table whose files have `deletes`, or whose `renamed_columns` is `true`, unless it applies them as DuckLake does. Otherwise it returns deleted rows or misses renamed columns.
+A reader that reads the Parquet files without DuckLake must not read a table whose files have `deletes`, or whose `renamed_columns` is `true`, unless it applies them as DuckLake does. Otherwise it returns deleted rows or misses renamed columns. A reader that finds each column in a data file by its `field_id`, using the `id` in `columns`, reads renamed columns as DuckLake does.
 
 When a version is taken out of retention, `files.json` is deleted with its catalogs.
 

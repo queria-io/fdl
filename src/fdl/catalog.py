@@ -606,6 +606,15 @@ def table_files(catalog_path: Path, snapshot_id: int, *, absolute: bool = False)
             if _table_exists(con, "ducklake_delete_file")
             else []
         )
+        columns = con.execute(
+            f"""
+            SELECT table_id, column_id, column_name, column_type, nulls_allowed,
+                   parent_column, initial_default
+            FROM ducklake_column WHERE {live}
+            ORDER BY table_id, column_order, column_id
+            """,
+            [snapshot_id] * 2,
+        ).fetchall()
         # A renamed column keeps its id under a new name, while files written
         # before the rename still carry the old one.
         renamed = {
@@ -654,13 +663,39 @@ def table_files(catalog_path: Path, snapshot_id: int, *, absolute: bool = False)
         ]
         for table_id in prefixes
     }
+    shapes = _column_tree(columns)
     return {
         name: {
             "files": listed[table_id],
+            "columns": shapes.get((table_id, None), []),
             **({"renamed_columns": True} if table_id in renamed else {}),
         }
         for table_id, name, _ in tables
     }
+
+
+def _column_tree(rows: list[tuple]) -> dict[tuple[int, int | None], list[dict]]:
+    """Columns as files.json writes them, keyed by (table_id, parent column_id).
+
+    The top-level columns of a table are under ``(table_id, None)``.
+    """
+    children: dict[tuple[int, int | None], list[tuple]] = {}
+    for row in rows:
+        children.setdefault((row[0], row[5]), []).append(row)
+
+    def shape(row: tuple) -> dict:
+        table_id, column_id, name, kind, nullable, _, default = row
+        nested = children.get((table_id, column_id), [])
+        return {
+            "id": column_id,
+            "name": name,
+            "type": kind,
+            "nullable": bool(nullable),
+            **({"default": default} if default is not None else {}),
+            **({"children": [shape(child) for child in nested]} if nested else {}),
+        }
+
+    return {key: [shape(row) for row in found] for key, found in children.items()}
 
 
 #: Type changes that keep every value: SQL written for the old type still runs.
