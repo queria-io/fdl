@@ -69,8 +69,14 @@ class _SameOriginRedirects(urllib.request.HTTPRedirectHandler):
 _opener = urllib.request.build_opener(_SameOriginRedirects)
 
 
+#: Seconds a request may wait to connect, or between two reads of the answer,
+#: before it fails. Without it a connection a host stops answering holds the
+#: command forever instead of failing so it can be run again.
+TIMEOUT = 120
+
+
 def _open(request: urllib.request.Request):
-    return _opener.open(request)
+    return _opener.open(request, timeout=TIMEOUT)
 
 
 class StoreError(RuntimeError):
@@ -318,6 +324,8 @@ class HttpStore:
             ) from exc
         except urllib.error.URLError as exc:
             raise StoreError(f"{method} {key or '/'}: {exc.reason}") from exc
+        except TimeoutError as exc:
+            raise StoreError(f"{method} {key or '/'}: no answer in {TIMEOUT} s") from exc
 
     @staticmethod
     def _conditions(
