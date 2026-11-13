@@ -146,13 +146,19 @@ def test_a_push_sent_again_writes_the_ref_again(tmp_path: Path, remote, monkeypa
     build(tmp_path / "work.sqlite", remote, "CREATE TABLE lake.main.towns AS SELECT 1 AS id")
     version = commit(tmp_path, remote)
     repo.push(remote, tmp_path / "local" / version.id, version)
-    written: list[str] = []
+    seen = refs.read(remote, "refs/heads/main")
+    written: list[tuple[str, str | None]] = []
     put = remote.put
-    monkeypatch.setattr(remote, "put", lambda key, *a, **kw: written.append(key) or put(key, *a, **kw))
+    monkeypatch.setattr(
+        remote,
+        "put",
+        lambda key, *a, **kw: written.append((key, kw.get("if_match"))) or put(key, *a, **kw),
+    )
 
     repo.push(remote, tmp_path / "local" / version.id, version)
 
-    assert "refs/heads/main" in written
+    # Written on condition of the ETag read, so a ref moved since is left.
+    assert ("refs/heads/main", seen.etag) in written
     assert repo.head(remote) == version
 
 

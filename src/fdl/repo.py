@@ -492,6 +492,9 @@ def push(
         now = refs.read(store, ref)
         if now is None or now.target != version.id:
             raise NotFastForward(f"{ref} moved during the push. Pull and build again.") from exc
+        # The first attempt moved it, but its answer was lost: the host may
+        # have stopped after the move.
+        _write_ref_again(store, now)
     update_refs_index(store)
 
 
@@ -1077,6 +1080,8 @@ def forward(store: Store, ref: str, version: Version) -> None:
     """
     current = refs.read(store, layout.check_ref(ref))
     if current is not None and current.target == version.id:
+        # As in `push`: a host may have stopped after a lost move.
+        _write_ref_again(store, current)
         update_refs_index(store)
         return
     _refuse_unless_fast_forward(store, current, version)
@@ -1087,6 +1092,7 @@ def forward(store: Store, ref: str, version: Version) -> None:
         now = refs.read(store, ref)
         if now is None or now.target != version.id:
             raise NotFastForward(f"{ref} moved meanwhile. Pull and merge again.") from exc
+        _write_ref_again(store, now)
     update_refs_index(store)
 
 

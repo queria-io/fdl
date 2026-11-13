@@ -58,4 +58,4 @@ A reader over plain HTTP cannot list the store, so it cannot find branches and t
 
 A writer that sends a ref write again after losing the answer to the first one may find the condition refused by its own first attempt. If the ref now holds the version it was moving to, the move succeeded.
 
-A writer that finds the ref already holding the version it is pushing writes the ref again, to the same version and on condition of the ETag it read. A host that does its own work when a ref moves (recording the new version, say) may have stopped after moving the ref, and this write lets it finish. A host accepts a write that leaves a ref where it is. If the ref has moved since it was read, the writer leaves it.
+A writer that finds the ref already holding the version it is moving the ref to, before its write or after a retried one, writes the ref again, to the same version and on condition of the ETag it read. A host that does its own work when a ref moves (recording the new version, say) may have stopped after moving the ref, and this write lets it finish. A host accepts a write that leaves a ref where it is. If the ref has moved since it was read, the writer leaves it.
