@@ -297,6 +297,38 @@ def test_the_index_leaves_out_dropped_tables_and_marks_renames(tmp_path: Path, r
     assert "renamed_columns" not in tables["main.towns"]
 
 
+def test_the_index_lists_each_tables_columns(tmp_path: Path, remote) -> None:
+    build(
+        tmp_path / "work.sqlite",
+        remote,
+        "CREATE TABLE lake.main.towns AS SELECT 1 AS id, {'p': 'x'} AS s, [1] AS li;"
+        "ALTER TABLE lake.main.towns ADD COLUMN n INTEGER DEFAULT 5;"
+        "ALTER TABLE lake.main.towns ALTER id SET NOT NULL;"
+        "ALTER TABLE lake.main.towns RENAME COLUMN id TO code",
+    )
+    version = commit(tmp_path, remote)
+    repo.push(remote, tmp_path / "local" / version.id, version)
+
+    assert files_index(remote, version)["main.towns"]["columns"] == [
+        {"id": 1, "name": "code", "type": "int32", "nullable": False},
+        {
+            "id": 2,
+            "name": "s",
+            "type": "struct",
+            "nullable": True,
+            "children": [{"id": 3, "name": "p", "type": "varchar", "nullable": True}],
+        },
+        {
+            "id": 4,
+            "name": "li",
+            "type": "list",
+            "nullable": True,
+            "children": [{"id": 5, "name": "element", "type": "int32", "nullable": True}],
+        },
+        {"id": 6, "name": "n", "type": "int32", "nullable": True, "default": "5"},
+    ]
+
+
 def pushed(tmp_path: Path, store, parent=None, sql="CREATE TABLE lake.main.towns AS SELECT 1 AS id"):
     build(tmp_path / "work.sqlite", store, sql)
     version = commit(tmp_path, store, parent=parent)
