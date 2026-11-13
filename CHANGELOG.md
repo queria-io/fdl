@@ -1,6 +1,32 @@
 # CHANGELOG
 
 
+## v0.24.2 (2026-11-13)
+
+### Bug Fixes
+
+- Give requests over HTTP a timeout so a silent host fails instead of hanging
+  ([#54](https://github.com/queria-io/fdl/pull/54),
+  [`a7070a5`](https://github.com/queria-io/fdl/commit/a7070a5c06de0a6cd1e8862d9afa766fb822759f))
+
+- Reuse a parent's profile when only files.json's columns key differs
+  ([#55](https://github.com/queria-io/fdl/pull/55),
+  [`30223cb`](https://github.com/queria-io/fdl/commit/30223cb158d86db0a5aad216dd06d0f9483c9637))
+
+* fix: reuse a parent's profile when only files.json's columns key differs
+
+A parent written before files.json listed each table's columns never matched, so every commit on top
+  of it profiled every table from all of its data. Compare only the data files; profiles.reusable
+  already checks the columns.
+
+* fix: still compare the columns when the parent's files.json lists them
+
+Comparing only the data files kept a stale profile for a column dropped and added again under the
+  same name and type: the data files and the names and types match, but the column is new and has no
+  values. Leave the columns out of the comparison only for a parent written before files.json listed
+  them.
+
+
 ## v0.24.1 (2026-11-13)
 
 ### Bug Fixes
