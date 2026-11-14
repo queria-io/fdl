@@ -1,6 +1,54 @@
 # CHANGELOG
 
 
+## v0.26.0 (2026-11-14)
+
+### Features
+
+- Profile views, and measure wide tables a hundred columns at a time
+  ([#60](https://github.com/queria-io/fdl/pull/60),
+  [`e6c3442`](https://github.com/queria-io/fdl/commit/e6c34429590eedfcee7b568f6c030b497c5ef668))
+
+* feat!: profile tables with fdl profile instead of at commit
+
+fdl commit no longer writes profiles. fdl profile <working> profiles the version committed there,
+  for fdl push to upload with it; fdl profile <remote> adds the profiles a pushed version lacks. The
+  spec lets a version get a missing profile later.
+
+BREAKING CHANGE: fdl commit writes no profiles. Run fdl profile between fdl commit and fdl push to
+  keep writing them.
+
+* feat: profile tables at push instead of commit
+
+fdl push profiles the version it uploads (--no-profile skips it), so the steps stay commit and push.
+  fdl profile <remote> is left for versions pushed without profiles. Also warns of tables that could
+  not be read, lists the version's profiles in one request, and updates the spec wording.
+
+* fix: keep fdl push working when profiling cannot read the working catalog
+
+Read dataset.json and the working catalog inside the guarded block, so a missing or unreadable
+  catalog only warns. Profile again when a stopped push left some tables without profiles.
+
+* feat: profile views, and measure wide tables a hundred columns at a time
+
+A view's profile is measured from the rows its query returns, with the columns DESCRIBE gives. It
+  keeps the parent's profile only while its sql is the parent's and no table's data files changed.
+
+The column statistics now run in queries of at most 100 columns. One query over hundreds of
+  count(DISTINCT) ran out of memory, as DuckDB holds a hash table for each at once.
+
+* fix: re-profile a view when any view's query changed
+
+A view may read another view, so a view keeps its parent's profile only when every view's sql and
+  every table's data files are the parent's. Fetch the parent's dataset.json only when there are
+  views, list more of DuckDB's temporal types, and describe view profiling in push --help.
+
+### Breaking Changes
+
+- Fdl commit writes no profiles. Run fdl profile between fdl commit and fdl push to keep writing
+  them.
+
+
 ## v0.25.0 (2026-11-14)
 
 ### Bug Fixes
