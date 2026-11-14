@@ -80,10 +80,11 @@ SELECT * FROM 'towns.csv';
 
 ```bash
 fdl commit work/lake.sqlite -m "First towns" --author alice
+fdl profile work/lake.sqlite
 fdl push work/lake.sqlite
 ```
 
-`commit` は作業カタログを固めて手元でバージョンにします。`push` はそれをアップロードして `main` をそこへ動かし、`refs/heads/main -> 019a3c4e-… (version 1)` と表示します。リポジトリは次のようになります。
+`commit` は作業カタログを固めて手元でバージョンにします。`profile` はテーブルごとに、データを読まずに表示できる小さな要約を測ります。`push` はそれをアップロードして `main` をそこへ動かし、`refs/heads/main -> 019a3c4e-… (version 1)` と表示します。リポジトリは次のようになります。
 
 ```
 towns/
@@ -93,6 +94,8 @@ towns/
   versions/019a3c4e-…/
     ducklake.duckdb
     dataset.json
+    files.json
+    profiles/main/towns.json
     version.json
   data/main/towns/ducklake-….parquet
 ```
@@ -135,6 +138,7 @@ INSERT INTO lake.main.towns SELECT * FROM 'towns-2026.csv';
 
 ```bash
 fdl commit work/lake.sqlite -m "Add 2026" --author alice
+fdl profile work/lake.sqlite
 fdl push work/lake.sqlite
 ```
 

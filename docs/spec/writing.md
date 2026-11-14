@@ -17,6 +17,7 @@ A writer writes to a working catalog: a DuckLake catalog in SQLite, outside the 
 | --- | --- |
 | checkout | Make a working catalog from the catalog of the branch's version, and remember that version. Before the first version, make an empty one |
 | commit | Freeze the working catalog's last snapshot into a new version, with the remembered version as its parent, and describe it in `dataset.json` |
+| profile | Measure each table into a profile (optional). A table whose data files and columns are the parent's may keep the parent's profile |
 | push | Check the data files, upload the catalog, `dataset.json`, `files.json`, `tree.json` and the profiles, then `version.json`, then move the ref on condition |
 
 A writer may keep a committed version on its own disk and push it later, as Git keeps commits until `git push`. Until the push, nothing in the repository changes, apart from data files the working catalog wrote there. No version names those yet, so they are deleted after the grace period if the version is never pushed.

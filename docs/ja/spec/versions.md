@@ -9,6 +9,7 @@ description: バージョン ID、version.json の項目、固めたカタログ
 - 取り下げのとき、`"reason": "withdrawn"` の `expired.json` を足してカタログを消し、`version.json` 自体に取り下げるデータがあればそれも消す（[データファイル](/ja/spec/data-files#取り下げ)）
 - `catalogs/<format>.duckdb` はあとから足してよい。既にあるファイルは変えない
 - `version.json.sig` は、バージョンを作ったあとに署名する書き手が足してよい
+- `profiles/<schema>/<table>.json` は、profile の無いテーブルについてあとから足してよい。既にある profile は変えない
 
 ## バージョン ID
 
@@ -207,7 +208,7 @@ DuckLake を使わずに Parquet ファイルを読む読み手は、`deletes` �
 
 profile は、`ducklake.snapshot_id` の時点の 1 つのテーブルの要約です。行数、列ごとの中身、先頭の行、図形の列を持つテーブルでは図形の範囲と見本を持ちます。読み手はこの小さなファイル 1 つで、カタログを開かずデータも読まずにテーブルを表示できます。ホストは検索の索引をこれから作れます。profile が持つのはデータから測った事実で、列が何を意味するかは書き手が `dataset.json` に書きます。`files.json` と同じくカタログとデータから作るもので、食い違うときはカタログとデータが正です。任意で、読み手は profile が無くても読めなければなりません。
 
-テーブルごとの profile は `versions/<ID>/profiles/<schema>/<table>.json` に置きます。スキーマ名かテーブル名が空・`.`・`..` のとき、または `/` を含むときは置きません。ビューには置きません。
+テーブルごとの profile は `versions/<ID>/profiles/<schema>/<table>.json` に置きます。スキーマ名かテーブル名が空・`.`・`..` のとき、または `/` を含むときは置きません。ビューには置きません。profile を作らなかった書き手や作るのに失敗した書き手のバージョンには、あとから profile を足せます。commit のときと同じく、そのバージョンのカタログとデータから測ります。
 
 ```json profiles/main/towns.json
 {

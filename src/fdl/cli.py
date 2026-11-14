@@ -175,7 +175,8 @@ def commit(
         return
     except ERRORS as exc:
         raise _fail(exc) from exc
-    typer.echo(f"Committed {version.id} (version {version.seq}). Push it to {state['ref']} with:")
+    typer.echo(f"Committed {version.id} (version {version.seq}). Profile its tables and push it to {state['ref']} with:")
+    typer.echo(f"  fdl profile {working}")
     typer.echo(f"  fdl push {working}")
 
 
@@ -236,10 +237,6 @@ def _commit(
         held = objects.asset_values(
             working, objects.asset_columns(described), data_path=reading, setup=setup
         )
-        try:
-            repo.write_profiles(store, out / version.id, parent, working, data_path=reading, setup=setup)
-        except Exception as exc:  # noqa: BLE001 - a profile is never worth a failed commit
-            typer.echo(f"warning: tables were not profiled ({exc})", err=True)
         pending = _pending_dir(working)
         shutil.rmtree(pending, ignore_errors=True)
         out.rename(pending)
@@ -797,6 +794,62 @@ def tag(
     except ERRORS as exc:
         raise _fail(exc) from exc
     typer.echo(f"refs/tags/{name} -> {version_id}")
+
+
+@app.command()
+def profile(
+    target: str = typer.Argument(
+        help="A working catalog (.sqlite), to profile the version committed there before pushing it; "
+        "or a repository, to add the profiles a pushed version lacks"
+    ),
+    ref: str = typer.Option(layout.DEFAULT_BRANCH, help="With a repository: the branch or tag whose version to profile"),
+) -> None:
+    """Write a profile of each table of a version, measured from its data.
+
+    Given a working catalog, it profiles the version committed there, for
+    `fdl push` to upload with it: run it between commit and push. A table
+    whose data files and columns are the parent's keeps the parent's profile.
+
+    Given a repository, it profiles the tables of the version the ref holds
+    that have no profile, and puts those profiles beside it: for a version made
+    before fdl wrote profiles. Profiles already there are left as they are.
+    """
+    working = Path(target)
+    if _state_path(working).is_file():
+        _profile_pending(working)
+        return
+    store = _store(target)
+    try:
+        version = repo.readable(store, ref)
+        put = repo.add_profiles(store, version, setup=_read_setup(store))
+    except (*ERRORS, catalog.CatalogError) as exc:
+        raise _fail(exc) from exc
+    for relative in put:
+        typer.echo(f"put {relative}")
+    typer.echo(f"Profiled {len(put)} table(s) of {version.id} (version {version.seq}).")
+
+
+def _profile_pending(working: Path) -> None:
+    """Profile the version committed in ``working`` and not pushed, beside it."""
+    state = _read_state(working)
+    pending = state.get("pending")
+    if not pending:
+        raise _fail(repo.RepoError(f"no version is committed and not pushed: fdl commit {working} first"))
+    store = _store(state["remote"])
+    folder = _pending_dir(working) / pending["id"]
+    try:
+        version = parse_version((folder / layout.VERSION_RECORD).read_bytes(), expected_id=pending["id"])
+        # The profiles are measured from the working catalog, so it must still hold what was committed.
+        if catalog.last_snapshot(working) != version.ducklake.snapshot_id:
+            raise repo.RepoError("the working catalog changed after the commit: commit again, then profile")
+        parent = repo.read_version(store, version.parents[0]) if version.parents else None
+        reading = _written(store, state) or repo.data_url(store)
+        setup = _read_setup(store) + _storage_setup(state.get("storage"))
+        made = repo.write_profiles(store, folder, parent, working, data_path=reading, setup=setup)
+    except (*ERRORS, catalog.CatalogError, OSError) as exc:
+        raise _fail(exc) from exc
+    typer.echo(f"Profiled {made} table(s) of {version.id}; the others keep their parent's profile.")
+    typer.echo(f"Push it with:\n  fdl push {working}")
 
 
 @app.command()

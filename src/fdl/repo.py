@@ -611,6 +611,42 @@ def write_profiles(
     return len(made)
 
 
+def missing_profiles(store: Store, version: Version) -> list[dict]:
+    """The tables of ``version`` that get a profile and have none in the repository."""
+    if version.dataset is None:
+        return []
+    described = json.loads(store.get(layout.version_dir(version.id) + version.dataset.path))
+    return [
+        table
+        for table in profiles.tables(described)
+        if store.head(layout.version_dir(version.id) + profiles.path(table["schema"], table["name"])) is None
+    ]
+
+
+def add_profiles(store: Store, version: Version, *, setup: Iterable[str] = ()) -> list[str]:
+    """Profile the tables of a pushed version that have no profile, and put those profiles.
+
+    For a version made before its writer profiled tables, or whose profiling
+    failed. A profile already there is left as it is. Returns the paths put,
+    under the version.
+    """
+    wanted = missing_profiles(store, version)
+    if not wanted:
+        return []
+    if is_expired(store, version.id):
+        raise RepoError(f"{version.id} is past retention and has no catalog")
+    with tempfile.TemporaryDirectory(prefix=".fdl-profile-") as scratch:
+        working = Path(scratch) / "work.sqlite"
+        checkout(store, working, version=version, local_data=Path(scratch) / "data")
+        made = profiles.build(working, wanted, data_path=data_url(store), setup=setup)
+        for relative, content in made.items():
+            written = Path(scratch) / relative
+            written.parent.mkdir(parents=True, exist_ok=True)
+            written.write_bytes(content)
+            _put_once(store, layout.version_dir(version.id) + relative, written)
+    return sorted(made)
+
+
 def upload(store: Store, local: Path, version: Version) -> None:
     """Put a committed version's files, catalog first and the record last.
 
