@@ -289,9 +289,10 @@ def push(
 ) -> None:
     """Upload the committed version and move the branch to it.
 
-    First it profiles the version's tables (a summary of each, measured from
-    the data), reading only those whose data files or columns changed since
-    the parent, and uploads the profiles with the version.
+    First it profiles the version's tables and views (a summary of each,
+    measured from the data), reading only the tables whose data files or
+    columns changed since the parent, and the views when any table or view
+    changed, and uploads the profiles with the version.
 
     Refused when someone else moved the branch since the checkout: check out
     again, redo the work, commit and push, or merge the branch into your work.

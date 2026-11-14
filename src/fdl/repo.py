@@ -567,7 +567,7 @@ def write_profiles(
 
     A table whose data files and columns are the parent's keeps the parent's
     profile, so profiling reads only the tables that changed. A view keeps it
-    when its query is the parent's and no table's data files changed. Returns
+    when no view's query and no table's data files changed. Returns
     how many were made from the data.
     """
     local = Path(local)
@@ -583,15 +583,15 @@ def write_profiles(
         except Exception as exc:  # noqa: BLE001 - stores raise their own types
             if not is_missing(exc):
                 raise
-    views_before: dict = {}
-    if parent is not None and parent.dataset is not None and files_before == files_now:
-        # A view reads other tables, so it keeps its profile only when no table changed.
+    views_now = _view_sql(described)
+    views_unchanged = False
+    if views_now and parent is not None and parent.dataset is not None and files_before == files_now:
+        # A view reads tables and other views, so it keeps its profile only when
+        # no table's data files and no view's query changed.
         try:
             held = json.loads(store.get(layout.version_dir(parent.id) + parent.dataset.path))
-            views_before = {
-                f"{t['schema']}.{t['name']}": t.get("sql") for t in held.get("tables", []) if t.get("kind") == "view"
-            }
-        except Exception as exc:
+            views_unchanged = _view_sql(held) == views_now
+        except Exception as exc:  # noqa: BLE001 - stores raise their own types
             if not is_missing(exc):
                 raise
     kept: dict[str, bytes] = {}
@@ -601,7 +601,7 @@ def write_profiles(
         relative = profiles.path(table["schema"], table["name"])
         previous = None
         if table.get("kind") == "view":
-            unchanged = key in views_before and views_before[key] == table.get("sql")
+            unchanged = views_unchanged
         else:
             before, now = files_before.get(key), files_now.get(key, {})
             if before is not None and "columns" not in before:
@@ -625,6 +625,13 @@ def write_profiles(
         target.parent.mkdir(parents=True, exist_ok=True)
         target.write_bytes(content)
     return len(made)
+
+
+def _view_sql(described: dict) -> dict[str, str | None]:
+    """Each view of a `dataset.json` (``schema.name``) and its query."""
+    return {
+        f"{t['schema']}.{t['name']}": t.get("sql") for t in described.get("tables", []) if t.get("kind") == "view"
+    }
 
 
 def missing_profiles(store: Store, version: Version) -> list[dict]:

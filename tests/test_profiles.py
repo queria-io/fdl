@@ -306,6 +306,19 @@ def test_a_view_keeps_its_profile_only_while_no_table_changes(repository, monkey
     assert profile_of(store, "big")["rows"] == 2
 
 
+def test_a_view_over_a_view_is_profiled_again_when_that_view_changes(repository, monkeypatch) -> None:
+    store, working = repository
+    write(working, store, "CREATE TABLE lake.main.towns AS SELECT i AS id FROM range(5) t(i)")
+    write(working, store, "CREATE VIEW lake.main.big AS SELECT id FROM lake.main.towns WHERE id >= 2")
+    write(working, store, "CREATE VIEW lake.main.top AS SELECT id FROM lake.main.big")
+    commit(working, "-m", "m", "--author", "t")
+    assert profile_of(store, "top")["rows"] == 3
+
+    write(working, store, "CREATE OR REPLACE VIEW lake.main.big AS SELECT id FROM lake.main.towns WHERE id >= 4")
+    commit(working, "-m", "again", "--author", "t")
+    assert profile_of(store, "top")["rows"] == 1
+
+
 def test_a_wide_table_is_measured_a_few_columns_at_a_time(repository, monkeypatch) -> None:
     store, working = repository
     monkeypatch.setattr(profiles, "COLUMNS_PER_QUERY", 2)
