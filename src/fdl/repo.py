@@ -566,8 +566,9 @@ def write_profiles(
     """Write a profile of each table of a committed version under ``local/profiles/``.
 
     A table whose data files and columns are the parent's keeps the parent's
-    profile, so profiling reads only the tables that changed. Returns how many
-    were made from the data.
+    profile, so profiling reads only the tables that changed. A view keeps it
+    when its query is the parent's and no table's data files changed. Returns
+    how many were made from the data.
     """
     local = Path(local)
     described_path = local / layout.DATASET
@@ -582,18 +583,33 @@ def write_profiles(
         except Exception as exc:  # noqa: BLE001 - stores raise their own types
             if not is_missing(exc):
                 raise
+    views_before: dict = {}
+    if parent is not None and parent.dataset is not None and files_before == files_now:
+        # A view reads other tables, so it keeps its profile only when no table changed.
+        try:
+            held = json.loads(store.get(layout.version_dir(parent.id) + parent.dataset.path))
+            views_before = {
+                f"{t['schema']}.{t['name']}": t.get("sql") for t in held.get("tables", []) if t.get("kind") == "view"
+            }
+        except Exception as exc:
+            if not is_missing(exc):
+                raise
     kept: dict[str, bytes] = {}
     pending = []
     for table in profiles.tables(described):
         key = f"{table['schema']}.{table['name']}"
         relative = profiles.path(table["schema"], table["name"])
         previous = None
-        before, now = files_before.get(key), files_now.get(key, {})
-        if before is not None and "columns" not in before:
-            # A parent written before files.json listed the columns: compare the
-            # rest, and leave the names and types to profiles.reusable.
-            now = {name: value for name, value in now.items() if name != "columns"}
-        if parent is not None and before is not None and before == now:
+        if table.get("kind") == "view":
+            unchanged = key in views_before and views_before[key] == table.get("sql")
+        else:
+            before, now = files_before.get(key), files_now.get(key, {})
+            if before is not None and "columns" not in before:
+                # A parent written before files.json listed the columns: compare the
+                # rest, and leave the names and types to profiles.reusable.
+                now = {name: value for name, value in now.items() if name != "columns"}
+            unchanged = before is not None and before == now
+        if parent is not None and unchanged:
             try:
                 previous = store.get(layout.version_dir(parent.id) + relative)
             except Exception as exc:  # noqa: BLE001
