@@ -842,35 +842,35 @@ def _profile_pending(store, working: Path, state: dict, folder: Path, version) -
     holds what was committed, or the tables cannot be read, it warns and the
     version goes without them (`fdl profile <remote>` adds them later).
     """
-    if (folder / layout.PROFILES_DIR).is_dir():
-        return  # profiled by a push that stopped before it finished
     described_path = folder / layout.DATASET
-    if not described_path.is_file():
-        return
-    wanted = profiles.tables(json.loads(described_path.read_text(encoding="utf-8")))
-    if not wanted:
-        return
-    if catalog.last_snapshot(working) != version.ducklake.snapshot_id:
-        typer.echo(
-            "warning: tables were not profiled, as the working catalog changed after the commit; "
-            f"commit again, or run fdl profile {state['remote']} after the push",
-            err=True,
-        )
-        return
+
+    def unprofiled(wanted: list[dict]) -> list[str]:
+        return [
+            f"{table['schema']}.{table['name']}"
+            for table in wanted
+            if not (folder / profiles.path(table["schema"], table["name"])).is_file()
+        ]
+
     try:
+        if not described_path.is_file():
+            return
+        wanted = profiles.tables(json.loads(described_path.read_text(encoding="utf-8")))
+        if not unprofiled(wanted):
+            return  # no tables, or all profiled by a push that stopped before it finished
+        if catalog.last_snapshot(working) != version.ducklake.snapshot_id:
+            typer.echo(
+                "warning: tables were not profiled, as the working catalog changed after the commit; "
+                f"commit again, or run fdl profile {state['remote']} after the push",
+                err=True,
+            )
+            return
         parent = repo.read_version(store, version.parents[0]) if version.parents else None
         reading, setup = _reading(store, state)
         repo.write_profiles(store, folder, parent, working, data_path=reading, setup=setup)
     except Exception as exc:  # noqa: BLE001 - a profile is never worth a failed push
         typer.echo(f"warning: tables were not profiled ({exc})", err=True)
         return
-    _warn_unread(
-        [
-            f"{table['schema']}.{table['name']}"
-            for table in wanted
-            if not (folder / profiles.path(table["schema"], table["name"])).is_file()
-        ]
-    )
+    _warn_unread(unprofiled(wanted))
 
 
 @app.command()
