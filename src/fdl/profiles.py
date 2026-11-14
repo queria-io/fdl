@@ -32,6 +32,9 @@ ALL_VALUES = 2000
 TOP_VALUES = 10
 #: Above this many rows, distinct values are estimated rather than counted.
 EXACT_DISTINCT_ROWS = 1_000_000
+#: Columns measured by one query. DuckDB holds a hash table for every `count(DISTINCT)`
+#: of a query at once, so a table of many hundred columns in one query runs out of memory.
+COLUMNS_PER_QUERY = 100
 
 _NUMERIC = {
     "TINYINT", "SMALLINT", "INTEGER", "BIGINT", "HUGEINT", "UTINYINT", "USMALLINT",
@@ -39,8 +42,13 @@ _NUMERIC = {
     "INT8", "INT16", "INT32", "INT64", "INT128", "UINT8", "UINT16", "UINT32", "UINT64",
     "UINT128", "FLOAT32", "FLOAT64",
 }  # fmt: skip
-_TEMPORAL = {"DATE", "TIME", "TIMESTAMP", "TIMESTAMPTZ", "TIMESTAMP WITH TIME ZONE", "TIMETZ", "INTERVAL"}
-_DATED = {"DATE", "TIMESTAMP", "TIMESTAMPTZ", "TIMESTAMP WITH TIME ZONE"}
+#: Timestamps of another unit: DuckLake's `timestamp_s` and the like, and DuckDB's names for a view's columns.
+_TIMESTAMPS = {"TIMESTAMP_S", "TIMESTAMP_MS", "TIMESTAMP_NS"}
+_TEMPORAL = {
+    "DATE", "TIME", "TIMESTAMP", "TIMESTAMPTZ", "TIMESTAMP WITH TIME ZONE", "TIMETZ", "TIME WITH TIME ZONE",
+    "INTERVAL", *_TIMESTAMPS,
+}  # fmt: skip
+_DATED = {"DATE", "TIMESTAMP", "TIMESTAMPTZ", "TIMESTAMP WITH TIME ZONE", *_TIMESTAMPS}
 _BOOLEAN = {"BOOLEAN"}
 _TEXT = {"VARCHAR", "UUID"}
 
@@ -73,8 +81,8 @@ def path(schema: str, table: str) -> str | None:
 
 
 def tables(described: dict[str, Any]) -> list[dict[str, Any]]:
-    """The tables of a `dataset.json` that get a profile: every table, no view."""
-    return [t for t in described.get("tables", []) if t.get("kind") != "view" and path(t["schema"], t["name"])]
+    """The tables and views of a `dataset.json` that get a profile: all whose names a path can hold."""
+    return [t for t in described.get("tables", []) if path(t["schema"], t["name"])]
 
 
 def columns_of(table: dict[str, Any]) -> list[dict[str, str]]:
@@ -115,14 +123,18 @@ def build(working: Path, wanted: Iterable[dict[str, Any]], *, data_path: str, se
 def reusable(previous: bytes, table: dict[str, Any]) -> bool:
     """Whether a parent's profile describes ``table`` as it is and as this writer would.
 
-    The same columns and types, and `values` listed by the current `ALL_VALUES`:
+    The same columns and types (for a table), and `values` listed by the current `ALL_VALUES`:
     a profile written under another limit is made again rather than carried forward.
     """
     try:
         held = json.loads(previous).get("columns", [])
     except ValueError:
         return False
-    if [{"name": c.get("name"), "type": c.get("type")} for c in held] != columns_of(table):
+    # A view's columns are not in `dataset.json`; the caller keeps its profile only
+    # while its query and every table are unchanged, and so are its columns.
+    if table.get("kind") != "view" and [
+        {"name": c.get("name"), "type": c.get("type")} for c in held
+    ] != columns_of(table):
         return False
     return all(_listed_as_now(c) for c in held)
 
@@ -157,12 +169,14 @@ def _q(name: str) -> str:
 
 def _profile(con, table: dict[str, Any], spatial: bool) -> dict[str, Any]:
     relation = f"lake.{_q(table['schema'])}.{_q(table['name'])}"
-    fields = columns_of(table)
+    fields = _view_columns(con, relation) if table.get("kind") == "view" else columns_of(table)
     rows = int(con.execute(f"SELECT count(*) FROM {relation}").fetchone()[0])
 
     measured = [f for f in fields if kind(f["type"]) != "geometry"]
-    exprs = [e for f in measured for e in _aggregates(f, rows)]
-    values = con.execute(f"SELECT {', '.join(exprs)} FROM {relation}").fetchone() if exprs else ()
+    values: list[Any] = []
+    for start in range(0, len(measured), COLUMNS_PER_QUERY):
+        exprs = [e for f in measured[start : start + COLUMNS_PER_QUERY] for e in _aggregates(f, rows)]
+        values += con.execute(f"SELECT {', '.join(exprs)} FROM {relation}").fetchone()
     stats: list[dict[str, Any]] = []
     cursor = 0
     for field in fields:
@@ -189,6 +203,11 @@ def _profile(con, table: dict[str, Any], spatial: bool) -> dict[str, Any]:
         except Exception:  # noqa: BLE001 - the rest stands without the shapes
             pass
     return profile
+
+
+def _view_columns(con, relation: str) -> list[dict[str, str]]:
+    """A view's columns as its query returns them: the catalog records none for a view."""
+    return [{"name": row[0], "type": row[1]} for row in con.execute(f"DESCRIBE SELECT * FROM {relation}").fetchall()]
 
 
 def _aggregates(field: dict[str, str], rows: int) -> list[str]:

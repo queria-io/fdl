@@ -76,7 +76,7 @@ fdl push <working.sqlite> [--no-profile]
 
 `fdl commit` が作ったバージョンをアップロードし、条件付きでブランチをそこへ動かします（[書き込みの順番](/ja/spec/writing#書き込みの順番)）。ブランチ、バージョン ID、`seq` を表示します。fast-forward の `fdl merge` のあとは、何もアップロードせず、ブランチをマージしたバージョンへ動かします。コミットしたものが無いときは `Nothing to push` と表示します。
 
-アップロードの前に、テーブルごとの profile（[profiles/](/ja/spec/versions#profiles)）を書き、`version.json` より前にアップロードします。ブランチが動く時点で profile がリポジトリにあります。読むのは、データファイルか列が親から変わったテーブルだけで、ほかのテーブルは親の profile を引き継ぎます。読めなかったテーブルには profile を書かず、警告を出します。コミットのあとに作業カタログが変わっていたときは profile を書かずに警告します。`--no-profile` を付けると profile を書きません。`fdl profile` であとから足せます。
+アップロードの前に、テーブルとビューごとの profile（[profiles/](/ja/spec/versions#profiles)）を書き、`version.json` より前にアップロードします。ブランチが動く時点で profile がリポジトリにあります。読むのは、データファイルか列が親から変わったテーブルだけで、ほかのテーブルは親の profile を引き継ぎます。ビューは、どれかのテーブルのデータファイルかビューのクエリが変わると、クエリを実行して測り直します。読めなかったテーブルには profile を書かず、警告を出します。コミットのあとに作業カタログが変わっていたときは profile を書かずに警告します。`--no-profile` を付けると profile を書きません。`fdl profile` であとから足せます。
 
 作業カタログがリポジトリに書いたデータファイルは push の前からありますが、push するまでどのバージョンも参照しません。push しなかったファイルは猶予期間のあとに削除されます。
 
@@ -226,7 +226,7 @@ fdl withdraw <remote> <version>... [--yes]
 fdl profile <remote> [--ref refs/heads/main]
 ```
 
-ブランチかタグが指すバージョンのテーブルのうち、[profile](/ja/spec/versions#profiles) が無いものを測り、profile をバージョンの横に置きます。`fdl push` はアップロードするバージョンの profile を作ります。このコマンドは profile 無しで push したバージョンに使います。fdl が profile を書く前に作ったバージョン、`--no-profile` で push したバージョン、そのときテーブルを読めなかったバージョンです。既にある profile は変えません。保持期間を過ぎたバージョンはカタログが無いので断られます。
+ブランチかタグが指すバージョンのテーブルとビューのうち、[profile](/ja/spec/versions#profiles) が無いものを測り、profile をバージョンの横に置きます。`fdl push` はアップロードするバージョンの profile を作ります。このコマンドは profile 無しで push したバージョンに使います。fdl が profile を書く前に作ったバージョン、`--no-profile` で push したバージョン、そのときテーブルを読めなかったバージョンです。既にある profile は変えません。保持期間を過ぎたバージョンはカタログが無いので断られます。
 
 ## fdl expire
 

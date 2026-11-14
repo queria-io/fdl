@@ -264,3 +264,68 @@ def test_push_profiles_the_tables_a_stopped_push_left_without(repository) -> Non
     partial.write_bytes(b'{"rows": 1, "columns": []}')
     run("push", working)
     assert profile_of(store, "roads")["rows"] == 1
+
+
+def test_a_view_is_profiled(repository) -> None:
+    store, working = repository
+    write(working, store, "CREATE TABLE lake.main.towns AS SELECT i AS id FROM range(5) t(i)")
+    write(working, store, "CREATE VIEW lake.main.big AS SELECT id FROM lake.main.towns WHERE id >= 2")
+    commit(working, "-m", "m", "--author", "t")
+    got = profile_of(store, "big")
+    assert got["rows"] == 3
+    assert got["columns"][0]["min"] == 2
+
+
+def _spy_builds(monkeypatch) -> list[str]:
+    built: list[str] = []
+    original = profiles.build
+
+    def spy(working, wanted, **kwargs):
+        wanted = list(wanted)
+        built.extend(t["name"] for t in wanted)
+        return original(working, wanted, **kwargs)
+
+    monkeypatch.setattr(profiles, "build", spy)
+    return built
+
+
+def test_a_view_keeps_its_profile_only_while_no_table_changes(repository, monkeypatch) -> None:
+    store, working = repository
+    write(working, store, "CREATE TABLE lake.main.towns AS SELECT 1 AS id")
+    write(working, store, "CREATE VIEW lake.main.big AS SELECT id FROM lake.main.towns")
+    commit(working, "-m", "m", "--author", "t")
+    built = _spy_builds(monkeypatch)
+
+    run("commit", working, "-m", "same", "--author", "t", "--allow-empty")
+    run("push", working)
+    assert built == []
+
+    write(working, store, "INSERT INTO lake.main.towns VALUES (2)")
+    commit(working, "-m", "again", "--author", "t")
+    assert sorted(built) == ["big", "towns"]
+    assert profile_of(store, "big")["rows"] == 2
+
+
+def test_a_view_over_a_view_is_profiled_again_when_that_view_changes(repository, monkeypatch) -> None:
+    store, working = repository
+    write(working, store, "CREATE TABLE lake.main.towns AS SELECT i AS id FROM range(5) t(i)")
+    write(working, store, "CREATE VIEW lake.main.big AS SELECT id FROM lake.main.towns WHERE id >= 2")
+    write(working, store, "CREATE VIEW lake.main.top AS SELECT id FROM lake.main.big")
+    commit(working, "-m", "m", "--author", "t")
+    assert profile_of(store, "top")["rows"] == 3
+
+    write(working, store, "CREATE OR REPLACE VIEW lake.main.big AS SELECT id FROM lake.main.towns WHERE id >= 4")
+    commit(working, "-m", "again", "--author", "t")
+    assert profile_of(store, "top")["rows"] == 1
+
+
+def test_a_wide_table_is_measured_a_few_columns_at_a_time(repository, monkeypatch) -> None:
+    store, working = repository
+    monkeypatch.setattr(profiles, "COLUMNS_PER_QUERY", 2)
+    write(working, store, "CREATE TABLE lake.main.towns AS SELECT i AS a, i + 1 AS b, i + 2 AS c FROM range(3) t(i)")
+    commit(working, "-m", "m", "--author", "t")
+    assert [(c["name"], c["min"], c["max"]) for c in profile_of(store)["columns"]] == [
+        ("a", 0, 2),
+        ("b", 1, 3),
+        ("c", 2, 4),
+    ]
