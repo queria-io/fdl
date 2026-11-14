@@ -1,6 +1,71 @@
 # CHANGELOG
 
 
+## v0.25.0 (2026-11-14)
+
+### Bug Fixes
+
+- Keep fdl push working when profiling cannot read the working catalog
+  ([#59](https://github.com/queria-io/fdl/pull/59),
+  [`59bb12c`](https://github.com/queria-io/fdl/commit/59bb12cfe2308a2c71d6471f8d5e1e40e8b48393))
+
+* feat!: profile tables with fdl profile instead of at commit
+
+fdl commit no longer writes profiles. fdl profile <working> profiles the version committed there,
+  for fdl push to upload with it; fdl profile <remote> adds the profiles a pushed version lacks. The
+  spec lets a version get a missing profile later.
+
+BREAKING CHANGE: fdl commit writes no profiles. Run fdl profile between fdl commit and fdl push to
+  keep writing them.
+
+* feat: profile tables at push instead of commit
+
+fdl push profiles the version it uploads (--no-profile skips it), so the steps stay commit and push.
+  fdl profile <remote> is left for versions pushed without profiles. Also warns of tables that could
+  not be read, lists the version's profiles in one request, and updates the spec wording.
+
+* fix: keep fdl push working when profiling cannot read the working catalog
+
+Read dataset.json and the working catalog inside the guarded block, so a missing or unreadable
+  catalog only warns. Profile again when a stopped push left some tables without profiles.
+
+### Features
+
+- Profile tables at push instead of commit ([#58](https://github.com/queria-io/fdl/pull/58),
+  [`95803d8`](https://github.com/queria-io/fdl/commit/95803d81860ba72a8887b1494a9a5b8bc4aff674))
+
+* feat!: profile tables with fdl profile instead of at commit
+
+fdl commit no longer writes profiles. fdl profile <working> profiles the version committed there,
+  for fdl push to upload with it; fdl profile <remote> adds the profiles a pushed version lacks. The
+  spec lets a version get a missing profile later.
+
+BREAKING CHANGE: fdl commit writes no profiles. Run fdl profile between fdl commit and fdl push to
+  keep writing them.
+
+* feat: profile tables at push instead of commit
+
+fdl push profiles the version it uploads (--no-profile skips it), so the steps stay commit and push.
+  fdl profile <remote> is left for versions pushed without profiles. Also warns of tables that could
+  not be read, lists the version's profiles in one request, and updates the spec wording.
+
+- Profile tables with fdl profile instead of at commit
+  ([#57](https://github.com/queria-io/fdl/pull/57),
+  [`20f21ac`](https://github.com/queria-io/fdl/commit/20f21acca7ba6effc3af1f9c1c39522f982ce68f))
+
+fdl commit no longer writes profiles. fdl profile <working> profiles the version committed there,
+  for fdl push to upload with it; fdl profile <remote> adds the profiles a pushed version lacks. The
+  spec lets a version get a missing profile later.
+
+BREAKING CHANGE: fdl commit writes no profiles. Run fdl profile between fdl commit and fdl push to
+  keep writing them.
+
+### Breaking Changes
+
+- Fdl commit writes no profiles. Run fdl profile between fdl commit and fdl push to keep writing
+  them.
+
+
 ## v0.24.3 (2026-11-13)
 
 ### Bug Fixes
