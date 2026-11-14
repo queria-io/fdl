@@ -23,7 +23,7 @@ def run(*args) -> str:
 
 
 def commit(working, *args) -> str:
-    return run("commit", working, *args) + run("push", working)
+    return run("commit", working, *args) + run("profile", working) + run("push", working)
 
 
 def write(working: Path, store: LocalStore, sql: str) -> None:
@@ -201,3 +201,39 @@ def test_a_geometry_column_gets_its_extent_and_a_sample(repository) -> None:
     assert got["geometry"]["types"] == ["POINT"]
     assert len(got["geometry"]["sample"]["features"]) == 3
     assert [r.keys() for r in got["head"]][0] == {"id"}
+
+
+def test_profile_adds_the_profiles_a_pushed_version_lacks(repository) -> None:
+    store, working = repository
+    write(working, store, "CREATE TABLE lake.main.towns AS SELECT i AS id FROM range(4) t(i)")
+    write(working, store, "CREATE TABLE lake.main.other AS SELECT 1 AS id")
+    commit(working, "-m", "m", "--author", "t")
+    head = repo.head(store)
+    kept = store.get(f"{layout.version_dir(head.id)}profiles/main/other.json")
+    # A version made before its writer profiled: no profile for towns.
+    (Path(store.url) / f"{layout.version_dir(head.id)}profiles/main/towns.json").unlink()
+
+    output = run("profile", store.url)
+    assert "put profiles/main/towns.json" in output
+    assert "Profiled 1 table(s)" in output
+    assert profile_of(store)["rows"] == 4
+    assert store.get(f"{layout.version_dir(head.id)}profiles/main/other.json") == kept
+    assert "Profiled 0 table(s)" in run("profile", store.url)
+
+
+def test_a_commit_alone_profiles_nothing(repository) -> None:
+    store, working = repository
+    write(working, store, "CREATE TABLE lake.main.towns AS SELECT 1 AS id")
+    run("commit", working, "-m", "m", "--author", "t")
+    run("push", working)
+    assert store.list(f"{layout.version_dir(repo.head(store).id)}profiles/") == []
+
+
+def test_profile_refuses_a_working_catalog_changed_after_the_commit(repository) -> None:
+    store, working = repository
+    write(working, store, "CREATE TABLE lake.main.towns AS SELECT 1 AS id")
+    run("commit", working, "-m", "m", "--author", "t")
+    write(working, store, "INSERT INTO lake.main.towns VALUES (2)")
+    result = runner.invoke(app, ["profile", str(working)])
+    assert result.exit_code == 1
+    assert "changed after the commit" in result.output

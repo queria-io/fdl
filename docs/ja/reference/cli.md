@@ -57,7 +57,7 @@ fdl commit <working.sqlite> -m "What changed" --author alice [--dataset dataset.
 
 コマンドは、説明の隣の `README.md` と、そこにある `docs/` より下のファイル（隠しファイルを除く）をバージョンの tree に入れます。そのフォルダからのパスで `tree.json` を書き、push がリポジトリに無いものを書いたままの中身で `assets/<sha256>` にアップロードします（[tree.json](/ja/spec/versions#treejson)）。
 
-あわせてテーブルごとの profile を書きます（[profiles/](/ja/spec/versions#profiles)）。読むのは、データファイルか列が親から変わったテーブルだけです。読めなかったテーブルには profile を書かず、警告を出してコミットを続けます。
+profile は書きません。`fdl push` の前に `fdl profile` を実行して作ります。
 
 `asset: true` の印を付けた列は、ファイルの sha256 を持ちます（[アセット](/ja/spec/versions#アセット)）。コマンドはその列の値を読み、push がリポジトリに無いファイルを `--assets` のフォルダから `assets/<sha256>` にアップロードします。ファイルは中身で照合するので、フォルダの中のファイル名は問いません。
 
@@ -219,6 +219,19 @@ fdl withdraw <remote> <version>... [--yes]
 バージョンが参照するアセットは、`tree.json` に載っているものと、アセット列が持つ sha256 です。
 
 `--yes` を付けないと、消すものを表示するだけです。残すバージョンが参照しているファイルは残すものとして表示します。それがそのデータを持つなら、そのバージョンも取り下げます。ブランチかリクエストが該当するバージョンを指しているあいだは断られます。
+
+## fdl profile
+
+```bash
+fdl profile <working.sqlite>
+fdl profile <remote> [--ref refs/heads/main]
+```
+
+テーブルごとの profile（[profiles/](/ja/spec/versions#profiles)）をデータから測って書きます。
+
+作業カタログを渡すと、そこで `fdl commit` が作ったバージョンの profile を作り、`fdl push` がバージョンと一緒にアップロードします。ブランチが動く時点で profile がリポジトリにあるように、commit と push の間に実行します。読むのは、データファイルか列が親から変わったテーブルだけで、ほかのテーブルは親の profile を引き継ぎます。読めなかったテーブルには profile を書かず、警告を出します。コミットしたバージョンが無いとき、コミットのあとに作業カタログが変わったときは断られます。
+
+リポジトリを渡すと、ブランチかタグが指すバージョンのテーブルのうち profile が無いものを測り、profile をバージョンの横に置きます。fdl が profile を書く前に作ったバージョンや、profile を作らずに push したバージョンに使います。既にある profile は変えません。保持期間を過ぎたバージョンはカタログが無いので断られます。
 
 ## fdl expire
 

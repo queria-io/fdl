@@ -9,6 +9,7 @@ A version is the files under `versions/<version ID>/`. They must not change once
 - on withdrawal, `expired.json` is added with `"reason": "withdrawn"` and the catalogs deleted, and `version.json` itself is deleted if it holds the withdrawn data ([Data files](/spec/data-files#withdrawal))
 - `catalogs/<format>.duckdb` may be added later. Files already there are not changed
 - `version.json.sig` may be added later, by a writer that signs a version after making it
+- `profiles/<schema>/<table>.json` may be added later for a table that has none. Profiles already there are not changed
 
 ## Version ID
 
@@ -207,7 +208,7 @@ When a version is taken out of retention, `files.json` is deleted with its catal
 
 A profile summarizes one table at `ducklake.snapshot_id`: its row count, what each column holds, its first rows and, for a table with a geometry column, the extent and a sample of its shapes. A reader can show a table, or a host can index it for search, from this one small file, without opening the catalog or reading the data. It holds what was measured from the data; what a column means is the writer's, in `dataset.json`. Like `files.json`, it is made from the catalog and the data, which win where the two differ, and it is optional: a reader must work without it.
 
-Each table's profile is at `versions/<ID>/profiles/<schema>/<table>.json`. A table whose schema or name is empty, `.`, `..` or holds `/` has none. Views have none.
+Each table's profile is at `versions/<ID>/profiles/<schema>/<table>.json`. A table whose schema or name is empty, `.`, `..` or holds `/` has none. Views have none. A version made without a profile for a table, by a writer that did not profile or failed to, may get one later; it is measured from the version's catalog and data, as at commit.
 
 ```json profiles/main/towns.json
 {
