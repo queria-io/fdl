@@ -20,7 +20,7 @@ from urllib.parse import urlparse
 
 import typer
 
-from . import catalog, dataset, layout, objects, refs, repo
+from . import catalog, dataset, layout, objects, profiles, refs, repo
 from . import merge as merging
 from . import diff as diffs
 from .stores import StoreError, open_store
@@ -175,8 +175,7 @@ def commit(
         return
     except ERRORS as exc:
         raise _fail(exc) from exc
-    typer.echo(f"Committed {version.id} (version {version.seq}). Profile its tables and push it to {state['ref']} with:")
-    typer.echo(f"  fdl profile {working}")
+    typer.echo(f"Committed {version.id} (version {version.seq}). Push it to {state['ref']} with:")
     typer.echo(f"  fdl push {working}")
 
 
@@ -231,8 +230,7 @@ def _commit(
         except repo.CannotCompare as exc:
             typer.echo(f"warning: could not tell whether anything changed ({exc}); committing", err=True)
             version = make(True)
-        reading = written or repo.data_url(store)
-        setup = _read_setup(store) + _storage_setup(state.get("storage"))
+        reading, setup = _reading(store, state)
         described = json.loads((out / version.id / layout.DATASET).read_text(encoding="utf-8"))
         held = objects.asset_values(
             working, objects.asset_columns(described), data_path=reading, setup=setup
@@ -277,9 +275,23 @@ def _written(store, state: dict) -> str | None:
     return None
 
 
+def _reading(store, state: dict) -> tuple[str, list[str]]:
+    """Where the working catalog's data files are read from, and the setup to read them."""
+    return _written(store, state) or repo.data_url(store), _read_setup(store) + _storage_setup(state.get("storage"))
+
+
 @app.command()
-def push(working: Path = Working) -> None:
+def push(
+    working: Path = Working,
+    no_profile: bool = typer.Option(
+        False, "--no-profile", help="Upload the version without profiling its tables"
+    ),
+) -> None:
     """Upload the committed version and move the branch to it.
+
+    First it profiles the version's tables (a summary of each, measured from
+    the data), reading only those whose data files or columns changed since
+    the parent, and uploads the profiles with the version.
 
     Refused when someone else moved the branch since the checkout: check out
     again, redo the work, commit and push, or merge the branch into your work.
@@ -296,6 +308,8 @@ def push(working: Path = Working) -> None:
     folder = _pending_dir(working) / pending["id"]
     try:
         version = parse_version((folder / layout.VERSION_RECORD).read_bytes(), expected_id=pending["id"])
+        if not no_profile:
+            _profile_pending(store, working, state, folder, version)
         assets_dir = pending.get("assets_dir")
         repo.push(
             store,
@@ -360,12 +374,8 @@ def revert(
         if declared is None:
             raise repo.RepoError(f"{target.id} has no dataset.json to bring back")
         listed = (diffs.listed(store, target) or {}).get("entries", [])
-        catalog.restore(
-            working,
-            target.ducklake.snapshot_id,
-            data_path=_written(store, state) or repo.data_url(store),
-            setup=_read_setup(store) + _storage_setup(state.get("storage")),
-        )
+        reading, setup = _reading(store, state)
+        catalog.restore(working, target.ducklake.snapshot_id, data_path=reading, setup=setup)
         version = _commit(
             store,
             working,
@@ -798,58 +808,69 @@ def tag(
 
 @app.command()
 def profile(
-    target: str = typer.Argument(
-        help="A working catalog (.sqlite), to profile the version committed there before pushing it; "
-        "or a repository, to add the profiles a pushed version lacks"
-    ),
-    ref: str = typer.Option(layout.DEFAULT_BRANCH, help="With a repository: the branch or tag whose version to profile"),
+    remote: str = Remote,
+    ref: str = typer.Option(layout.DEFAULT_BRANCH, help="The branch or tag whose version to profile"),
 ) -> None:
-    """Write a profile of each table of a version, measured from its data.
+    """Profile the tables of a pushed version that have no profile.
 
-    Given a working catalog, it profiles the version committed there, for
-    `fdl push` to upload with it: run it between commit and push. A table
-    whose data files and columns are the parent's keeps the parent's profile.
-
-    Given a repository, it profiles the tables of the version the ref holds
-    that have no profile, and puts those profiles beside it: for a version made
-    before fdl wrote profiles. Profiles already there are left as they are.
+    `fdl push` profiles the version it uploads. This is for a version pushed
+    without them: made before fdl wrote profiles, pushed with --no-profile,
+    or whose tables could not be read then. Profiles already there are left
+    as they are.
     """
-    working = Path(target)
-    if _state_path(working).is_file():
-        _profile_pending(working)
-        return
-    store = _store(target)
+    store = _store(remote)
     try:
         version = repo.readable(store, ref)
-        put = repo.add_profiles(store, version, setup=_read_setup(store))
+        put, unread = repo.add_profiles(store, version, setup=_read_setup(store))
     except (*ERRORS, catalog.CatalogError) as exc:
         raise _fail(exc) from exc
     for relative in put:
         typer.echo(f"put {relative}")
+    _warn_unread(unread)
     typer.echo(f"Profiled {len(put)} table(s) of {version.id} (version {version.seq}).")
 
 
-def _profile_pending(working: Path) -> None:
-    """Profile the version committed in ``working`` and not pushed, beside it."""
-    state = _read_state(working)
-    pending = state.get("pending")
-    if not pending:
-        raise _fail(repo.RepoError(f"no version is committed and not pushed: fdl commit {working} first"))
-    store = _store(state["remote"])
-    folder = _pending_dir(working) / pending["id"]
+def _warn_unread(tables: list[str]) -> None:
+    if tables:
+        typer.echo(f"warning: tables were not profiled, as they could not be read: {', '.join(tables)}", err=True)
+
+
+def _profile_pending(store, working: Path, state: dict, folder: Path, version) -> None:
+    """Profile the version committed in ``working``, beside it, for the push to upload.
+
+    A profile is never worth a failed push: when the working catalog no longer
+    holds what was committed, or the tables cannot be read, it warns and the
+    version goes without them (`fdl profile <remote>` adds them later).
+    """
+    if (folder / layout.PROFILES_DIR).is_dir():
+        return  # profiled by a push that stopped before it finished
+    described_path = folder / layout.DATASET
+    if not described_path.is_file():
+        return
+    wanted = profiles.tables(json.loads(described_path.read_text(encoding="utf-8")))
+    if not wanted:
+        return
+    if catalog.last_snapshot(working) != version.ducklake.snapshot_id:
+        typer.echo(
+            "warning: tables were not profiled, as the working catalog changed after the commit; "
+            f"commit again, or run fdl profile {state['remote']} after the push",
+            err=True,
+        )
+        return
     try:
-        version = parse_version((folder / layout.VERSION_RECORD).read_bytes(), expected_id=pending["id"])
-        # The profiles are measured from the working catalog, so it must still hold what was committed.
-        if catalog.last_snapshot(working) != version.ducklake.snapshot_id:
-            raise repo.RepoError("the working catalog changed after the commit: commit again, then profile")
         parent = repo.read_version(store, version.parents[0]) if version.parents else None
-        reading = _written(store, state) or repo.data_url(store)
-        setup = _read_setup(store) + _storage_setup(state.get("storage"))
-        made = repo.write_profiles(store, folder, parent, working, data_path=reading, setup=setup)
-    except (*ERRORS, catalog.CatalogError, OSError) as exc:
-        raise _fail(exc) from exc
-    typer.echo(f"Profiled {made} table(s) of {version.id}; the others keep their parent's profile.")
-    typer.echo(f"Push it with:\n  fdl push {working}")
+        reading, setup = _reading(store, state)
+        repo.write_profiles(store, folder, parent, working, data_path=reading, setup=setup)
+    except Exception as exc:  # noqa: BLE001 - a profile is never worth a failed push
+        typer.echo(f"warning: tables were not profiled ({exc})", err=True)
+        return
+    _warn_unread(
+        [
+            f"{table['schema']}.{table['name']}"
+            for table in wanted
+            if not (folder / profiles.path(table["schema"], table["name"])).is_file()
+        ]
+    )
 
 
 @app.command()

@@ -57,8 +57,6 @@ Every version is described by a `dataset.json` (see [Versions](/spec/versions#da
 
 The command puts `README.md` beside the description and every file below `docs/` there (hidden ones left out) in the version's tree: it writes `tree.json` with their paths from that folder and the push uploads those the repository lacks to `assets/<sha256>`, as written (see [tree.json](/spec/versions#treejson)).
 
-It writes no profiles: run `fdl profile` before `fdl push` for them.
-
 Columns marked `asset: true` hold the sha256 of files (see [Assets](/spec/versions#assets)). The command reads the values those columns hold, and the push uploads the files the repository lacks from the `--assets` folder to `assets/<sha256>`, by their content: file names in the folder do not matter.
 
 When the version would hold what its parent holds (see [When nothing changed](/spec/writing#when-nothing-changed)), it prints `Nothing to commit`, makes nothing and exits 0. A rebuild that writes the same rows to new files counts as unchanged. `--allow-empty` makes the version anyway. If the rows cannot be read to tell, it warns and makes the version.
@@ -72,10 +70,12 @@ Refused when:
 ## fdl push
 
 ```bash
-fdl push <working.sqlite>
+fdl push <working.sqlite> [--no-profile]
 ```
 
 Uploads the version `fdl commit` made and moves the branch to it on condition (see [Order of writes](/spec/writing#order-of-writes)). It prints the branch, the version ID and its `seq`. After a fast-forward `fdl merge`, it moves the branch to the version merged, uploading nothing. With nothing committed, it prints `Nothing to push`.
+
+Before uploading, it writes a profile of each table (see [profiles/](/spec/versions#profiles)) and uploads the profiles before `version.json`, so they are there when the branch moves. It reads only the tables whose data files or columns changed since the parent; the others keep the parent's profile. A table it cannot read gets none, with a warning. When the working catalog changed after the commit, it profiles nothing and warns. `--no-profile` skips profiling; `fdl profile` adds the profiles later.
 
 Data files the working catalog wrote into the repository are there before the push, but no version names them until it. Files never pushed are deleted after the grace period.
 
@@ -223,15 +223,10 @@ Without `--yes` it only prints what it would delete. Files a kept version still 
 ## fdl profile
 
 ```bash
-fdl profile <working.sqlite>
 fdl profile <remote> [--ref refs/heads/main]
 ```
 
-Writes a profile of each table (see [profiles/](/spec/versions#profiles)), measured from the data.
-
-Given a working catalog, it profiles the version `fdl commit` made there, and `fdl push` uploads the profiles with it. Run it between commit and push, so that the profiles are in the repository when the branch moves. It reads only the tables whose data files or columns changed since the parent; the others keep the parent's profile. A table it cannot read gets none, with a warning. Refused when nothing is committed, and when the working catalog changed after the commit.
-
-Given a repository, it profiles the tables of the version the branch or tag holds that have no profile, and puts those profiles beside the version: for a version made before fdl wrote profiles, or pushed without them. Profiles already there are left as they are. Refused for a version past retention, which has no catalog.
+Profiles the tables of the version the branch or tag holds that have no [profile](/spec/versions#profiles), and puts the profiles beside the version. `fdl push` profiles the version it uploads; this is for a version pushed without them: made before fdl wrote profiles, pushed with `--no-profile`, or whose tables could not be read then. Profiles already there are left as they are. Refused for a version past retention, which has no catalog.
 
 ## fdl expire
 

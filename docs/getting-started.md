@@ -80,11 +80,10 @@ Only `name` and `title` are required. `fdl commit` checks the file against the c
 
 ```bash
 fdl commit work/lake.sqlite -m "First towns" --author alice
-fdl profile work/lake.sqlite
 fdl push work/lake.sqlite
 ```
 
-`commit` freezes the working catalog into a version on your disk. `profile` measures each table into a small summary that readers can show without reading the data. `push` uploads it and moves `main` to it, and prints `refs/heads/main -> 019a3c4e-… (version 1)`. The repository now holds:
+`commit` freezes the working catalog into a version on your disk. `push` measures each table into a small summary (a profile) that readers can show without reading the data, uploads the version with them and moves `main` to it, and prints `refs/heads/main -> 019a3c4e-… (version 1)`. The repository now holds:
 
 ```
 towns/
@@ -138,7 +137,6 @@ INSERT INTO lake.main.towns SELECT * FROM 'towns-2026.csv';
 
 ```bash
 fdl commit work/lake.sqlite -m "Add 2026" --author alice
-fdl profile work/lake.sqlite
 fdl push work/lake.sqlite
 ```
 

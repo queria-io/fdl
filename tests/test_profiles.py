@@ -23,7 +23,7 @@ def run(*args) -> str:
 
 
 def commit(working, *args) -> str:
-    return run("commit", working, *args) + run("profile", working) + run("push", working)
+    return run("commit", working, *args) + run("push", working)
 
 
 def write(working: Path, store: LocalStore, sql: str) -> None:
@@ -221,19 +221,22 @@ def test_profile_adds_the_profiles_a_pushed_version_lacks(repository) -> None:
     assert "Profiled 0 table(s)" in run("profile", store.url)
 
 
-def test_a_commit_alone_profiles_nothing(repository) -> None:
+def test_push_no_profile_uploads_none(repository) -> None:
     store, working = repository
     write(working, store, "CREATE TABLE lake.main.towns AS SELECT 1 AS id")
     run("commit", working, "-m", "m", "--author", "t")
-    run("push", working)
+    run("push", working, "--no-profile")
     assert store.list(f"{layout.version_dir(repo.head(store).id)}profiles/") == []
+    assert "Profiled 1 table(s)" in run("profile", store.url)
+    assert profile_of(store)["rows"] == 1
 
 
-def test_profile_refuses_a_working_catalog_changed_after_the_commit(repository) -> None:
+def test_push_skips_profiles_when_the_working_catalog_changed_after_the_commit(repository) -> None:
     store, working = repository
     write(working, store, "CREATE TABLE lake.main.towns AS SELECT 1 AS id")
     run("commit", working, "-m", "m", "--author", "t")
     write(working, store, "INSERT INTO lake.main.towns VALUES (2)")
-    result = runner.invoke(app, ["profile", str(working)])
-    assert result.exit_code == 1
+    result = runner.invoke(app, ["push", str(working)])
+    assert result.exit_code == 0, result.output
     assert "changed after the commit" in result.output
+    assert store.list(f"{layout.version_dir(repo.head(store).id)}profiles/") == []
