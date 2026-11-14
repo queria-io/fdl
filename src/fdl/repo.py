@@ -566,7 +566,7 @@ def write_profiles(
     """Write a profile of each table of a committed version under ``local/profiles/``.
 
     A table whose data files and columns are the parent's keeps the parent's
-    profile, so a commit reads only the tables that changed. Returns how many
+    profile, so profiling reads only the tables that changed. Returns how many
     were made from the data.
     """
     local = Path(local)

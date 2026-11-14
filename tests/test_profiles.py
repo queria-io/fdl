@@ -1,4 +1,4 @@
-"""Profiles: a summary of each table, made from the data at commit."""
+"""Profiles: a summary of each table, made from the data at push."""
 
 from __future__ import annotations
 
@@ -240,3 +240,27 @@ def test_push_skips_profiles_when_the_working_catalog_changed_after_the_commit(r
     assert result.exit_code == 0, result.output
     assert "changed after the commit" in result.output
     assert store.list(f"{layout.version_dir(repo.head(store).id)}profiles/") == []
+
+
+def test_push_goes_without_profiles_when_the_working_catalog_is_gone(repository) -> None:
+    store, working = repository
+    write(working, store, "CREATE TABLE lake.main.towns AS SELECT 1 AS id")
+    run("commit", working, "-m", "m", "--author", "t")
+    working.unlink()
+    result = runner.invoke(app, ["push", str(working)])
+    assert result.exit_code == 0, result.output
+    assert "were not profiled" in result.output
+    assert store.list(f"{layout.version_dir(repo.head(store).id)}profiles/") == []
+
+
+def test_push_profiles_the_tables_a_stopped_push_left_without(repository) -> None:
+    store, working = repository
+    write(working, store, "CREATE TABLE lake.main.towns AS SELECT 1 AS id")
+    write(working, store, "CREATE TABLE lake.main.roads AS SELECT 1 AS id")
+    run("commit", working, "-m", "m", "--author", "t")
+    pending = next((working.parent / f"{working.name}.pending").iterdir())
+    partial = pending / "profiles" / "main" / "towns.json"
+    partial.parent.mkdir(parents=True)
+    partial.write_bytes(b'{"rows": 1, "columns": []}')
+    run("push", working)
+    assert profile_of(store, "roads")["rows"] == 1
