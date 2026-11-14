@@ -208,7 +208,7 @@ When a version is taken out of retention, `files.json` is deleted with its catal
 
 A profile summarizes one table at `ducklake.snapshot_id`: its row count, what each column holds, its first rows and, for a table with a geometry column, the extent and a sample of its shapes. A reader can show a table, or a host can index it for search, from this one small file, without opening the catalog or reading the data. It holds what was measured from the data; what a column means is the writer's, in `dataset.json`. Like `files.json`, it is made from the catalog and the data, which win where the two differ, and it is optional: a reader must work without it.
 
-Each table's profile is at `versions/<ID>/profiles/<schema>/<table>.json`. A table whose schema or name is empty, `.`, `..` or holds `/` has none. Views have none. A version made without a profile for a table, by a writer that did not profile or failed to, may get one later; it is measured from the version's catalog and data, as at commit.
+Each table's profile is at `versions/<ID>/profiles/<schema>/<table>.json`. A table whose schema or name is empty, `.`, `..` or holds `/` has none. Views have none. A version made without a profile for a table, by a writer that did not profile or failed to, may get one later; it is measured from the version's catalog and data, like any other profile.
 
 ```json profiles/main/towns.json
 {
@@ -246,7 +246,7 @@ Each table's profile is at `versions/<ID>/profiles/<schema>/<table>.json`. A tab
 - `head` holds the first rows the table returns, as JSON objects, leaving out geometry and columns whose values have no JSON form
 - `geometry` describes the first geometry column, when the writer could read it: how many rows have a shape, the `bbox` of all of them (`[xmin, ymin, xmax, ymax]` in the column's coordinates), the geometry types present, and a GeoJSON `FeatureCollection` of a random sample of simplified shapes for drawing a map
 - A writer may leave out any key it cannot compute. A reader ignores keys it does not know
-- A writer reuses its parent's profile for a table whose data files (in `files.json`) and columns are the parent's, so a commit reads only the tables that changed. It makes the profile again when the parent's `values` follow another limit than its own
+- A writer reuses its parent's profile for a table whose data files (in `files.json`) and columns are the parent's, so profiling reads only the tables that changed. It makes the profile again when the parent's `values` follow another limit than its own
 - Profiles are part of the version and do not change with it. They are deleted with the catalogs when the version is taken out of retention
 
 ## The frozen catalog

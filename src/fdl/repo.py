@@ -615,26 +615,27 @@ def missing_profiles(store: Store, version: Version) -> list[dict]:
     """The tables of ``version`` that get a profile and have none in the repository."""
     if version.dataset is None:
         return []
-    described = json.loads(store.get(layout.version_dir(version.id) + version.dataset.path))
+    folder = layout.version_dir(version.id)
+    described = json.loads(store.get(folder + version.dataset.path))
+    there = set(store.list(folder + layout.PROFILES_DIR))
     return [
         table
         for table in profiles.tables(described)
-        if store.head(layout.version_dir(version.id) + profiles.path(table["schema"], table["name"])) is None
+        if folder + profiles.path(table["schema"], table["name"]) not in there
     ]
 
 
-def add_profiles(store: Store, version: Version, *, setup: Iterable[str] = ()) -> list[str]:
+def add_profiles(store: Store, version: Version, *, setup: Iterable[str] = ()) -> tuple[list[str], list[str]]:
     """Profile the tables of a pushed version that have no profile, and put those profiles.
 
     For a version made before its writer profiled tables, or whose profiling
     failed. A profile already there is left as it is. Returns the paths put,
-    under the version.
+    under the version, and the tables (``schema.name``) that could not be read.
+    Refused for a version past retention, which has no catalog to check out.
     """
     wanted = missing_profiles(store, version)
     if not wanted:
-        return []
-    if is_expired(store, version.id):
-        raise RepoError(f"{version.id} is past retention and has no catalog")
+        return [], []
     with tempfile.TemporaryDirectory(prefix=".fdl-profile-") as scratch:
         working = Path(scratch) / "work.sqlite"
         checkout(store, working, version=version, local_data=Path(scratch) / "data")
@@ -644,7 +645,12 @@ def add_profiles(store: Store, version: Version, *, setup: Iterable[str] = ()) -
             written.parent.mkdir(parents=True, exist_ok=True)
             written.write_bytes(content)
             _put_once(store, layout.version_dir(version.id) + relative, written)
-    return sorted(made)
+    unread = [
+        f"{table['schema']}.{table['name']}"
+        for table in wanted
+        if profiles.path(table["schema"], table["name"]) not in made
+    ]
+    return sorted(made), unread
 
 
 def upload(store: Store, local: Path, version: Version) -> None:
