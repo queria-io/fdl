@@ -58,7 +58,7 @@ def read_rows(store: LocalStore, version_id: str) -> list[tuple]:
     con = duckdb.connect()
     con.execute("INSTALL ducklake; LOAD ducklake;")
     con.execute(
-        f"ATTACH 'ducklake:{store.root / layout.version_catalog(version_id)}' "
+        f"ATTACH 'ducklake:{store.root / layout.version_metadata(repo.read_version(store, version_id))}' "
         f"AS v (READ_ONLY)"
     )
     rows = con.execute("SELECT * FROM v.main.towns ORDER BY id").fetchall()
@@ -91,7 +91,7 @@ def test_commit_push_and_read_back(tmp_path: Path, remote) -> None:
     assert first.seq == 1 and first.parents == ()
     # Whatever DuckDB writes it, the catalog is in the format readers on
     # DuckDB 1.5 open.
-    assert first.catalog.storage == "duckdb-v1.5.0"
+    assert first.metadata.storage == "duckdb-v1.5.0"
     assert first.ducklake.format == "1.0"
     assert remote.get("refs/heads/main") == f"{first.id}\n".encode()
     assert read_rows(remote, first.id) == [(1,)]
@@ -254,9 +254,9 @@ def pushed_chain(tmp_path: Path, store, count: int) -> list:
     return versions
 
 
-def test_expire_marks_and_drops_the_catalog_but_keeps_the_record(tmp_path: Path, remote) -> None:
+def test_expire_marks_and_drops_the_metadata_but_keeps_the_record(tmp_path: Path, remote) -> None:
     first, second = pushed_chain(tmp_path, remote, 2)
-    remote.put(layout.version_dir(first.id) + "catalogs/sqlite.db", b"x")
+    remote.put(layout.version_dir(first.id) + "metadata/sqlite.db", b"x")
     repo.expire(remote, first.id)
 
     assert json.loads(remote.get(layout.version_expired(first.id)))["reason"] == "retention"
@@ -458,7 +458,7 @@ def test_withdraw_removes_the_data_from_live_versions(tmp_path: Path, remote) ->
     assert repo.tags(remote) == {}
     for version_id in (first.id, second.id):
         assert json.loads(remote.get(layout.version_expired(version_id)))["reason"] == "withdrawn"
-        assert remote.head(layout.version_catalog(version_id)) is None
+        assert remote.head(layout.version_metadata(repo.read_version(remote, version_id))) is None
         assert remote.head(layout.version_record(version_id)) is not None
     assert repo.head(remote) == clean
 
@@ -499,9 +499,21 @@ def _pushed(tmp_path: Path, remote) -> str:
     return version.id
 
 
+def test_a_version_written_by_0_26_is_read_at_the_name_it_records(tmp_path: Path, remote) -> None:
+    version_id = _pushed(tmp_path, remote)
+    folder = remote.root / layout.version_dir(version_id)
+    (folder / layout.METADATA).rename(folder / "ducklake.duckdb")
+    record = json.loads(remote.get(layout.version_record(version_id)))
+    record["catalog"] = {**record.pop("metadata"), "path": "ducklake.duckdb"}
+    (remote.root / layout.version_record(version_id)).write_text(json.dumps(record))
+    assert repo.read_version(remote, version_id).metadata.path == "ducklake.duckdb"
+    repo.checkout(remote, tmp_path / "again.sqlite")
+    assert read_rows(remote, version_id) == [(1,)]
+
+
 def test_checkout_refuses_a_catalog_that_is_not_the_one_recorded(tmp_path: Path, remote) -> None:
     version_id = _pushed(tmp_path, remote)
-    path = remote.root / layout.version_catalog(version_id)
+    path = remote.root / layout.version_metadata(repo.read_version(remote, version_id))
     path.write_bytes(path.read_bytes() + b"\0")
     with pytest.raises(repo.RepoError, match="sha256"):
         repo.checkout(remote, tmp_path / "again.sqlite")
@@ -511,14 +523,14 @@ def test_checkout_refuses_a_catalog_naming_files_outside_the_data_folder(tmp_pat
     import hashlib
 
     version_id = _pushed(tmp_path, remote)
-    path = remote.root / layout.version_catalog(version_id)
+    path = remote.root / layout.version_metadata(repo.read_version(remote, version_id))
     con = duckdb.connect(str(path))
     con.execute("UPDATE ducklake_data_file SET path = '../../elsewhere/a.parquet'")
     con.close()
     # Recorded as if the writer had made it so: only the paths give it away.
     record = json.loads(remote.get(layout.version_record(version_id)))
-    record["catalog"]["sha256"] = hashlib.sha256(path.read_bytes()).hexdigest()
-    record["catalog"]["bytes"] = path.stat().st_size
+    record["metadata"]["sha256"] = hashlib.sha256(path.read_bytes()).hexdigest()
+    record["metadata"]["bytes"] = path.stat().st_size
     (remote.root / layout.version_record(version_id)).write_text(json.dumps(record))
     with pytest.raises(repo.RepoError, match="outside the data folder"):
         repo.checkout(remote, tmp_path / "again.sqlite")
@@ -600,7 +612,7 @@ def test_a_version_records_what_changed_since_its_parent(tmp_path: Path, remote)
 def test_a_record_with_a_path_outside_its_folder_is_refused(tmp_path: Path, remote) -> None:
     version_id = _pushed(tmp_path, remote)
     record = json.loads(remote.get(layout.version_record(version_id)))
-    for field, value in (("parents", ["../x"]), ("catalog", {**record["catalog"], "path": "../ducklake.duckdb"})):
+    for field, value in (("parents", ["../x"]), ("metadata", {**record["metadata"], "path": "../metadata.db"})):
         with pytest.raises(ValueError):
             parse(json.dumps({**record, field: value}).encode(), expected_id=version_id)
 

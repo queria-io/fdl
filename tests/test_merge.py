@@ -254,7 +254,7 @@ def test_a_merge_base_is_the_newest_common_ancestor(tmp_path: Path) -> None:
     store = LocalStore(tmp_path / "remote")
     repo.init(store)
 
-    from fdl.version import Catalog, DuckLake, new_id, utc_now
+    from fdl.version import DuckLake, Metadata, new_id, utc_now
 
     def put(*parents: repo.Version) -> repo.Version:
         made = repo.Version(
@@ -264,7 +264,7 @@ def test_a_merge_base_is_the_newest_common_ancestor(tmp_path: Path) -> None:
             created_at=utc_now(),
             author={"name": "tester"},
             message="",
-            catalog=Catalog(path="ducklake.duckdb", storage="v1.5.0", bytes=0, sha256="0" * 64),
+            metadata=Metadata(path="metadata.db", storage="v1.5.0", bytes=0, sha256="0" * 64),
             ducklake=DuckLake(format="1.0", snapshot_id=1, snapshots=(1, 1)),
         )
         store.put(f"versions/{made.id}/version.json", made.to_json())

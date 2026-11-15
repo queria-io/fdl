@@ -3,18 +3,18 @@ title: HTTP で配信する
 description: 普通の HTTP サーバーや CDN からリポジトリを ATTACH してもらう方法と、ファイルの種類ごとのキャッシュ。
 ---
 
-読み手はファイルを読むだけなので、リポジトリはどんな HTTP サーバーからでも配信できます。バケットの公開 URL でも、その前に置いた CDN でもかまいません。DuckDB は、カタログと Parquet ファイルを範囲リクエストで取得します。
+読み手はファイルを読むだけなので、リポジトリはどんな HTTP サーバーからでも配信できます。バケットの公開 URL でも、その前に置いた CDN でもかまいません。DuckDB は、メタデータと Parquet ファイルを範囲リクエストで取得します。
 
 ## 読み手が取得するもの
 
 1. `HEAD` か、指定された ref
 2. `HEAD` が指していれば `refs/heads/main`
 3. `versions/<ID>/version.json`。保持期間を過ぎていないか、形式を開けるかを確かめる
-4. `versions/<ID>/ducklake.duckdb`。範囲リクエストで
+4. `versions/<ID>/metadata.db`。範囲リクエストで
 5. クエリに要る Parquet ファイル。範囲リクエストで
 
 ```sql
-ATTACH 'ducklake:https://data.example.org/towns/versions/019a3c4e-…/ducklake.duckdb' AS towns (
+ATTACH 'ducklake:https://data.example.org/towns/versions/019a3c4e-…/metadata.db' AS towns (
   DATA_PATH 'https://data.example.org/towns/data/', OVERRIDE_DATA_PATH true, READ_ONLY
 );
 ```
@@ -38,11 +38,11 @@ ATTACH 'ducklake:https://data.example.org/towns/versions/019a3c4e-…/ducklake.d
 
 読み手は一覧を取りません。ref の名前が分かれば、あとは ID をたどって全部取得できます。名前が分からなければ `refs.json` を読みます。ディレクトリの一覧は使わないので、無効にしておいてください。
 
-## 決まった URL で最新のカタログを出す
+## 決まった URL で最新のメタデータを出す
 
-FDL を知らない読み手は、カタログの URL が 1 つであることを期待します。ホストは、`HEAD` が指すバージョンのカタログを `<root>/ducklake.duckdb` で出してもかまいません。その場合は、どのバージョンを返したか分かるように、レスポンスヘッダー `FDL-Version` にバージョン ID を付け、ref より長くキャッシュさせないでください。
+FDL を知らない読み手は、メタデータの URL が 1 つであることを期待します。ホストは、`HEAD` が指すバージョンのメタデータを `<root>/metadata.db` で出してもかまいません。その場合は、どのバージョンを返したか分かるように、レスポンスヘッダー `FDL-Version` にバージョン ID を付け、ref より長くキャッシュさせないでください。
 
-これは読み手のための便宜で、リポジトリの一部ではありません。置き場には `versions/` の外のカタログはありません。
+これは読み手のための便宜で、リポジトリの一部ではありません。置き場には `versions/` の外のメタデータはありません。
 
 ## CORS
 

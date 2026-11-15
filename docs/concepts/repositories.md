@@ -9,11 +9,11 @@ A repository is everything under one prefix of a store: `s3://bucket/lake/` on S
 
 | Operation | Used by | For |
 | --- | --- | --- |
-| read an object | readers and writers | refs, `version.json`, catalogs, data files |
-| write an object | writers | data files, catalogs, `version.json` |
+| read an object | readers and writers | refs, `version.json`, metadata files, data files |
+| write an object | writers | data files, metadata files, `version.json` |
 | write on condition | writers | refs: create only if absent, replace only if unchanged |
 | list a prefix | maintenance | finding data files that no version names |
-| delete | maintenance | catalogs of versions past retention, and unused data files |
+| delete | maintenance | metadata files of versions past retention, and unused data files |
 
 Conditional writes are what make two writers safe. A ref is created with `If-None-Match: *` and moved with `If-Match: <the ETag that was read>`. If someone else moved it in between, the store refuses the write and nothing changes. S3 and R2 support this. The folder store checks the condition without a lock, so it suits one writer at a time (see [Stores](/guides/stores)). A store without conditional writes can still be read from, but must not be pushed to: the last writer would silently replace someone else's version.
 
@@ -32,7 +32,7 @@ Readers only read. A static HTTP server in front of the repository is enough for
   assets/<sha256>          files a version points at, such as PDFs, images and its README
 ```
 
-The repository holds no catalog outside a version folder, and never a working catalog. Either would hand readers a state that was never published.
+The repository holds no metadata outside a version folder, and never a working metadata file. Either would hand readers a state that was never published.
 
 `fdl.json` carries an `id`, a UUID written once by `fdl init`. Copies of the repository on other hosts keep the same `id`, so a tool can tell that two URLs hold the same repository. A service that hosts repositories may write its own ID for the dataset there.
 

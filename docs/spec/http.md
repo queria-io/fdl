@@ -21,7 +21,7 @@ A host can take pushes over HTTP, so a writer needs no keys to its storage. The 
 - Parts other than the last are the same size. A writer sends a file in parts when it is larger than one request may be (64 MB by default)
 - A host decides which keys it takes. It may refuse writes to `HEAD`, `fdl.json` and anything outside the layout (but must answer `HEAD` requests, which a writer needs for a ref's ETag), and take `versions/` and data files only with `If-None-Match: *`
 - A host that moves refs itself after its checks keeps `refs.json` too, and may refuse a writer's write to it with 403. A writer treats that as done
-- Moving a ref is where a host checks a push: the version is there, it is a fast-forward, the catalog matches `version.json`, and every data file it names and every file its `tree.json` lists are in the repository. It may check the assets the rows hold too. A refusal is 409 with the reason in the body
+- Moving a ref is where a host checks a push: the version is there, it is a fast-forward, the metadata matches `version.json`, and every data file it names and every file its `tree.json` lists are in the repository. It may check the assets the rows hold too. A refusal is 409 with the reason in the body
 - There is no `DELETE`. Retention and deletion are the host's
 
 ## Uploading straight to storage
@@ -62,11 +62,11 @@ The answer has one entry per object, in any order:
 
 ## Writing to it
 
-DuckDB cannot write data files to an HTTP URL, so a working catalog of such a repository keeps two places:
+DuckDB cannot write data files to an HTTP URL, so a working metadata file of such a repository keeps two places:
 
 - Files already in the repository stay where they are. Checking out turns their references into absolute URLs under the repository's `data_dir`, so they are read over HTTP
-- New files are written to a folder on the writer's machine, the working catalog's data path
+- New files are written to a folder on the writer's machine, the working metadata's data path
 
-Committing turns references under the repository's `data_dir` back into relative ones, and the new files are relative already. Pushing uploads the new files the repository lacks before the catalog.
+Committing turns references under the repository's `data_dir` back into relative ones, and the new files are relative already. Pushing uploads the new files the repository lacks before the metadata.
 
-A writer with keys to the repository's storage may instead give the working catalog the storage's own location of `data_dir` as its data path. New files are then written into the repository as they are made, and pushing has none to upload. Moving the ref is still where the host checks them.
+A writer with keys to the repository's storage may instead give the working metadata the storage's own location of `data_dir` as its data path. New files are then written into the repository as they are made, and pushing has none to upload. Moving the ref is still where the host checks them.

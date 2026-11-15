@@ -15,12 +15,12 @@ These keep their paths and their meaning:
 
 - `fdl.json`, `HEAD`, `refs/` and `refs.json`
 - `version.json` and its required fields
-- the frozen catalog, `ducklake.duckdb`
+- the frozen metadata, at the name `metadata.path` gives (`metadata.db`, or `ducklake.duckdb` in versions written by fdl-cli 0.26 and earlier)
 - `dataset.json`: `name`, `title`, `tables` and each table's `fields`
 - `expired.json`
 - data files and `assets/<sha256>`
 
-The optional files of a version, `files.json`, `tree.json` and `profiles/`, are made from the catalog and the data, and a reader works without them. They may gain keys in later releases. A reader ignores keys it does not know, in every file.
+The optional files of a version, `files.json`, `tree.json` and `profiles/`, are made from the metadata and the data, and a reader works without them. They may gain keys in later releases. A reader ignores keys it does not know, in every file.
 
 ## fdl-cli
 
@@ -33,7 +33,7 @@ pip install 'fdl-cli[s3]>=0.21,<0.22'
 ## What it runs on
 
 - Python 3.10 or later
-- DuckDB 1.5.2 or later, 2.x included (on Python 3.11 or later), with the `ducklake` extension. Whichever DuckDB writes them, the catalogs `fdl` writes are DuckLake format 1.0 in DuckDB storage v1.5.0, so DuckDB 1.5 and later read them
+- DuckDB 1.5.2 or later, 2.x included (on Python 3.11 or later), with the `ducklake` extension. Whichever DuckDB writes them, the metadata files `fdl` writes are DuckLake format 1.0 in DuckDB storage v1.5.0, so DuckDB 1.5 and later read them
 
 ## Reporting a problem
 

@@ -15,10 +15,10 @@ for version in repo.log(store):
 | モジュール | 中身 |
 | --- | --- |
 | `fdl.repo` | 操作: `init`、`checkout`、`commit`、`push`、`log`、`expire`、`prune` |
-| `fdl.diff` | 2 つのバージョンの違い（`diff.versions`）と作業カタログの変更（`diff.working`） |
+| `fdl.diff` | 2 つのバージョンの違い（`diff.versions`）と作業メタデータの変更（`diff.working`） |
 | `fdl.refs` | ref を読み、条件付きで動かす |
 | `fdl.version` | `Version`（`version.json` の記録）と新しい ID |
-| `fdl.catalog` | DuckDB と SQLite の DuckLake カタログと、その間の写し |
+| `fdl.catalog` | DuckDB と SQLite の DuckLake メタデータと、その間の写し |
 | `fdl.layout` | リポジトリの各ファイルの場所 |
 | `fdl.store`、`fdl.stores` | 置き場に求めることと、フォルダ・S3 の置き場 |
 
@@ -48,19 +48,19 @@ repo.init(store, *, data_dir="data/") -> Config
 repo.checkout(store, working, *, ref="HEAD", local_data=None, version=None) -> Version | None
 ```
 
-`ref` が指すバージョン、または `version` を渡したときはそのバージョンから、`working` に作業カタログを作ります。そのバージョンを返し、最初のバージョンの前は `None` を返します。HTTP の置き場では、新しいデータファイルを書くフォルダ `local_data` が要ります。カタログの sha256 が `version.json` の記録と違うときと、カタログがデータフォルダの外のデータファイルを指しているときは断ります。
+`ref` が指すバージョン、または `version` を渡したときはそのバージョンから、`working` に作業メタデータを作ります。そのバージョンを返し、最初のバージョンの前は `None` を返します。HTTP の置き場では、新しいデータファイルを書くフォルダ `local_data` が要ります。メタデータの sha256 が `version.json` の記録と違うときと、メタデータがデータフォルダの外のデータファイルを指しているときは断ります。
 
 ```python
 repo.commit(working, out_dir, *, parent, data_path, author, message, inputs=(), annotations=None, dataset=None) -> Version
 ```
 
-作業カタログを `out_dir/<ID>/` に固めます。`dataset`（読み込んだ `dataset.json`）をカタログと照らし合わせ、カタログから書き足します。`data_path` は `repo.data_url(store)` です。アップロードはしません。
+作業メタデータを `out_dir/<ID>/` に固めます。`dataset`（読み込んだ `dataset.json`）をメタデータと照らし合わせ、メタデータから書き足します。`data_path` は `repo.data_url(store)` です。アップロードはしません。
 
 ```python
 repo.record(frozen, out_dir, *, parent, author, message, inputs=(), annotations=None, dataset=None) -> Version
 ```
 
-固め終えたカタログからバージョンを作ります。自分でカタログを固める書き手向けです。
+固め終えたメタデータからバージョンを作ります。自分でメタデータを固める書き手向けです。
 
 ```python
 repo.push(store, local, version, *, ref="refs/heads/main", move_ref=True) -> None
@@ -89,13 +89,13 @@ merge.primary_keys(base, ours, theirs) -> dict[tuple[str, str], list[str]]
 merge.tables(working, base, theirs, *, keys, repository_data, data_path=None, setup=(), write=True) -> Plan
 ```
 
-`fdl merge` の部品です。`values` は `dataset.json` か `tree.json` をキーごとにマージし、衝突を返します。`merge.MISSING` は、そのバージョンに無い値を表します。`primary_keys` は、行をマージできるテーブルを返します。`tables` は、固めたカタログ `theirs` が `base` から変えた内容を、作業カタログに 1 つのスナップショットで書きます。衝突があるときは何も書きません。`Plan` は衝突と取り込んだものを持ちます。マージのバージョンは、`repo.commit` と `repo.record` に `merged=<theirs>` を渡して作ります。
+`fdl merge` の部品です。`values` は `dataset.json` か `tree.json` をキーごとにマージし、衝突を返します。`merge.MISSING` は、そのバージョンに無い値を表します。`primary_keys` は、行をマージできるテーブルを返します。`tables` は、固めたメタデータ `theirs` が `base` から変えた内容を、作業メタデータに 1 つのスナップショットで書きます。衝突があるときは何も書きません。`Plan` は衝突と取り込んだものを持ちます。マージのバージョンは、`repo.commit` と `repo.record` に `merged=<theirs>` を渡して作ります。
 
 ```python
 repo.readable(store, name="HEAD") -> Version
 ```
 
-ref が指すバージョンを、読み手がカタログを開く前に行う確認を済ませてから返します。最初のバージョンの前、読めない形式の `version.json`、保持期間を過ぎたか取り下げたバージョンでは `RepoError` を出します。`fdl url` はこれを使います。
+ref が指すバージョンを、読み手がメタデータを開く前に行う確認を済ませてから返します。最初のバージョンの前、読めない形式の `version.json`、保持期間を過ぎたか取り下げたバージョンでは `RepoError` を出します。`fdl url` はこれを使います。
 
 ```python
 repo.expire(store, version_id, *, reason="retention") -> None
@@ -131,7 +131,7 @@ repo.plan_withdrawal(store, version_ids) -> Withdrawal
 repo.withdraw(store, version_ids, *, plan=None) -> Withdrawal
 ```
 
-公開してはいけないデータを持つバージョンを取り下げます。`plan_withdrawal` は何も変えずに、消すタグ、消すデータファイル、残すバージョンが読むので残すファイルを返します。`withdraw` はタグ、データファイル、カタログの順に消します。ブランチかリクエストが該当するバージョンを指しているあいだは、どちらも `RepoError` を出します。
+公開してはいけないデータを持つバージョンを取り下げます。`plan_withdrawal` は何も変えずに、消すタグ、消すデータファイル、残すバージョンが読むので残すファイルを返します。`withdraw` はタグ、データファイル、メタデータの順に消します。ブランチかリクエストが該当するバージョンを指しているあいだは、どちらも `RepoError` を出します。
 
 ## fdl.diff
 
@@ -141,7 +141,7 @@ diff.working(working, base) -> dict
 diff.lines(result) -> list[str]
 ```
 
-`versions` は 2 つのバージョンを、古い方が親なら新しい方の `diff` から、それ以外は `dataset.json`・`files.json` から比べます（最初のバージョンの前は `old` を `None` にします）。`working` は作業カタログを、checkout したときのバージョン `base` と比べます。どちらも `tables`（`added`・`dropped`）・`rows`・`columns`・`data`・`descriptions` を返し、`fdl diff --json` と同じ形です。`lines` は `fdl diff` が表示する行を返します。
+`versions` は 2 つのバージョンを、古い方が親なら新しい方の `diff` から、それ以外は `dataset.json`・`files.json` から比べます（最初のバージョンの前は `old` を `None` にします）。`working` は作業メタデータを、checkout したときのバージョン `base` と比べます。どちらも `tables`（`added`・`dropped`）・`rows`・`columns`・`data`・`descriptions` を返し、`fdl diff --json` と同じ形です。`lines` は `fdl diff` が表示する行を返します。
 
 ## fdl.refs
 

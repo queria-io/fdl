@@ -19,12 +19,12 @@ Paths are relative to the root, lower case, and separated by `/`. The root is wh
   versions/<version ID>/
     version.json                   the version record, written last
     version.json.sig               a signature of the record (optional)
-    ducklake.duckdb                the frozen catalog
+    metadata.db                    the frozen metadata
     dataset.json                   what the version holds, described
-    files.json                     each table's data files, indexed from the catalog (optional)
+    files.json                     each table's data files, indexed from the metadata (optional)
     tree.json                      the other files of the version, such as a README, by path (optional)
     profiles/<schema>/<table>.json a summary of each table, measured from the data (optional)
-    catalogs/<format>.duckdb       the catalog in another DuckLake format (optional)
+    metadata/<format>.db           the metadata in another DuckLake format (optional)
     expired.json                   the past-retention mark (only once expired)
     <others>                       files a host adds
   <data_dir><schema>/<table>/ducklake-<uuid>.parquet   data files (shared, immutable)
@@ -33,7 +33,7 @@ Paths are relative to the root, lower case, and separated by `/`. The root is wh
 
 `HEAD` and everything under `refs/` have no extension, as in Git. Their content is UTF-8 text.
 
-The root must not hold a DuckLake catalog outside `versions/`, and must never hold a working catalog. Either would give readers a state that was never published.
+The root must not hold a DuckLake metadata file outside `versions/`, and must never hold a working metadata file. Either would give readers a state that was never published.
 
 Files with other names may sit at the root. Readers must ignore them.
 
@@ -47,7 +47,7 @@ A repository's root must not be under another repository's root. Deleting the ou
   "id": "5f0c8a52-6d3e-4f8e-9b1a-2c7d4e9f0a13",
   "data_dir": "data/",
   "signers": ["alice@example.org ssh-ed25519 AAAAC3…"],
-  "catalog_formats": [
+  "metadata_formats": [
     { "ducklake": "1.1" },
     { "ducklake": "1.0", "until": "2027-03-31" }
   ]
@@ -59,7 +59,7 @@ A repository's root must not be under another repository's root. Deleting the ou
 | `fdl` | must | The version of this specification. A reader must not read a major version it does not know |
 | `id` | should | A UUID written when the repository is started and never changed |
 | `data_dir` | may | Where data files are, relative to the root, ending in `/`. Default `data/` |
-| `catalog_formats` | may | The DuckLake formats published for new versions, and until when |
+| `metadata_formats` | may | The DuckLake formats published for new versions, and until when |
 | `signers` | may | Public keys that sign versions, as lines of an SSH `allowed_signers` file |
 
 `fdl.json` is created with `If-None-Match: *`, so starting a repository twice leaves the first one's settings in place.
@@ -70,7 +70,7 @@ The `id` lets a copy of the repository tell that it holds the same one. Mirrors 
 
 ### data_dir
 
-The default is `data/`. A repository whose data files already sit under another prefix declares that prefix here instead of moving them. Every data file a catalog names must be under `data_dir`.
+The default is `data/`. A repository whose data files already sit under another prefix declares that prefix here instead of moving them. Every data file a metadata file names must be under `data_dir`.
 
 ### signers
 
@@ -78,6 +78,6 @@ The keys the repository's writers sign versions with (see [Reading](/spec/readin
 
 How long versions are kept is not declared here. It is the host's decision.
 
-### catalog_formats
+### metadata_formats
 
-Each entry names a DuckLake format and, optionally, the last day it is written for new versions (`until`, an ISO 8601 date). Without the field, versions carry only `ducklake.duckdb`. See [Versions](/spec/versions#catalogs-in-other-formats).
+Each entry names a DuckLake format and, optionally, the last day it is written for new versions (`until`, an ISO 8601 date). Without the field, versions carry only `metadata.db`. See [Versions](/spec/versions#metadata-in-other-formats).

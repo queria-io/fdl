@@ -50,4 +50,4 @@ Access rules, approvals and billing stay in the host's own database. A repositor
 
 ## Retention
 
-`repo.prune` takes versions out of retention and `repo.expire` takes out one. Deleting data files that no live version names is left to the host, which can list the whole repository and read every live catalog. See [Data files](/spec/data-files) for when a file may be deleted.
+`repo.prune` takes versions out of retention and `repo.expire` takes out one. Deleting data files that no live version names is left to the host, which can list the whole repository and read every live metadata. See [Data files](/spec/data-files) for when a file may be deleted.

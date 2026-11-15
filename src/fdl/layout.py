@@ -7,6 +7,10 @@ two is copying files.
 from __future__ import annotations
 
 import re
+from typing import TYPE_CHECKING
+
+if TYPE_CHECKING:
+    from fdl.version import Version
 
 #: The version of the format this package writes and reads.
 FDL_VERSION = "0.1"
@@ -19,14 +23,16 @@ DEFAULT_BRANCH = "refs/heads/main"
 DEFAULT_DATA_DIR = "data/"
 
 VERSION_RECORD = "version.json"
-CATALOG = "ducklake.duckdb"
+#: The frozen DuckLake metadata. Versions written by 0.26 and earlier name it
+#: `ducklake.duckdb`; readers open the name `version.json` records.
+METADATA = "metadata.db"
 #: What the version holds, described (see `fdl.dataset`).
 DATASET = "dataset.json"
-#: The index of each table's files, made from the catalog (optional).
+#: The index of each table's files, made from the metadata (optional).
 FILES = "files.json"
 EXPIRED = "expired.json"
-#: Other formats of the same catalog, under the version (optional).
-CATALOGS_DIR = "catalogs/"
+#: The same metadata in other DuckLake formats, under the version (optional).
+METADATA_DIR = "metadata/"
 #: The other files of a version (its README, say), by path to the asset that holds each (optional).
 TREE = "tree.json"
 #: A summary of each table, made from the data, under the version (optional).
@@ -112,8 +118,9 @@ def version_record(version_id: str) -> str:
     return version_dir(version_id) + VERSION_RECORD
 
 
-def version_catalog(version_id: str) -> str:
-    return version_dir(version_id) + CATALOG
+def version_metadata(version: Version) -> str:
+    """The version's metadata, at the name its record gives."""
+    return version_dir(version.id) + version.metadata.path
 
 
 def version_expired(version_id: str) -> str:

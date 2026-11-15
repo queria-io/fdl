@@ -22,7 +22,7 @@ const rows = await readWhere(await openParquet(store, file), "town_code", "13101
 
 ## What it can read
 
-It follows [Reading](/spec/reading) up to the catalog and then reads `files.json` in its place:
+It follows [Reading](/spec/reading) up to the metadata and then reads `files.json` in its place:
 
 - A version without `files.json` cannot be read. Writers before fdl-cli 0.16 did not make one
 - A table whose files have `deletes`, or whose `renamed_columns` is `true`, is refused (see [files.json](/spec/versions#filesjson))

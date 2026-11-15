@@ -17,7 +17,7 @@ s3://public/towns/         the tables chosen for publication
 A version of the public repository is made from a version of the private one:
 
 1. Check out the public repository
-2. Copy the chosen tables from the private version into the working catalog. The Parquet files are copied into the public repository's data folder
+2. Copy the chosen tables from the private version into the working metadata. The Parquet files are copied into the public repository's data folder
 3. Commit, and name the private version in `inputs`
 
 ```json
@@ -26,13 +26,13 @@ A version of the public repository is made from a version of the private one:
 ]
 ```
 
-`sha256` is the private version's catalog checksum. Readers of the public repository see that the version was made from another one, without being able to open it.
+`sha256` is the private version's metadata checksum. Readers of the public repository see that the version was made from another one, without being able to open it.
 
 ## Why not one repository
 
-Putting a public catalog next to a private one in a single repository looks simpler, but:
+Putting a public metadata file next to a private one in a single repository looks simpler, but:
 
 - the server would have to decide file by file who can read which Parquet file, and get it right for every file of every version
-- the private catalog's snapshot history names the private tables, their columns and their commit messages. A public catalog copied out of it would carry that history unless it was rewritten
+- the private metadata's snapshot history names the private tables, their columns and their commit messages. A public metadata file copied out of it would carry that history unless it was rewritten
 
 Two repositories keep the rule simple. A reader can read everything in a repository or nothing in it.

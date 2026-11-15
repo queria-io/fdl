@@ -2,10 +2,10 @@
 title: FDL
 sidebar:
   label: はじめに
-description: DuckLake のカタログのバージョンを、Git がコミットを残すのと同じ形でオブジェクトストレージに残します。
+description: DuckLake のメタデータのバージョンを、Git がコミットを残すのと同じ形でオブジェクトストレージに残します。
 ---
 
-FDL は、[DuckLake](https://ducklake.select/) のカタログの履歴をバケットやフォルダに残します。バージョンはそれぞれ、カタログを固めた写しと、親・作者・メッセージの記録でできています。読み手がどのバージョンを読むかは、`refs/heads/main` のような ref が決めます。Parquet ファイルはバージョンの間で共有し、書き換えません。
+FDL は、[DuckLake](https://ducklake.select/) のメタデータの履歴をバケットやフォルダに残します。バージョンはそれぞれ、メタデータを固めた写しと、親・作者・メッセージの記録でできています。読み手がどのバージョンを読むかは、`refs/heads/main` のような ref が決めます。Parquet ファイルはバージョンの間で共有し、書き換えません。
 
 ```
 s3://my-bucket/towns/
@@ -14,11 +14,11 @@ s3://my-bucket/towns/
   refs/heads/main                   019a3c4e-…
   versions/019a3c4e-…/
     version.json                    親・作者・メッセージ・sha256
-    ducklake.duckdb                 固めたカタログ
+    metadata.db                     固めたメタデータ
   data/main/towns/ducklake-….parquet
 ```
 
-読み手に要るのは DuckDB だけです。`refs/heads/main` を読み、そのバージョンのカタログを HTTP か S3 で読み取り専用に ATTACH します。書き手に要るのは、読む・書く・条件付きで書くの 3 つができる置き場です。サーバーは要りません。
+読み手に要るのは DuckDB だけです。`refs/heads/main` を読み、そのバージョンのメタデータを HTTP か S3 で読み取り専用に ATTACH します。書き手に要るのは、読む・書く・条件付きで書くの 3 つができる置き場です。サーバーは要りません。
 
 ## FDL を使う場面
 
@@ -34,16 +34,16 @@ FDL はトランザクションのためのデータベースではありませ�
 
 ## FDL と Git
 
-FDL は、Git がプロジェクトのコミットを残すのと同じ形で、カタログのバージョンを残します。Git を知っていれば、FDL のほとんどは次のように対応します。
+FDL は、Git がプロジェクトのコミットを残すのと同じ形で、メタデータのバージョンを残します。Git を知っていれば、FDL のほとんどは次のように対応します。
 
 | Git | FDL |
 | --- | --- |
 | サーバー上の bare リポジトリ | リポジトリ（バケットのプレフィックス、またはフォルダ） |
 | コミット | バージョン（`versions/<ID>/version.json`） |
-| ツリー | 固めたカタログ（`ducklake.duckdb`） |
+| ツリー | 固めたメタデータ（`metadata.db`） |
 | ブロブ | データファイル（Parquet）、アセット |
 | ブランチ・タグ・`HEAD` | `refs/heads/`・`refs/tags/`・`HEAD` |
-| 作業ツリー | 作業カタログ（手元の SQLite） |
+| 作業ツリー | 作業メタデータ（手元の SQLite） |
 | `git init --bare` | `fdl init` |
 | `git commit`、`git push` | `fdl commit`、`fdl push` |
 | `git log`・`git tag` | `fdl log`・`fdl tag` |
@@ -56,7 +56,7 @@ FDL はベータです。リリースをまたいで変わらないものは[安
 ## ドキュメントの構成
 
 - [はじめかた](/ja/getting-started): リポジトリを作り、最初のバージョンを書いて読み返します
-- [概念](/ja/concepts/repositories): リポジトリ、バージョン、ref、作業カタログを説明します
+- [概念](/ja/concepts/repositories): リポジトリ、バージョン、ref、作業メタデータを説明します
 - [仕組み](/ja/internals/inside-a-repository): コミットを何回かしたときに、リポジトリのファイルがどう増えるかを追います
 - [ガイド](/ja/guides/stores): 置き場、HTTP での配信、ミラー、ホストの作り方を扱います
 - [仕様](/ja/spec): 形式の規範となる説明です。ツールは仕様に合わせて作ります
