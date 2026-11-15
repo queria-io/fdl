@@ -140,6 +140,8 @@ fdl commit work/lake.sqlite -m "Add 2026" --author alice
 fdl push work/lake.sqlite
 ```
 
+The current folder already holds `dataset.json`, so the clone leaves it as it is. In an empty folder, the clone also writes the version's `dataset.json`, `README.md` and `docs/` there, so whoever clones the repository can change the description as well as the data.
+
 The new version lists the first as its parent. Both metadata files name the first Parquet file; only the second names the new one.
 
 If someone else pushed in between, the push is refused, because the new version would not be built on what `main` holds now. Clone again and redo the change. [Versions and refs](/concepts/versions-and-refs) explains why.

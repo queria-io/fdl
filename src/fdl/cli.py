@@ -10,6 +10,7 @@ pushed.
 from __future__ import annotations
 
 import datetime as dt
+import hashlib
 import json
 import os
 import re
@@ -122,7 +123,11 @@ def clone(
     try:
         # Read before the clone: a data_dir moved meanwhile then fails the commit.
         config = repo.read_config(store)
+        files = _described_files(store, ref)
         version = repo.clone(store, working, ref=ref, local_data=local, storage=storage)
+        for path, body in files.items():
+            path.parent.mkdir(parents=True, exist_ok=True)
+            path.write_bytes(body)
         if storage:
             data = repo.storage_data_path(storage, config)
         else:
@@ -136,8 +141,47 @@ def clone(
         state["storage"] = storage
     _write_state(working, state)
     typer.echo(f"{working} at {version.id if version else 'empty metadata'}")
+    if files:
+        typer.echo("Wrote its description here: " + ", ".join(sorted(path.as_posix() for path in files)))
     typer.echo("Write to it with:")
     typer.echo("  " + catalog.attach_sql(working, alias="lake", data_path=data)[-1] + ";")
+
+
+def _described_files(store, ref: str) -> dict[Path, bytes]:
+    """What `fdl commit` reads from here, as the version ``ref`` holds it: its
+    `dataset.json` (without what the commit fills in) and the files of its `tree.json`.
+
+    Nothing when the branch has no version yet, or when a description is
+    already here: that one is the writer's, and the commit reads it. A file in
+    the way is refused rather than overwritten.
+    """
+    version = repo.head(store, ref)
+    if version is None or any(Path(name).exists() for name in dataset.DEFAULT_FILES):
+        return {}
+    described = diffs.described(store, version)
+    if described is None:
+        return {}
+    entries = (diffs.listed(store, version) or {}).get("entries", [])
+    objects.check_tree(entries)
+    files = {
+        Path(layout.DATASET): dataset.to_json(merging.declared(described)),
+        **{
+            Path(item["path"]): _tree_file(store, item)
+            for item in entries
+        },
+    }
+    present = sorted(path.as_posix() for path in files if path.exists())
+    if present:
+        raise repo.RepoError(f"{', '.join(present)} already here: clone into a folder without them")
+    return files
+
+
+def _tree_file(store, item: dict) -> bytes:
+    """A file of `tree.json`, checked against its sha256."""
+    body = store.get(objects.asset_key(item["sha256"]))
+    if hashlib.sha256(body).hexdigest() != item["sha256"]:
+        raise repo.RepoError(f"{item['path']}: the file's sha256 is not the one tree.json records")
+    return body
 
 
 @app.command()
