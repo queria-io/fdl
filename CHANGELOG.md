@@ -1,6 +1,28 @@
 # CHANGELOG
 
 
+## v0.29.0 (2026-11-15)
+
+### Features
+
+- Record who takes a version out in expired.json, and keep version.json on withdrawal
+  ([#65](https://github.com/queria-io/fdl/pull/65),
+  [`1d3159b`](https://github.com/queria-io/fdl/commit/1d3159b4a50d309424b4b25a756477f7c225934b))
+
+A withdrawal no longer deletes version.json: it rewrites the fields that hold the data, so every
+  repository holds its history back to the first version. expire and withdraw take --by, recorded in
+  expired.json.
+
+- Write the version's dataset.json, README and docs/ on clone
+  ([#64](https://github.com/queria-io/fdl/pull/64),
+  [`1f37b04`](https://github.com/queria-io/fdl/commit/1f37b047866e662ff967e4adda561ed5ba5018e1))
+
+A clone made only the working metadata, so whoever cloned a dataset had to write its description
+  again before they could commit. Clone now writes the version's dataset.json (without what commit
+  fills in) and the files of its tree.json into the current folder, unless a description is already
+  there.
+
+
 ## v0.28.0 (2026-11-15)
 
 ### Bug Fixes
