@@ -6,6 +6,7 @@ version that comes out the other side.
 
 from __future__ import annotations
 
+import datetime as dt
 import json
 import uuid
 from pathlib import Path
@@ -289,16 +290,16 @@ def test_prune_keeps_the_newest_and_what_refs_hold(tmp_path: Path, remote) -> No
     versions = pushed_chain(tmp_path, remote, 4)
     refs.write(remote, "refs/tags/v1", versions[0].id, expected=None)
 
-    assert repo.prune(remote, versions[-1], keep=1) == [versions[2].id, versions[1].id]
+    assert repo.prune(remote, keep=1, grace=dt.timedelta(0)) == [versions[2].id, versions[1].id]
     assert not repo.is_expired(remote, versions[0].id)
-    # Stops at the first expired one, so nothing more to do.
-    assert repo.prune(remote, versions[-1], keep=1) == []
+    assert repo.prune(remote, keep=1, grace=dt.timedelta(0)) == []
 
 
-def test_prune_keeps_what_was_made_since(tmp_path: Path, remote) -> None:
+def test_prune_keeps_what_was_made_since_and_within_the_grace_period(tmp_path: Path, remote) -> None:
     versions = pushed_chain(tmp_path, remote, 3)
-    assert repo.prune(remote, versions[-1], keep=1, since=versions[0].created_at) == []
-    assert repo.prune(remote, versions[-1], keep=1, since="2999-01-01T00:00:00Z") == [
+    assert repo.prune(remote, keep=1) == []
+    assert repo.prune(remote, keep=1, since=versions[0].created_at, grace=dt.timedelta(0)) == []
+    assert repo.prune(remote, keep=1, since="2999-01-01T00:00:00Z", grace=dt.timedelta(0)) == [
         versions[1].id,
         versions[0].id,
     ]

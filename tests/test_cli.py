@@ -66,7 +66,7 @@ def test_the_round_trip(tmp_path: Path) -> None:
     con.execute(f"ATTACH 'ducklake:{url}' AS v (READ_ONLY)")
     assert con.execute("SELECT count(*) FROM v.main.towns").fetchone() == (2,)
 
-    assert "Expired 1" in run("expire", remote)
+    assert "Expired 1" in run("expire", remote, "--grace", "0m")
     assert "(expired)" in run("log", remote)
 
 
@@ -443,7 +443,7 @@ def test_gc_deletes_what_no_live_version_reaches(tmp_path: Path) -> None:
 
     # Nothing is old enough yet.
     assert "0 file(s) would be deleted" in run("gc", remote)
-    run("expire", remote)
+    run("expire", remote, "--grace", "0m")
     old = time.time() - 2 * 86400
     for path in (remote / layout.DEFAULT_DATA_DIR).rglob("*.parquet"):
         os.utime(path, (old, old))

@@ -971,19 +971,19 @@ def _profile_pending(store, working: Path, state: dict, folder: Path, version) -
 @app.command()
 def expire(
     remote: str = Remote,
-    keep: int = typer.Option(1, help="How many of the newest versions to keep"),
+    keep: int = typer.Option(1, help="How many of the newest versions to keep on each branch"),
     since: str | None = typer.Option(None, help="Also keep those made at or after this time (ISO 8601)"),
-    ref: str = typer.Option(layout.DEFAULT_BRANCH),
+    grace: str = typer.Option("7d", help="Also keep those made more recently than this: 7d, 24h or 30m"),
     by: str | None = typer.Option(None, help="Who or what takes them out, recorded in expired.json"),
 ) -> None:
     """Take older versions out of retention: mark them and drop their catalogs.
 
-    Data files are left in place; versions that are kept still share them.
+    Kept are the newest on each branch, the versions refs point at and their
+    merge bases with main. Data files are left in place; `fdl gc` deletes them.
     """
     store = _store(remote)
     try:
-        newest = repo.head(store, ref)
-        expired = repo.prune(store, newest, keep=keep, since=since, by=by) if newest else []
+        expired = repo.prune(store, keep=keep, since=since, grace=_duration(grace), by=by)
     except ERRORS as exc:
         raise _fail(exc) from exc
     typer.echo(f"Expired {len(expired)} version(s).")

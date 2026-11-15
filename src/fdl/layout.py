@@ -47,8 +47,10 @@ SYMBOLIC = "ref: "
 
 _REF_PART = re.compile(r"[a-z0-9][a-z0-9._-]*")
 _REF_KINDS = ("heads", "tags", "requests")
+#: Where branches are.
+BRANCH_PREFIX = "refs/heads/"
 #: The kinds `refs.json` lists. Requests are the host's own.
-LISTED_REFS = ("refs/heads/", "refs/tags/")
+LISTED_REFS = (BRANCH_PREFIX, "refs/tags/")
 _REF_MAX = 128
 
 #: A version ID: a lower-case UUIDv7.

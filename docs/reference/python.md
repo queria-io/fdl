@@ -99,10 +99,11 @@ The version a ref holds, checked the way a reader must before opening its metada
 
 ```python
 repo.expire(store, version_id, *, reason="retention") -> None
-repo.prune(store, newest, *, keep=1, since=None, reason="retention") -> list[str]
+repo.plan_retention(store, *, keep=1, since=None, grace=timedelta(days=7), now=None) -> list[str]
+repo.prune(store, *, keep=1, since=None, grace=timedelta(days=7), reason="retention", by=None) -> list[str]
 ```
 
-Take one version out of retention, or every version behind `newest` that falls out of it. Versions a ref points at are kept.
+Take one version out of retention, or every version `plan_retention` chooses ([Choosing the versions to take out](/spec/data-files#choosing-the-versions-to-take-out)). `plan_retention` only lists them. Versions a ref points at are kept.
 
 ```python
 repo.tag(store, name, version_id) -> None

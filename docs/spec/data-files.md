@@ -69,6 +69,20 @@ A version is taken out of retention in this order:
 - A reader that sees `expired.json` treats the version as past retention and does not open its metadata, whatever the `reason`
 - A version a ref points at must not be taken out
 
+### Choosing the versions to take out
+
+How long to keep versions is the host's choice: the newest `keep` on each branch, those made at or after `since`, or both. A process that takes versions out by such a choice decides for every live version at once, and keeps a version when any of these holds:
+
+1. A ref points at it
+2. It is a merge base of a ref and `refs/heads/main` ([Writing](/spec/writing#merging)): merging the ref into main, or main into the ref, reads it
+3. It is among the `keep` newest on the first-parent line of a branch (`refs/heads/<name>`), counting from the version the branch points at
+4. It was made at or after `since`
+5. It was made within the grace period. A writer puts a version before it moves a ref to it
+
+The others are taken out. A repository without `refs/heads/main` has nothing taken out. This also takes out versions on no branch's first-parent line once nothing above keeps them: the parents a merge brought in other than its first, the versions of a deleted branch, and the head of a request the host closed and deleted. A version counts as made at its `created_at`.
+
+Implementations of this choice agree on the cases in [Retention cases](/spec/retention-cases).
+
 ## Withdrawal
 
 Withdrawal removes data that must not be published, such as personal data published by mistake. Unlike retention, it removes data from every version that holds it, live ones included, and does not wait for the grace period.
