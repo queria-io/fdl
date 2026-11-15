@@ -60,8 +60,8 @@ def init(store: Store, *, data_dir: str = layout.DEFAULT_DATA_DIR) -> Config:
     An existing repository is left as it is and its settings returned, so
     running this twice is harmless.
     """
-    if not data_dir.endswith("/"):
-        raise RepoError(f"data_dir has to end with '/': {data_dir!r}")
+    if not layout.is_data_dir(data_dir):
+        raise RepoError(f"data_dir is not a folder under the root: {data_dir!r}")
     record = {"fdl": layout.FDL_VERSION, "id": str(uuid.uuid4()), "data_dir": data_dir}
     try:
         store.put(
@@ -87,11 +87,10 @@ def read_config(store: Store) -> Config:
     major = str(record.get("fdl", "")).split(".")[0]
     if major != layout.FDL_VERSION.split(".")[0]:
         raise RepoError(f"written for fdl {record.get('fdl')}, this reads {layout.FDL_VERSION}")
-    return Config(
-        fdl=record["fdl"],
-        data_dir=record.get("data_dir", layout.DEFAULT_DATA_DIR),
-        id=record.get("id"),
-    )
+    data_dir = record.get("data_dir", layout.DEFAULT_DATA_DIR)
+    if not layout.is_data_dir(data_dir):
+        raise RepoError(f"fdl.json: data_dir is not a folder under the root: {data_dir!r}")
+    return Config(fdl=record["fdl"], data_dir=data_dir, id=record.get("id"))
 
 
 def read_version(store: Store, version_id: str) -> Version:

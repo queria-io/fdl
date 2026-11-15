@@ -37,6 +37,10 @@ A version's metadata names data files at every snapshot it keeps, not only at `d
 
 DuckLake's own cleanup (`ducklake_cleanup_old_files`, `ducklake_expire_snapshots`) sees only one metadata file, so it must not be used to delete from a repository. Deleting is for a process that sees the whole repository.
 
+## Files outside data_dir
+
+A version reaches data files only under `data_dir` as `fdl.json` names it now. A file outside it, such as one left in the old place after [`data_dir` changed](/spec/layout#changing-data_dir), is reached by no version, whatever its name. A process that deletes shared objects looks only under `data_dir` and `assets/`, so it never deletes such a file. Deleting it is the host's own work: the host deletes the old place once no reader can still be reading there, by listing it and deleting key by key, after checking again that `fdl.json` names the new `data_dir`.
+
 ## Deleting safely
 
 A deleted shared object cannot be brought back, and every version that reaches it can no longer be read. A process that deletes shared objects follows these rules:

@@ -24,7 +24,7 @@ description: Test cases for deleting shared objects, which every implementation 
 | --- | --- |
 | `now`, `grace_seconds` | The time the process runs, and the grace period |
 | `files` | The repository's files other than shared objects, by key. Each value is the file's JSON |
-| `objects` | The objects under the data directory and `assets/`, by key, with the time each was placed. Their content does not matter |
+| `objects` | The objects under the data directory and `assets/`, and files elsewhere a process must leave alone, by key, with the time each was placed. Their content does not matter |
 | `deleted` | The keys deleted |
 
 A change to what may be deleted comes with a case here, in the same change as this specification.
