@@ -36,7 +36,7 @@ The host checks that the version is built on what `main` holds now (`repo.is_anc
 
 ## Writing on behalf of users
 
-A scheduled import or a form in a web app writes the same way a person does: check out into a SQLite file in a container, write with DuckDB, commit. Two jobs that commit at once are settled by the conditional write on the ref. The loser checks out again and reruns its SQL.
+A scheduled import or a form in a web app writes the same way a person does: clone into a SQLite file in a container, write with DuckDB, commit. Two jobs that commit at once are settled by the conditional write on the ref. The loser checks out again and reruns its SQL.
 
 ## Keeping the host out of the format
 

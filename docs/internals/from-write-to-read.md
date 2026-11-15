@@ -34,9 +34,9 @@ Three things differ on purpose:
 
 ## Writing a version
 
-### Checkout
+### Clone
 
-`fdl checkout` reads `HEAD`, then the ref it names, then that version's `version.json`, and copies its metadata into a SQLite file on the writer's machine. This is the working metadata. If the version has `expired.json`, checkout stops.
+`fdl clone` reads `HEAD`, then the ref it names, then that version's `version.json`, and copies its metadata into a SQLite file on the writer's machine. This is the working metadata. If the version has `expired.json`, clone stops.
 
 The working metadata's data path depends on the store:
 

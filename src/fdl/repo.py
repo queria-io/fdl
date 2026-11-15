@@ -160,7 +160,7 @@ def commit(
     Nothing is uploaded: that is `push`.
 
     ``working_data`` is where the working metadata wrote its new data files,
-    when not where it records (see `checkout`): comparing reads them there.
+    when not where it records (see `clone`): comparing reads them there.
 
     ``parent_dataset`` is the parent's `dataset.json`, which the version's
     ``diff`` compares descriptions with (see `record`).
@@ -232,7 +232,7 @@ def _tree_json(tree: list[dict]) -> bytes:
     return (json.dumps({"entries": entries}, ensure_ascii=False, indent=2) + "\n").encode()
 
 
-def checkout(
+def clone(
     store: Store,
     working: Path,
     *,
@@ -244,7 +244,7 @@ def checkout(
     """Make a working metadata file from the version ``ref`` holds, or from ``version`` when given.
 
     Before the first version there is nothing to copy, and an empty working
-    metadata is created instead. Returns the version checked out, which a
+    metadata is created instead. Returns the version cloned, which a
     commit from this working metadata builds on.
 
     A store DuckDB cannot write to (one over HTTP) needs ``local_data``, a
@@ -449,7 +449,7 @@ def push(
     its refs itself (after an approval, say).
 
     ``local_data`` is the folder a working metadata file wrote new data files to
-    (see `checkout`). Those the repository lacks are uploaded first.
+    (see `clone`). Those the repository lacks are uploaded first.
 
     ``assets`` are the sha256 the version's asset columns hold (see
     `objects.asset_values`). They and the files its `tree.json` lists must
@@ -653,14 +653,14 @@ def add_profiles(store: Store, version: Version, *, setup: Iterable[str] = ()) -
     For a version made before its writer profiled tables, or whose profiling
     failed. A profile already there is left as it is. Returns the paths put,
     under the version, and the tables (``schema.name``) that could not be read.
-    Refused for a version past retention, which has no metadata to check out.
+    Refused for a version past retention, which has no metadata to clone.
     """
     wanted = missing_profiles(store, version)
     if not wanted:
         return [], []
     with tempfile.TemporaryDirectory(prefix=".fdl-profile-") as scratch:
         working = Path(scratch) / "work.sqlite"
-        checkout(store, working, version=version, local_data=Path(scratch) / "data")
+        clone(store, working, version=version, local_data=Path(scratch) / "data")
         made = profiles.build(working, wanted, data_path=data_url(store), setup=setup)
         for relative, content in made.items():
             written = Path(scratch) / relative
@@ -1283,3 +1283,4 @@ def _sha256(path: Path) -> str:
         for chunk in iter(lambda: fh.read(1024 * 1024), b""):
             digest.update(chunk)
     return digest.hexdigest()
+

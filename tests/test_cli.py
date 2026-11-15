@@ -1,4 +1,4 @@
-"""checkout, write, commit and read back through the command."""
+"""clone, write, commit and read back through the command."""
 
 from __future__ import annotations
 
@@ -52,7 +52,7 @@ def test_the_round_trip(tmp_path: Path) -> None:
     remote, working = tmp_path / "remote", tmp_path / "work" / "lake.sqlite"
     store = LocalStore(remote)
     run("init", remote)
-    run("checkout", remote, working)
+    run("clone", remote, working)
     write(working, store, "CREATE TABLE lake.main.towns AS SELECT 1 AS id")
     first = commit(working, "-m", "first", "--author", "tester")
     write(working, store, "INSERT INTO lake.main.towns VALUES (2)")
@@ -70,16 +70,16 @@ def test_the_round_trip(tmp_path: Path) -> None:
     assert "(expired)" in run("log", remote)
 
 
-def test_a_second_checkout_starts_from_the_branch(tmp_path: Path) -> None:
+def test_a_second_clone_starts_from_the_branch(tmp_path: Path) -> None:
     remote = tmp_path / "remote"
     store = LocalStore(remote)
     run("init", remote)
     one, two = tmp_path / "one.sqlite", tmp_path / "two.sqlite"
-    run("checkout", remote, one)
+    run("clone", remote, one)
     write(one, store, "CREATE TABLE lake.main.towns AS SELECT 1 AS id")
     commit(one, "-m", "from one", "--author", "a")
 
-    run("checkout", remote, two)
+    run("clone", remote, two)
     write(two, store, "INSERT INTO lake.main.towns VALUES (2)")
     commit(two, "-m", "from two", "--author", "b")
 
@@ -96,7 +96,7 @@ def test_a_rebuild_with_the_same_rows_makes_no_version(tmp_path: Path) -> None:
     remote, working = tmp_path / "remote", tmp_path / "lake.sqlite"
     store = LocalStore(remote)
     run("init", remote)
-    run("checkout", remote, working)
+    run("clone", remote, working)
     write(working, store, "CREATE TABLE lake.main.towns AS SELECT * FROM (VALUES (1), (2), (2)) v(id)")
     commit(working, "-m", "first", "--author", "t")
     first = repo.head(store)
@@ -124,7 +124,7 @@ def test_a_change_makes_a_version(tmp_path: Path, sql: str) -> None:
     remote, working = tmp_path / "remote", tmp_path / "lake.sqlite"
     store = LocalStore(remote)
     run("init", remote)
-    run("checkout", remote, working)
+    run("clone", remote, working)
     write(working, store, "CREATE TABLE lake.main.towns AS SELECT id::INTEGER AS id FROM (VALUES (1), (2), (2)) v(id)")
     commit(working, "-m", "first", "--author", "t")
     write(working, store, sql)
@@ -135,7 +135,7 @@ def test_a_new_description_makes_a_version(tmp_path: Path, described: Path) -> N
     remote, working = tmp_path / "remote", tmp_path / "lake.sqlite"
     store = LocalStore(remote)
     run("init", remote)
-    run("checkout", remote, working)
+    run("clone", remote, working)
     write(working, store, "CREATE TABLE lake.main.towns AS SELECT 1 AS id")
     commit(working, "-m", "first", "--author", "t")
     described.write_text('{"name": "towns", "title": "Towns of the city"}')
@@ -146,7 +146,7 @@ def test_rows_it_cannot_read_are_taken_as_changed(tmp_path: Path) -> None:
     remote, working = tmp_path / "remote", tmp_path / "lake.sqlite"
     store = LocalStore(remote)
     run("init", remote)
-    run("checkout", remote, working)
+    run("clone", remote, working)
     write(working, store, "CREATE TABLE lake.main.towns AS SELECT 1 AS id")
     commit(working, "-m", "first", "--author", "t")
     write(working, store, "CREATE OR REPLACE TABLE lake.main.towns AS SELECT 1 AS id")
@@ -162,7 +162,7 @@ def test_values_that_hash_alike_still_count_as_changed(tmp_path: Path) -> None:
     remote, working = tmp_path / "remote", tmp_path / "lake.sqlite"
     store = LocalStore(remote)
     run("init", remote)
-    run("checkout", remote, working)
+    run("clone", remote, working)
     # DuckDB's hash() gives NULL and [] the same hash, so swapping them
     # between rows leaves a sum of row hashes (and the row and null counts) as
     # they were.
@@ -184,7 +184,7 @@ def test_tags(tmp_path: Path) -> None:
     remote, working = tmp_path / "remote", tmp_path / "work" / "lake.sqlite"
     store = LocalStore(remote)
     run("init", remote)
-    run("checkout", remote, working)
+    run("clone", remote, working)
     write(working, store, "CREATE TABLE lake.main.towns AS SELECT 1 AS id")
     commit(working, "-m", "first", "--author", "tester")
     version = repo.head(store)
@@ -200,7 +200,7 @@ def test_withdraw_says_what_it_would_do_until_told_yes(tmp_path: Path) -> None:
     remote, working = tmp_path / "remote", tmp_path / "work" / "lake.sqlite"
     store = LocalStore(remote)
     run("init", remote)
-    run("checkout", remote, working)
+    run("clone", remote, working)
     write(working, store, "CREATE TABLE lake.main.towns AS SELECT 1 AS id")
     commit(working, "-m", "leak", "--author", "tester")
     leak = repo.head(store)
@@ -226,7 +226,7 @@ def test_status_diff_and_show(tmp_path: Path, described: Path) -> None:
     remote, working = tmp_path / "remote", tmp_path / "work" / "lake.sqlite"
     store = LocalStore(remote)
     run("init", remote)
-    run("checkout", remote, working)
+    run("clone", remote, working)
     write(working, store, "CREATE TABLE lake.main.towns AS SELECT 1 AS id, 'a' AS name")
     assert "+ table main.towns" in run("status", working)
     commit(working, "-m", "first", "--author", "tester")
@@ -266,7 +266,7 @@ def test_url_prints_the_attach_statement(tmp_path: Path) -> None:
     remote, working = tmp_path / "remote", tmp_path / "work" / "lake.sqlite"
     store = LocalStore(remote)
     run("init", remote)
-    run("checkout", remote, working)
+    run("clone", remote, working)
     write(working, store, "CREATE TABLE lake.main.towns AS SELECT 1 AS id")
     commit(working, "-m", "first", "--author", "tester")
     statement = run("url", remote, "--attach", "--alias", "towns").strip()
@@ -289,7 +289,7 @@ def test_revert_moves_the_branch_forward_to_what_a_version_held(tmp_path: Path, 
     remote, working = tmp_path / "remote", tmp_path / "lake.sqlite"
     store = LocalStore(remote)
     run("init", remote)
-    run("checkout", remote, working)
+    run("clone", remote, working)
     write(working, store, "CREATE TABLE lake.main.towns AS SELECT * FROM (VALUES (1), (2)) v(id)")
     write(working, store, "CREATE TABLE lake.main.kept AS SELECT 1 AS id")
     write(working, store, "CREATE VIEW lake.main.ids AS SELECT id FROM lake.main.towns")
@@ -330,7 +330,7 @@ def test_restore_leaves_a_table_unchanged_since_as_it_is(tmp_path: Path) -> None
     remote, working = tmp_path / "remote", tmp_path / "lake.sqlite"
     store = LocalStore(remote)
     run("init", remote)
-    run("checkout", remote, working)
+    run("clone", remote, working)
     write(working, store, "CREATE TABLE lake.main.a AS SELECT 1 AS id; CREATE TABLE lake.main.b AS SELECT 1 AS id")
     commit(working, "-m", "first", "--author", "t")
     first = repo.head(store)
@@ -345,7 +345,7 @@ def test_restore_keeps_what_the_columns_declared_and_drops_new_schemas(tmp_path:
     remote, working = tmp_path / "remote", tmp_path / "lake.sqlite"
     store = LocalStore(remote)
     run("init", remote)
-    run("checkout", remote, working)
+    run("clone", remote, working)
     write(
         working,
         store,
@@ -376,7 +376,7 @@ def test_revert_refuses_a_version_outside_the_branch(tmp_path: Path) -> None:
     remote, working = tmp_path / "remote", tmp_path / "lake.sqlite"
     store = LocalStore(remote)
     run("init", remote)
-    run("checkout", remote, working)
+    run("clone", remote, working)
     write(working, store, "CREATE TABLE lake.main.towns AS SELECT 1 AS id")
     commit(working, "-m", "first", "--author", "t")
     first = repo.head(store)
@@ -391,7 +391,7 @@ def test_a_commit_waits_until_it_is_pushed(tmp_path: Path) -> None:
     remote, working = tmp_path / "remote", tmp_path / "lake.sqlite"
     store = LocalStore(remote)
     run("init", remote)
-    run("checkout", remote, working)
+    run("clone", remote, working)
     assert "Nothing to push" in run("push", working)
     write(working, store, "CREATE TABLE lake.main.towns AS SELECT 1 AS id")
     run("commit", working, "-m", "first try", "--author", "t")
@@ -423,7 +423,7 @@ def test_gc_deletes_what_no_live_version_reaches(tmp_path: Path) -> None:
     remote, working = tmp_path / "remote", tmp_path / "lake.sqlite"
     store = LocalStore(remote)
     run("init", remote)
-    run("checkout", remote, working)
+    run("clone", remote, working)
     write(working, store, "CREATE TABLE lake.main.towns AS SELECT 1 AS id")
     commit(working, "-m", "first", "--author", "t")
     first_files = set(store.list(layout.DEFAULT_DATA_DIR))
@@ -462,7 +462,7 @@ def test_gc_keeps_what_a_version_pushed_since_the_plan_reaches(tmp_path: Path) -
     remote, working = tmp_path / "remote", tmp_path / "lake.sqlite"
     store = LocalStore(remote)
     run("init", remote)
-    run("checkout", remote, working)
+    run("clone", remote, working)
     write(working, store, "CREATE TABLE lake.main.towns AS SELECT 1 AS id")
     old = time.time() - 2 * 86400
     for path in (remote / layout.DEFAULT_DATA_DIR).rglob("*.parquet"):
@@ -482,40 +482,48 @@ def _move_data_dir(remote: Path, to: str) -> None:
     (remote / layout.CONFIG).write_text(json.dumps({**config, "data_dir": to}))
 
 
-def _checked_out_before_the_move(tmp_path: Path) -> tuple[Path, Path, LocalStore]:
+def _cloned_before_the_move(tmp_path: Path) -> tuple[Path, Path, LocalStore]:
     remote, working = tmp_path / "remote", tmp_path / "work" / "lake.sqlite"
     store = LocalStore(remote)
     run("init", remote, "--data-dir", "old/")
-    run("checkout", remote, working)
+    run("clone", remote, working)
     write(working, store, "CREATE TABLE lake.main.towns AS SELECT 1 AS id")
     commit(working, "-m", "first", "--author", "tester")
     write(working, store, "INSERT INTO lake.main.towns VALUES (2)")
     return remote, working, store
 
 
-def test_a_commit_checked_out_before_data_dir_moved_is_refused(tmp_path: Path) -> None:
-    remote, working, store = _checked_out_before_the_move(tmp_path)
+def test_a_commit_cloned_before_data_dir_moved_is_refused(tmp_path: Path) -> None:
+    remote, working, store = _cloned_before_the_move(tmp_path)
     _move_data_dir(remote, "data/")
 
     result = runner.invoke(app, ["commit", str(working), "-m", "second", "--author", "tester"])
     assert result.exit_code != 0
     assert "data_dir in fdl.json is now 'data/'" in result.output
-    assert "Check out again" in result.output
+    assert "Clone again" in result.output
     assert len(list(repo.log(store))) == 1
 
 
 def test_a_push_committed_before_data_dir_moved_is_refused(tmp_path: Path) -> None:
-    remote, working, store = _checked_out_before_the_move(tmp_path)
+    remote, working, store = _cloned_before_the_move(tmp_path)
     run("commit", working, "-m", "second", "--author", "tester")
     _move_data_dir(remote, "data/")
 
     result = runner.invoke(app, ["push", str(working)])
     assert result.exit_code != 0
-    assert "Check out again" in result.output
+    assert "Clone again" in result.output
     assert len(list(repo.log(store))) == 1
-    # A checkout after the move writes where versions read.
+    # A clone after the move writes where versions read.
     again = tmp_path / "again" / "lake.sqlite"
-    run("checkout", remote, again)
+    run("clone", remote, again)
     write(again, store, "INSERT INTO lake.main.towns VALUES (2)")
     commit(again, "-m", "second", "--author", "tester")
     assert len(list(repo.log(store))) == 2
+
+
+def test_clone_names_the_working_metadata_after_the_repository(tmp_path: Path, monkeypatch) -> None:
+    remote = tmp_path / "towns"
+    run("init", remote)
+    monkeypatch.chdir(tmp_path)
+    run("clone", f"{remote}/")
+    assert (tmp_path / "towns.sqlite").exists()

@@ -28,7 +28,7 @@ ref: refs/heads/main
 
 ## While writing
 
-After `fdl checkout` and a `CREATE TABLE`, DuckLake has written Parquet into the repository:
+After `fdl clone` and a `CREATE TABLE`, DuckLake has written Parquet into the repository:
 
 ```
 fdl.json
@@ -95,7 +95,7 @@ data/main/towns/ducklake-019a3b….parquet          named by the second only
 }
 ```
 
-`main` is moved with `If-Match: <the ETag read at the start of the push>`. Had Alice moved it in the meantime, the ETag would not match and the store would refuse the write. Bob's version folder would stay, unreferenced, and Bob would check out again.
+`main` is moved with `If-Match: <the ETag read at the start of the push>`. Had Alice moved it in the meantime, the ETag would not match and the store would refuse the write. Bob's version folder would stay, unreferenced, and Bob would clone again.
 
 The first Parquet file is not copied. Both metadata files name it at the same path, which is why data files must never be overwritten.
 

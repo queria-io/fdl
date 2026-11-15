@@ -28,7 +28,7 @@ ref: refs/heads/main
 
 ## 書いている間
 
-`fdl checkout` のあと `CREATE TABLE` を流すと、DuckLake は Parquet をリポジトリに書きます。
+`fdl clone` のあと `CREATE TABLE` を流すと、DuckLake は Parquet をリポジトリに書きます。
 
 ```
 fdl.json
@@ -68,7 +68,7 @@ data/main/towns/ducklake-0199f1….parquet
 
 ## 2 回目のコミット
 
-Bob が `main` をチェックアウトし、列を 1 つ足してコミットします。
+Bob が `main` をクローンし、列を 1 つ足してコミットします。
 
 ```
 refs/heads/main                                   019a3c4e-…
@@ -95,7 +95,7 @@ data/main/towns/ducklake-019a3b….parquet          2 つめだけが参照
 }
 ```
 
-`main` は `If-Match: <push を始めたときに読んだ ETag>` で動かします。その間に Alice が動かしていれば ETag が合わず、置き場は書き込みを断ります。Bob のバージョンのフォルダは参照されないまま残り、Bob はチェックアウトし直します。
+`main` は `If-Match: <push を始めたときに読んだ ETag>` で動かします。その間に Alice が動かしていれば ETag が合わず、置き場は書き込みを断ります。Bob のバージョンのフォルダは参照されないまま残り、Bob はクローンし直します。
 
 最初の Parquet ファイルは写しません。両方のメタデータが同じパスで参照しています。データファイルを決して上書きしてはいけないのはこのためです。
 

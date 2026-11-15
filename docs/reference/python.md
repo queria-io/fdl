@@ -14,7 +14,7 @@ for version in repo.log(store):
 
 | Module | Holds |
 | --- | --- |
-| `fdl.repo` | the operations: `init`, `checkout`, `commit`, `push`, `log`, `expire`, `prune` |
+| `fdl.repo` | the operations: `init`, `clone`, `commit`, `push`, `log`, `expire`, `prune` |
 | `fdl.diff` | what changed between two versions (`diff.versions`) or in a working metadata file (`diff.working`) |
 | `fdl.refs` | reading and moving refs under their conditions |
 | `fdl.version` | `Version`, the record in `version.json`, and new IDs |
@@ -45,7 +45,7 @@ repo.init(store, *, data_dir="data/") -> Config
 Start a repository. An existing one is left as it is and its settings returned.
 
 ```python
-repo.checkout(store, working, *, ref="HEAD", local_data=None, version=None) -> Version | None
+repo.clone(store, working, *, ref="HEAD", local_data=None, version=None) -> Version | None
 ```
 
 Make a working metadata file at `working` from the version `ref` holds, or from `version` when given. Returns that version, or `None` before the first one. A store over HTTP needs `local_data`, the folder new data files go to. Refuses a metadata file whose sha256 is not the one `version.json` records, or that names a data file outside the data folder.
@@ -141,7 +141,7 @@ diff.working(working, base) -> dict
 diff.lines(result) -> list[str]
 ```
 
-`versions` compares two versions (`old` is `None` before the first one) from the newer one's `diff` when the older is its parent, and from their `dataset.json` and `files.json` otherwise. `working` compares a working metadata file with `base`, the version it was checked out at. Both return `tables` (`added`, `dropped`), `rows`, `columns`, `data` and `descriptions`, as `fdl diff --json` prints them. `lines` gives the lines `fdl diff` prints.
+`versions` compares two versions (`old` is `None` before the first one) from the newer one's `diff` when the older is its parent, and from their `dataset.json` and `files.json` otherwise. `working` compares a working metadata file with `base`, the version it was cloned at. Both return `tables` (`added`, `dropped`), `rows`, `columns`, `data` and `descriptions`, as `fdl diff --json` prints them. `lines` gives the lines `fdl diff` prints.
 
 ## fdl.refs
 

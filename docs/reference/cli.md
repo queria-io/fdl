@@ -31,13 +31,13 @@ fdl init <remote> [--data-dir data/]
 
 Writes `fdl.json`, with a new `id`, and `HEAD`. Running it on an existing repository changes nothing and prints its settings.
 
-## fdl checkout
+## fdl clone
 
 ```bash
-fdl checkout <remote> <working.sqlite> [--ref refs/heads/main] [--storage s3://bucket/prefix/]
+fdl clone <remote> [<working.sqlite>] [--branch main] [--storage s3://bucket/prefix/]
 ```
 
-Makes a working metadata file (DuckLake in SQLite) from the metadata of the version the branch holds, or an empty one before the first version. Beside it, `<working.sqlite>.fdl.json` remembers the repository, the branch and the version it was made from. It prints the `ATTACH` statement to write with.
+Makes a working metadata file (DuckLake in SQLite) from the metadata of the version the branch holds, or an empty one before the first version. Without `<working.sqlite>`, it is named after the repository's last path segment in the current folder (`towns.sqlite` for `https://example.com/towns/`). `--branch` takes a branch name such as `main`, or a ref such as `refs/heads/main`. Beside it, `<working.sqlite>.fdl.json` remembers the repository, the branch and the version it was made from. It prints the `ATTACH` statement to write with.
 
 For a repository over HTTP, new data files are written to `<working.sqlite>.data/` and uploaded by the push. Files already in the repository are read over HTTP where they are. Once a push has uploaded them, it makes the working metadata again from the new version and deletes the local copies, so the folder holds only what has not been pushed.
 
@@ -51,7 +51,7 @@ Refused when the version is past retention, when its metadata's sha256 is not th
 fdl commit <working.sqlite> -m "What changed" --author alice [--dataset dataset.json] [--allow-empty] [--assets files/]
 ```
 
-Freezes the working metadata into a new version whose parent is the version it was checked out at (or last pushed), and keeps it in `<working.sqlite>.pending/` until `fdl push` sends it. Nothing in the repository changes. It prints the new version ID and its `seq`. Committing again before pushing replaces the version not pushed yet.
+Freezes the working metadata into a new version whose parent is the version it was cloned at (or last pushed), and keeps it in `<working.sqlite>.pending/` until `fdl push` sends it. Nothing in the repository changes. It prints the new version ID and its `seq`. Committing again before pushing replaces the version not pushed yet.
 
 Every version is described by a `dataset.json` (see [Versions](/spec/versions#datasetjson)), read from `--dataset` or else from `dataset.json` or `dataset.yml` in the current directory. Tables described in `*.table.yml` (or `*.table.json`) files below that folder are added to it; hidden folders are skipped. The command checks it against the metadata and fills in the column types, row counts and metadata comments.
 
@@ -81,7 +81,7 @@ Data files the working metadata wrote into the repository are there before the p
 
 Refused when:
 
-- the branch has moved since the checkout, so the version does not descend from what the branch holds now. Check out again and redo the work
+- the branch has moved since the clone, so the version does not descend from what the branch holds now. Clone again and redo the work
 - a data file the metadata names is not in the repository
 - an asset column points at a file that is neither in the repository nor in `--assets`
 - a data file is recorded with an absolute path outside the data directory
@@ -110,7 +110,7 @@ Versions from the one the ref holds back to the first, by first parent. Each sho
 fdl status <working.sqlite> [--json]
 ```
 
-What the working metadata changed since it was checked out, in the same kinds as `fdl diff`. `Nothing to commit` when it holds what the version it came from holds. The words of `dataset.json` are not compared until the commit. When a version is committed and not pushed yet, it is named first and the changes are counted from it; `--json` gives its ID as `pending`. After a fast-forward `fdl merge`, it says that `fdl push` will move the branch.
+What the working metadata changed since it was cloned, in the same kinds as `fdl diff`. `Nothing to commit` when it holds what the version it came from holds. The words of `dataset.json` are not compared until the commit. When a version is committed and not pushed yet, it is named first and the changes are counted from it; `--json` gives its ID as `pending`. After a fast-forward `fdl merge`, it says that `fdl push` will move the branch.
 
 ## fdl diff
 
@@ -168,7 +168,7 @@ fdl branch <remote> <name> [<version>]    # start a branch at a version (default
 fdl branch <remote> <name> --delete
 ```
 
-`<version>` is a version ID or a ref such as `refs/heads/main`. Creating a branch that is already there at another version is refused; at the same version, nothing changes. A version past retention cannot start a branch. The branch `HEAD` names cannot be deleted. Check a branch out with `fdl checkout --ref refs/heads/<name>`. Creating or deleting a branch rewrites `refs.json`.
+`<version>` is a version ID or a ref such as `refs/heads/main`. Creating a branch that is already there at another version is refused; at the same version, nothing changes. A version past retention cannot start a branch. The branch `HEAD` names cannot be deleted. Check a branch out with `fdl clone --branch <name>`. Creating or deleting a branch rewrites `refs.json`.
 
 ## fdl revert
 
@@ -177,7 +177,7 @@ fdl revert <version> <working.sqlite> --author <name> [-m <message>]
 fdl push <working.sqlite>
 ```
 
-Writes the working metadata back to what `<version>` held (its tables and views) and commits a new version with `<version>`'s `dataset.json` and `tree.json`, as `fdl commit` does. Changes in the working metadata not committed are lost. `fdl push` then moves the branch forward, so the versions in between stay in its history and can still be read. A table unchanged since `<version>` keeps its data files; any other is written again from its rows there. `<version>` is a version ID or a ref, and must be in the first-parent history of the version the working metadata was checked out at (a version only a merge brought in is not), and in retention. When that version already holds what `<version>` held, nothing is made.
+Writes the working metadata back to what `<version>` held (its tables and views) and commits a new version with `<version>`'s `dataset.json` and `tree.json`, as `fdl commit` does. Changes in the working metadata not committed are lost. `fdl push` then moves the branch forward, so the versions in between stay in its history and can still be read. A table unchanged since `<version>` keeps its data files; any other is written again from its rows there. `<version>` is a version ID or a ref, and must be in the first-parent history of the version the working metadata was cloned at (a version only a merge brought in is not), and in retention. When that version already holds what `<version>` held, nothing is made.
 
 To take out data that must not be published, use `fdl withdraw`: a revert leaves the versions in between, and their data files, as they are.
 
@@ -188,10 +188,10 @@ fdl merge <theirs> <working.sqlite> --author <name> [-m <message>]
 fdl push <working.sqlite>
 ```
 
-Merges another branch into the branch the working metadata was checked out from (see [Merging](/spec/writing#merging)). `<theirs>` is a ref such as `refs/heads/feature`, or a version ID. The base is the common ancestor of the two versions.
+Merges another branch into the branch the working metadata was cloned from (see [Merging](/spec/writing#merging)). `<theirs>` is a ref such as `refs/heads/feature`, or a version ID. The base is the common ancestor of the two versions.
 
 - When `<theirs>` is already in the history of the working metadata's version, it prints `Already up to date` and makes nothing
-- When the working metadata's version is in the history of `<theirs>`, the working metadata is checked out at `<theirs>` and no version is made. `fdl push` then moves the branch there (a fast-forward)
+- When the working metadata's version is in the history of `<theirs>`, the working metadata is made again from `<theirs>` and no version is made. `fdl push` then moves the branch there (a fast-forward)
 - Otherwise it writes the merge into the working metadata and commits a merge version, whose `parents` are the working metadata's version and `<theirs>`. `fdl push` uploads it as it does a commit. The message defaults to `Merge <theirs>`
 
 A table only `<theirs>` changed, added or dropped since the base comes over as `<theirs>` holds it, written to new data files. Rows of a table both sides changed are merged by the `primary_key` both declare in `dataset.json`: a row only `<theirs>` added, changed or deleted takes that change. `dataset.json` and `tree.json` are merged key by key; the row counts, types and nulls are written again from the merged metadata. The command lists the tables that came over and how many rows `<theirs>` added, changed or deleted. `fdl commit` reads the description from your local files, so when `<theirs>` changed `dataset.json` or `tree.json`, the command warns: bring those changes into your local files before the next commit.

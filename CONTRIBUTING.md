@@ -27,7 +27,7 @@ src/fdl/
 ├── dataset.py        — dataset.json: reading the description and checking it against the catalog
 ├── objects.py        — assets and tree.json
 ├── profiles.py       — the profile of each table
-├── repo.py           — init, checkout, commit, push, log, expire, withdraw
+├── repo.py           — init, clone, commit, push, log, expire, withdraw
 ├── store.py          — what a store has to provide
 ├── stores.py         — a folder, S3 and a host over HTTP as stores
 └── cli.py            — the fdl command

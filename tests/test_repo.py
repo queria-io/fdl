@@ -509,19 +509,19 @@ def test_a_version_written_by_0_26_is_read_at_the_name_it_records(tmp_path: Path
     record["catalog"] = {**record.pop("metadata"), "path": "ducklake.duckdb"}
     (remote.root / layout.version_record(version_id)).write_text(json.dumps(record))
     assert repo.read_version(remote, version_id).metadata.path == "ducklake.duckdb"
-    repo.checkout(remote, tmp_path / "again.sqlite")
+    repo.clone(remote, tmp_path / "again.sqlite")
     assert read_rows(remote, version_id) == [(1,)]
 
 
-def test_checkout_refuses_a_catalog_that_is_not_the_one_recorded(tmp_path: Path, remote) -> None:
+def test_clone_refuses_a_catalog_that_is_not_the_one_recorded(tmp_path: Path, remote) -> None:
     version_id = _pushed(tmp_path, remote)
     path = remote.root / layout.version_metadata(repo.read_version(remote, version_id))
     path.write_bytes(path.read_bytes() + b"\0")
     with pytest.raises(repo.RepoError, match="sha256"):
-        repo.checkout(remote, tmp_path / "again.sqlite")
+        repo.clone(remote, tmp_path / "again.sqlite")
 
 
-def test_checkout_refuses_a_catalog_naming_files_outside_the_data_folder(tmp_path: Path, remote) -> None:
+def test_clone_refuses_a_catalog_naming_files_outside_the_data_folder(tmp_path: Path, remote) -> None:
     import hashlib
 
     version_id = _pushed(tmp_path, remote)
@@ -535,7 +535,7 @@ def test_checkout_refuses_a_catalog_naming_files_outside_the_data_folder(tmp_pat
     record["metadata"]["bytes"] = path.stat().st_size
     (remote.root / layout.version_record(version_id)).write_text(json.dumps(record))
     with pytest.raises(repo.RepoError, match="outside the data folder"):
-        repo.checkout(remote, tmp_path / "again.sqlite")
+        repo.clone(remote, tmp_path / "again.sqlite")
 
 
 def test_a_version_records_its_column_changes(tmp_path: Path, remote) -> None:

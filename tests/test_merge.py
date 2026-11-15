@@ -59,11 +59,11 @@ def branches(tmp_path: Path):
     store = LocalStore(remote)
     run("init", remote)
     main, feature = tmp_path / "main.sqlite", tmp_path / "feature.sqlite"
-    run("checkout", remote, main)
+    run("clone", remote, main)
     sql(main, store, "CREATE TABLE lake.main.towns AS SELECT * FROM (VALUES (1, 'a'), (2, 'b'), (3, 'c')) t(id, name)")
     save(main, "first")
     run("branch", remote, "feature")
-    run("checkout", remote, feature, "--ref", "refs/heads/feature")
+    run("clone", remote, feature, "--branch", "feature")
     return store, main, feature
 
 

@@ -1,6 +1,6 @@
 ---
 title: Writing
-description: Checkout, commit and push - the working metadata, the order of writes, and when a push is refused.
+description: Clone, commit and push - the working metadata, the order of writes, and when a push is refused.
 ---
 
 ## Working metadata
@@ -15,7 +15,7 @@ A writer writes to a working metadata file: a DuckLake metadata file in SQLite, 
 
 | Step | What happens |
 | --- | --- |
-| checkout | Make a working metadata file from the metadata of the branch's version, and remember that version. Before the first version, make an empty one |
+| clone | Make a working metadata file from the metadata of the branch's version, and remember that version. Before the first version, make an empty one |
 | commit | Freeze the working metadata's last snapshot into a new version, with the remembered version as its parent, and describe it in `dataset.json` |
 | push | Check the data files, measure each table into a profile (optional), upload the metadata, `dataset.json`, `files.json`, `tree.json` and the profiles, then `version.json`, then move the ref on condition |
 
@@ -42,17 +42,17 @@ A table rebuilt from the same input is written to new data files, so comparing f
 
 A writer that brings back what an earlier version held makes a new version, as `git revert` makes a new commit. It does not move a branch back: a branch moves only forward by default (see [Refs](/spec/refs)), and readers may already hold the versions in between.
 
-The new version's parent is the version the working metadata was checked out at, so pushing it is refused if the branch has moved since, as for any commit. Its tables and views are those of the earlier version at its snapshot, with the same columns and rows, and its `dataset.json` and `tree.json` are the earlier version's. The working metadata gets there in a new snapshot: tables the earlier version did not hold are dropped, and tables changed since are written again from their rows at the earlier snapshot. The earlier snapshot must still be in the metadata.
+The new version's parent is the version the working metadata was cloned at, so pushing it is refused if the branch has moved since, as for any commit. Its tables and views are those of the earlier version at its snapshot, with the same columns and rows, and its `dataset.json` and `tree.json` are the earlier version's. The working metadata gets there in a new snapshot: tables the earlier version did not hold are dropped, and tables changed since are written again from their rows at the earlier snapshot. The earlier snapshot must still be in the metadata.
 
 ## Branches
 
-A branch is made by creating `refs/heads/<name>` at a version (see [Refs](/spec/refs)). Work on it is checked out, committed and pushed as on `main`. Its versions are not on `main`'s history until they are merged.
+A branch is made by creating `refs/heads/<name>` at a version (see [Refs](/spec/refs)). Work on it is cloned, committed and pushed as on `main`. Its versions are not on `main`'s history until they are merged.
 
 ## Merging
 
 Merging brings what another branch changed into the branch being written. The writer works out the result from three versions:
 
-- ours: the version the working metadata was checked out at, on the branch being written
+- ours: the version the working metadata was cloned at, on the branch being written
 - theirs: the version of the other branch
 - the base: a common ancestor of ours and theirs that no other common ancestor descends from, following every entry of `parents`. When there is more than one, the writer refuses to merge
 
@@ -91,7 +91,7 @@ A merge with any conflict makes no version. The writer lists each conflict, by t
 
 ### The merge version
 
-The working metadata is checked out from ours and gets the result in a new snapshot. Data files may be written anew or, for a table taken whole from theirs, named as theirs names them. `diff` compares the merge version with ours, its first parent.
+The working metadata is cloned from ours and gets the result in a new snapshot. Data files may be written anew or, for a table taken whole from theirs, named as theirs names them. `diff` compares the merge version with ours, its first parent.
 
 ## Order of writes
 

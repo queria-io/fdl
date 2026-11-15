@@ -1,4 +1,4 @@
-"""What changed between two versions, or in a working catalog since its checkout.
+"""What changed between two versions, or in a working catalog since its clone.
 
 Both are brought to one shape first: each table's row count, data files,
 columns and words. A version gives them from its `dataset.json` and
@@ -283,7 +283,7 @@ def versions(store: Store, old: Version | None, new: Version) -> dict[str, Any]:
 
 
 def working(working_path: Path, base: Version | None) -> dict[str, Any]:
-    """What a working catalog changed since the version it was checked out at."""
+    """What a working catalog changed since the version it was cloned at."""
     import tempfile
 
     with tempfile.TemporaryDirectory(prefix="fdl-status-") as tmp:
@@ -293,6 +293,6 @@ def working(working_path: Path, base: Version | None) -> dict[str, Any]:
         result = between(frozen, base.ducklake.snapshot_id if base else None, last)
         if result is None:
             raise catalog.CatalogError(
-                "the working catalog no longer holds the snapshot it was checked out at"
+                "the working catalog no longer holds the snapshot it was cloned at"
             )
         return result
