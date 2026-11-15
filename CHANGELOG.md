@@ -1,6 +1,69 @@
 # CHANGELOG
 
 
+## v0.30.0 (2026-11-15)
+
+### Bug Fixes
+
+- Reject an --objects file that names no objects and read each version once
+  ([#69](https://github.com/queria-io/fdl/pull/69),
+  [`14e91da`](https://github.com/queria-io/fdl/commit/14e91da3a022d7afdb113aa9edb3bc884386fc54))
+
+### Features
+
+- Keep merge bases with main and count retention on each branch
+  ([#67](https://github.com/queria-io/fdl/pull/67),
+  [`054228d`](https://github.com/queria-io/fdl/commit/054228dc43319c64e2b73998af656089d9297424))
+
+* feat!: keep merge bases with main and count retention on each branch
+
+fdl expire now decides for every live version at once, as the spec's new "Choosing the versions to
+  take out" says: it keeps the versions refs point at, their merge bases with main, the newest
+  --keep on each branch's first-parent line, and those made since --since or within --grace. Other
+  versions, such as the parents a merge brought in other than its first and the heads of deleted
+  request refs, are taken out. cases/retention.json holds the cases every implementation agrees on.
+
+BREAKING CHANGE: fdl expire drops --ref and takes --grace (default 7d). repo.prune takes no newest
+  version and takes grace.
+
+* fix: read each version once when choosing what to expire, and fix the retention cases example
+
+- Name the objects a withdrawal deleted in expired.json
+  ([#68](https://github.com/queria-io/fdl/pull/68),
+  [`584e515`](https://github.com/queria-io/fdl/commit/584e5153389030d8e7a3d6ead7d69738ff46ec8f))
+
+* feat: name the objects a withdrawal deleted in expired.json
+
+Withdrawal now records the deleted data files (from data_dir) and assets (by sha256) as `deleted` in
+  each withdrawn version's expired.json. Mirrors delete exactly those, and hosts refuse to place
+  them again, so an old copy cannot bring withdrawn data back. Running a withdrawal again keeps the
+  names the first run wrote.
+
+* feat: apply another repository's withdrawal by the objects it names
+
+fdl withdraw --objects takes an expired.json (or its deleted) from the repository a mirror or fork
+  was copied from: every live version that reaches a named object is withdrawn too, and named
+  objects still there are deleted. --json prints the plan, listing refs that block it instead of
+  failing, for a host that moves them first.
+
+* fix: read the data files of an s3:// repository with the AWS_* keys
+
+withdraw and gc open each version's metadata to find the assets its rows reach. Over S3 DuckDB had
+  no secret for the data files, so they could not be read; the same secret fdl clone makes is now
+  used.
+
+- Take the author from fdl config or FDL_AUTHOR_NAME when --author is left out
+  ([#66](https://github.com/queria-io/fdl/pull/66),
+  [`37da487`](https://github.com/queria-io/fdl/commit/37da487e4a156263091d4f1022475d386d19694f))
+
+* feat: take the author from fdl config or FDL_AUTHOR_NAME when --author is left out
+
+fdl config author.name and author.email keep who makes the versions in ~/.config/fdl/config.json.
+  FDL_AUTHOR_NAME and FDL_AUTHOR_EMAIL override them, and --author overrides both.
+
+* fix: take the author's name and email from one place, and report a broken config.json
+
+
 ## v0.29.0 (2026-11-15)
 
 ### Features
