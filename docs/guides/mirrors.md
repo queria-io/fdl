@@ -50,4 +50,4 @@ Anyone can write a `version.json`, so a checksum shows the copy matches the reco
 
 When the origin takes a version out of retention, the mirror sees `expired.json` appear and the metadata disappear on the next copy. Copy `expired.json` and delete the metadata files the origin deleted. A mirror that keeps them serves versions its origin no longer does.
 
-An `expired.json` with `"reason": "withdrawn"` means the origin removed data that must not be published. Delete the metadata files, and the data files and assets named in its `deleted`, without waiting. Do not copy those objects again from anywhere.
+An `expired.json` with `"reason": "withdrawn"` means the origin removed data that must not be published. Delete the metadata files, and the data files and assets named in its `deleted`, without waiting. Do not copy those objects again from anywhere. `fdl withdraw <mirror> --objects expired.json --yes` does this.

@@ -503,6 +503,38 @@ def test_withdrawing_again_keeps_the_names_the_first_run_deleted(tmp_path: Path,
     assert json.loads(remote.get(layout.version_expired(first.id)))["deleted"]["data"] == leaked
 
 
+def test_a_copy_applies_a_withdrawal_by_the_objects_it_names(tmp_path: Path, remote) -> None:
+    first = pushed(tmp_path, remote)
+    leaked = sorted(key.removeprefix("data/") for key in remote.list("data/"))
+    # A version made on top in the copy still reads the withdrawn file
+    second = pushed(tmp_path, remote, parent=first, sql="INSERT INTO lake.main.towns VALUES (2)")
+    stray = "assets/" + "a" * 64
+    remote.put(stray, b"copied along")
+    named = {"data": leaked, "assets": ["a" * 64]}
+
+    plan = repo.plan_withdrawal(remote, [], objects=named, refuse_refs=False)
+    assert set(plan.versions) == {first.id, second.id}
+    assert plan.blocked == ("refs/heads/main",)
+    with pytest.raises(repo.RepoError, match="refs/heads/main"):
+        repo.withdraw(remote, plan.versions, plan=plan)
+    with pytest.raises(repo.RepoError, match=r"\.\."):
+        repo.plan_withdrawal(remote, [], objects={"data": ["../x/ducklake-a.parquet"]})
+
+    clean = pushed(
+        tmp_path,
+        remote,
+        parent=second,
+        sql="DROP TABLE lake.main.towns; CREATE TABLE lake.main.kept AS SELECT 1 AS id; CALL ducklake_expire_snapshots('lake', older_than => now())",
+    )
+    plan = repo.withdraw(remote, [], plan=repo.plan_withdrawal(remote, [], objects=named))
+    assert set(plan.versions) == {first.id, second.id}
+    assert remote.head(stray) is None
+    assert not {"data/" + name for name in leaked} & set(remote.list("data/"))
+    mark = json.loads(remote.get(layout.version_expired(second.id)))
+    assert mark["deleted"]["assets"] == ["a" * 64] and set(leaked) <= set(mark["deleted"]["data"])
+    assert repo.head(remote) == clean
+
+
 def test_a_file_a_kept_version_still_reads_is_not_deleted(tmp_path: Path, remote) -> None:
     first = pushed(tmp_path, remote)
     second = pushed(tmp_path, remote, parent=first, sql="INSERT INTO lake.main.towns VALUES (2)")

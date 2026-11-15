@@ -220,6 +220,25 @@ def test_withdraw_says_what_it_would_do_until_told_yes(tmp_path: Path) -> None:
     assert repo.is_expired(store, leak.id)
 
 
+def test_withdraw_applies_the_objects_another_repository_withdrew(tmp_path: Path) -> None:
+    import json
+
+    remote, working = tmp_path / "remote", tmp_path / "work" / "lake.sqlite"
+    store = LocalStore(remote)
+    run("init", remote)
+    run("clone", remote, working)
+    write(working, store, "CREATE TABLE lake.main.towns AS SELECT 1 AS id")
+    commit(working, "-m", "leak", "--author", "tester")
+    leak = repo.head(store)
+    names = [key.removeprefix("data/") for key in store.list("data/")]
+    mark = tmp_path / "expired.json"
+    mark.write_text(json.dumps({"reason": "withdrawn", "deleted": {"data": names, "assets": []}}))
+
+    plan = json.loads(run("withdraw", remote, "--objects", mark, "--json"))
+    assert plan["versions"] == [leak.id] and plan["blocked"] == ["refs/heads/main"]
+    assert repo.is_expired(store, leak.id) is False
+
+
 def test_status_diff_and_show(tmp_path: Path, described: Path) -> None:
     import json
 

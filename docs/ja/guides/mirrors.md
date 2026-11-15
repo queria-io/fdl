@@ -50,4 +50,4 @@ ATTACH 'ducklake:https://mirror.example.org/towns/versions/019a3c4e-…/metadata
 
 元がバージョンの保持期間を終わらせると、ミラーは次に写すときに、`expired.json` が増え、メタデータが消えたことに気づきます。`expired.json` を写し、元が消したメタデータを消してください。残しておくと、元がもう出していないバージョンをミラーが出し続けます。
 
-`"reason": "withdrawn"` の `expired.json` は、公開してはいけないデータを元が取り下げたことを意味します。メタデータと、`deleted` にあるデータファイル・アセットを、待たずに消してください。それらのオブジェクトをどこからも写し直さないでください。
+`"reason": "withdrawn"` の `expired.json` は、公開してはいけないデータを元が取り下げたことを意味します。メタデータと、`deleted` にあるデータファイル・アセットを、待たずに消してください。それらのオブジェクトをどこからも写し直さないでください。`fdl withdraw <mirror> --objects expired.json --yes` がこれを行います。
