@@ -61,9 +61,10 @@ A version is taken out of retention in this order:
 3. After the grace period, delete the shared objects that meet the conditions above
 
 ```json expired.json
-{ "expired_at": "2026-12-01T00:00:00Z", "reason": "retention" }
+{ "expired_at": "2026-12-01T00:00:00Z", "reason": "retention", "by": "nightly retention" }
 ```
 
+- `by` may say who or what took the version out: a person, or a process such as a scheduled job. With it, the history shows who removed each version's data, as it shows who made it
 - `version.json` stays, so the history still says the version was there and what it was, and the graph of parents stays whole
 - A reader that sees `expired.json` treats the version as past retention and does not open its metadata, whatever the `reason`
 - A version a ref points at must not be taken out
@@ -83,5 +84,5 @@ The shared objects go before the metadata files, so a withdrawal that stops half
 { "expired_at": "2026-12-01T00:00:00Z", "reason": "withdrawn" }
 ```
 
-- `version.json` stays, as with retention. If the record itself holds the data (in `message` or `inputs`), it is deleted too, and the history shows a missing parent at that point
+- `version.json` stays, as with retention, so every repository holds its history back to the first version. If the record itself holds the data (in `author`, `message` or `inputs`), it is rewritten without it before `expired.json` is put: the value in `author` or `message` is replaced with `withdrawn`, and the entries of `inputs` that hold it are dropped. `id`, `seq`, `parents` and the other fields stay as they were
 - Mirrors keep their own copies. A mirror that copies `expired.json` with `"reason": "withdrawn"` deletes the metadata files and the shared objects the origin deleted. The origin cannot force this; the host tells the mirrors it knows of

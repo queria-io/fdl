@@ -912,6 +912,7 @@ def expire(
     keep: int = typer.Option(1, help="How many of the newest versions to keep"),
     since: str | None = typer.Option(None, help="Also keep those made at or after this time (ISO 8601)"),
     ref: str = typer.Option(layout.DEFAULT_BRANCH),
+    by: str | None = typer.Option(None, help="Who or what takes them out, recorded in expired.json"),
 ) -> None:
     """Take older versions out of retention: mark them and drop their catalogs.
 
@@ -920,7 +921,7 @@ def expire(
     store = _store(remote)
     try:
         newest = repo.head(store, ref)
-        expired = repo.prune(store, newest, keep=keep, since=since) if newest else []
+        expired = repo.prune(store, newest, keep=keep, since=since, by=by) if newest else []
     except ERRORS as exc:
         raise _fail(exc) from exc
     typer.echo(f"Expired {len(expired)} version(s).")
@@ -965,6 +966,7 @@ def withdraw(
     remote: str = Remote,
     versions: list[str] = typer.Argument(..., help="The versions that hold the data"),
     yes: bool = typer.Option(False, "--yes", help="Do it. Without this, only say what would be done"),
+    by: str | None = typer.Option(None, help="Who withdraws them, recorded in expired.json"),
 ) -> None:
     """Remove versions that hold data that must not be published.
 
@@ -988,7 +990,7 @@ def withdraw(
         if not yes:
             typer.echo("Nothing was changed. Run again with --yes to do this.")
             return
-        repo.withdraw(store, versions, plan=plan)
+        repo.withdraw(store, versions, plan=plan, by=by)
     except ERRORS as exc:
         raise _fail(exc) from exc
     typer.echo(f"Withdrew {len(plan.versions)} version(s) and deleted {len(plan.deleted)} file(s).")
