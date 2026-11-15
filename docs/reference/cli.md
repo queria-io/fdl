@@ -232,7 +232,7 @@ A version reaches the assets its `tree.json` lists and those its asset columns h
 
 Without `--yes` it only prints what it would delete. Files a kept version still reaches are listed as kept; if they hold the data, withdraw that version too. Refused while a branch or a request points at one of the versions.
 
-`--objects` applies a withdrawal made in another repository, in a copy of it such as a mirror or a fork. The file is that repository's `expired.json`, or just its `deleted`. Every live version that reaches one of the named objects is withdrawn too, with the versions given, and the named objects still there are deleted even where no version reaches them.
+`--objects` applies a withdrawal made in another repository, in a copy of it such as a mirror. The file is that repository's `expired.json`, or just its `deleted`. Every live version that reaches one of the named objects is withdrawn too, with the versions given, and the named objects still there are deleted even where no version reaches them.
 
 `--json` prints the plan as one JSON object (`versions`, `tags`, `deleted`, `still_read`, `blocked`). Refs other than tags that point at the versions are listed in `blocked` instead of failing, for a host that moves them before running it with `--yes`.
 

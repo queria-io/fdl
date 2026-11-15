@@ -883,7 +883,7 @@ def plan_withdrawal(
     host that moves them itself.
 
     ``objects`` names shared objects another repository withdrew, as `deleted`
-    of its `expired.json` does: a copy of it, such as a mirror or a fork,
+    of its `expired.json` does: a copy of it, such as a mirror,
     applies that withdrawal. Every live version that reaches one of them is
     affected too, and those objects go even where no version reaches them.
 

@@ -1062,7 +1062,7 @@ def withdraw(
     version already past retention has no metadata, so then every data file and
     asset no live version reaches is deleted.
 
-    With --objects, a mirror or a fork applies a withdrawal made in the
+    With --objects, a mirror applies a withdrawal made in the
     repository it was copied from.
     """
     store = _store(remote)
