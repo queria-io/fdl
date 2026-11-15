@@ -464,8 +464,10 @@ def test_withdraw_removes_the_data_from_live_versions(tmp_path: Path, remote) ->
     assert set(plan.deleted) == leaked and set(plan.still_read) == kept
     assert set(remote.list("data/")) == kept
     assert repo.tags(remote) == {}
+    named = {"data": sorted(key.removeprefix("data/") for key in leaked), "assets": []}
     for version_id in (first.id, second.id):
-        assert json.loads(remote.get(layout.version_expired(version_id)))["reason"] == "withdrawn"
+        mark = json.loads(remote.get(layout.version_expired(version_id)))
+        assert mark["reason"] == "withdrawn" and mark["deleted"] == named
         assert remote.head(layout.version_metadata(repo.read_version(remote, version_id))) is None
         assert remote.head(layout.version_record(version_id)) is not None
     assert repo.head(remote) == clean
@@ -490,6 +492,15 @@ def test_withdrawing_a_version_past_retention_deletes_unread_files_at_once(tmp_p
     assert set(remote.list("data/")) == kept
     assert json.loads(remote.get(layout.version_expired(first.id)))["reason"] == "withdrawn"
     assert repo.head(remote) == second
+
+
+def test_withdrawing_again_keeps_the_names_the_first_run_deleted(tmp_path: Path, remote) -> None:
+    first = pushed(tmp_path, remote)
+    leaked = sorted(key.removeprefix("data/") for key in remote.list("data/"))
+    pushed(tmp_path, remote, parent=first, sql="DROP TABLE lake.main.towns; CREATE TABLE lake.main.kept AS SELECT 1 AS id; CALL ducklake_expire_snapshots('lake', older_than => now())")
+    repo.withdraw(remote, [first.id])
+    repo.expire(remote, first.id, reason="withdrawn", deleted={"data": [], "assets": []})
+    assert json.loads(remote.get(layout.version_expired(first.id)))["deleted"]["data"] == leaked
 
 
 def test_a_file_a_kept_version_still_reads_is_not_deleted(tmp_path: Path, remote) -> None:

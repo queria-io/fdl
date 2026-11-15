@@ -11,7 +11,7 @@ import duckdb
 import pytest
 from typer.testing import CliRunner
 
-from fdl import catalog, objects, repo
+from fdl import catalog, layout, objects, repo
 from fdl.cli import app
 from fdl.stores import LocalStore
 
@@ -215,3 +215,5 @@ def test_withdrawal_deletes_the_assets_only_the_withdrawn_versions_reach(tmp_pat
     assert store.head(objects.asset_key(rows["leak.pdf"])) is None
     assert store.head(objects.asset_key(rows["kept.pdf"])) is not None
     assert store.head(readme) is not None
+    mark = json.loads(store.get(layout.version_expired(leaked.id)))
+    assert mark["deleted"]["assets"] == [rows["leak.pdf"]]

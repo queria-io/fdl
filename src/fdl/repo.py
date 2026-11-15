@@ -769,7 +769,14 @@ def is_expired(store: Store, version_id: str) -> bool:
     return store.head(layout.version_expired(version_id)) is not None
 
 
-def expire(store: Store, version_id: str, *, reason: str = "retention", by: str | None = None) -> None:
+def expire(
+    store: Store,
+    version_id: str,
+    *,
+    reason: str = "retention",
+    by: str | None = None,
+    deleted: dict[str, list[str]] | None = None,
+) -> None:
     """Take a version out of retention: the mark first, then its catalogs.
 
     `version.json` stays, so the history still says the version was there and
@@ -781,7 +788,9 @@ def expire(store: Store, version_id: str, *, reason: str = "retention", by: str 
     held = _held(store)
     if version_id in held:
         raise RepoError(f"{held[version_id]} points at {version_id}, so it is kept")
-    record = {"expired_at": utc_now(), "reason": reason, **({"by": by} if by else {})}
+    record: dict = {"expired_at": utc_now(), "reason": reason, **({"by": by} if by else {})}
+    if deleted is not None:
+        record["deleted"] = deleted
     try:
         store.put(
             layout.version_expired(version_id),
@@ -795,7 +804,12 @@ def expire(store: Store, version_id: str, *, reason: str = "retention", by: str 
         # A version already out of retention that is withdrawn says so, for
         # mirrors to delete what the origin deleted.
         mark = layout.version_expired(version_id)
-        if reason == "withdrawn" and json.loads(store.get(mark)).get("reason") != reason:
+        if reason == "withdrawn":
+            before = json.loads(store.get(mark))
+            if before.get("reason") == reason:
+                # Run again after stopping half way: the objects the first run
+                # deleted may no longer be listed, so its names are kept.
+                record = {**before, "deleted": _union_deleted(before.get("deleted"), deleted)}
             store.put(mark, (json.dumps(record) + "\n").encode(), content_type="application/json")
     store.delete(
         [
@@ -808,6 +822,27 @@ def expire(store: Store, version_id: str, *, reason: str = "retention", by: str 
             *store.list(layout.version_dir(version_id) + layout.PROFILES_DIR),
         ]
     )
+
+
+def _union_deleted(*lists: object) -> dict[str, list[str]]:
+    union: dict[str, set[str]] = {"data": set(), "assets": set()}
+    for value in lists:
+        if isinstance(value, dict):
+            for kind, names in union.items():
+                names.update(name for name in value.get(kind, []) if isinstance(name, str))
+    return {kind: sorted(names) for kind, names in union.items()}
+
+
+def deleted_names(keys: Iterable[str], data_dir: str) -> dict[str, list[str]]:
+    """Shared objects as `expired.json` names them: data files from `data_dir`, assets by sha256."""
+    data: list[str] = []
+    assets: list[str] = []
+    for key in keys:
+        if key.startswith(layout.ASSETS_DIR):
+            assets.append(key[len(layout.ASSETS_DIR) :])
+        elif key.startswith(data_dir):
+            data.append(key[len(data_dir) :])
+    return {"data": sorted(data), "assets": sorted(assets)}
 
 
 @dataclass(frozen=True)
@@ -1023,6 +1058,8 @@ def withdraw(
     assets at once. In the spec's order: the shared objects go before the
     metadata files, so a run that stops half way can be run again while the
     metadata files still say which objects they are. `version.json` stays.
+    Each `expired.json` names the deleted objects, so that mirrors delete the
+    same ones and hosts refuse to place them again.
     """
     plan = plan or plan_withdrawal(store, version_ids)
     for name in plan.tags:
@@ -1034,8 +1071,9 @@ def withdraw(
     assets = [key for key in plan.deleted if key.startswith(layout.ASSETS_DIR)]
     store.delete(assets)
     store.delete([key for key in plan.deleted if not key.startswith(layout.ASSETS_DIR)])
+    deleted = deleted_names(plan.deleted, read_config(store).data_dir)
     for version_id in plan.versions:
-        expire(store, version_id, reason="withdrawn", by=by)
+        expire(store, version_id, reason="withdrawn", by=by, deleted=deleted)
     return plan
 
 
