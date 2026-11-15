@@ -527,3 +527,11 @@ def test_clone_names_the_working_metadata_after_the_repository(tmp_path: Path, m
     monkeypatch.chdir(tmp_path)
     run("clone", f"{remote}/")
     assert (tmp_path / "towns.sqlite").exists()
+
+
+def test_clone_names_a_folder_given_as_dot_by_where_it_is(tmp_path: Path, monkeypatch) -> None:
+    from fdl.cli import _default_working
+
+    monkeypatch.chdir(tmp_path)
+    assert _default_working(".") == Path(f"{tmp_path.name}.sqlite")
+    assert _default_working("https://data.example.invalid/datasets/alice/towns/") == Path("towns.sqlite")

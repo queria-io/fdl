@@ -87,8 +87,12 @@ def init(
 
 def _default_working(remote: str) -> Path:
     """Where `fdl clone` puts the working metadata when not told: <name>.sqlite, as git names the folder."""
-    name = remote.rstrip("/").rsplit("/", 1)[-1] or "lake"
-    return Path(f"{name}.sqlite")
+    if "://" in remote:
+        name = remote.rstrip("/").rsplit("/", 1)[-1]
+    else:
+        # A folder given as `.` or `..` is named by where it is.
+        name = Path(remote).resolve().name
+    return Path(f"{name or 'lake'}.sqlite")
 
 
 @app.command()
@@ -97,7 +101,7 @@ def clone(
     working: Path | None = typer.Argument(
         None, help="The working metadata (.sqlite). Default: <the repository's last path segment>.sqlite here"
     ),
-    branch: str = typer.Option("main", "--branch", "-b", help="The branch to build on: a name such as main, or refs/heads/<name>"),
+    branch: str = typer.Option(layout.DEFAULT_BRANCH.removeprefix("refs/heads/"), "--branch", "-b", help="The branch to build on: a name such as main, or refs/heads/<name>"),
     storage: str | None = typer.Option(
         None,
         help="The repository's root in its object storage (s3://…), to write new data files there directly instead of uploading them on commit",
@@ -492,7 +496,7 @@ def merge(
 
 
 def _fast_forward(store, working: Path, state: dict, theirs) -> None:
-    """Check the working metadata out at ``theirs``, for push to move the branch there."""
+    """Rebuild the working metadata from ``theirs``, for push to move the branch there."""
     local = Path(state["data"]) if state.get("data") else None
     repo.clone(store, working, local_data=local, version=theirs, storage=state.get("storage"))
     _write_state(working, {**state, "base": theirs.id, "forward": True})
