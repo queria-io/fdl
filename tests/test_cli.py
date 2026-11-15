@@ -239,6 +239,16 @@ def test_withdraw_applies_the_objects_another_repository_withdrew(tmp_path: Path
     assert repo.is_expired(store, leak.id) is False
 
 
+def test_withdraw_refuses_an_objects_file_that_names_none(tmp_path: Path) -> None:
+    remote = tmp_path / "remote"
+    run("init", remote)
+    for name, text in [("broken.json", "{"), ("retention.json", '{"reason": "retention"}'), ("numbers.json", '{"data": [1]}')]:
+        (tmp_path / name).write_text(text)
+        result = runner.invoke(app, ["withdraw", str(remote), "--objects", str(tmp_path / name)])
+        # A clean error, not a traceback
+        assert result.exit_code != 0 and isinstance(result.exception, SystemExit), result.output
+
+
 def test_status_diff_and_show(tmp_path: Path, described: Path) -> None:
     import json
 

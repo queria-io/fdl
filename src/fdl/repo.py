@@ -894,7 +894,9 @@ def plan_withdrawal(
     config = read_config(store)
     setup = list(setup)
     named = _named_objects(objects or {}, config.data_dir)
-    affected = tuple(dict.fromkeys([*version_ids, *_reaching(store, config, named, setup)]))
+    # What each live version reaches, read once for finding the affected versions and the kept objects.
+    reached: dict[str, set[str]] = {}
+    affected = tuple(dict.fromkeys([*version_ids, *_reaching(store, config, named, setup, reached)]))
     for version_id in affected:
         read_version(store, version_id)
     tags: list[str] = []
@@ -941,6 +943,9 @@ def plan_withdrawal(
                 else:
                     catalogless = True
                 continue
+            if version_id in reached:
+                kept.update(reached[version_id])
+                continue
             if is_expired(store, version_id):
                 continue
             kept.update(_reached_by(store, config, read_version(store, version_id), Path(tmp), setup))
@@ -973,8 +978,10 @@ def _named_objects(objects: dict[str, list[str]], data_dir: str) -> set[str]:
     return {key for key in keys if layout.is_shared_object(key, data_dir)}
 
 
-def _reaching(store: Store, config: Config, keys: set[str], setup: list[str]) -> list[str]:
-    """The live versions that reach any of ``keys``."""
+def _reaching(
+    store: Store, config: Config, keys: set[str], setup: list[str], reached: dict[str, set[str]]
+) -> list[str]:
+    """The live versions that reach any of ``keys``. What each live version reaches goes into ``reached``."""
     if not keys:
         return []
     found: list[str] = []
@@ -982,7 +989,8 @@ def _reaching(store: Store, config: Config, keys: set[str], setup: list[str]) ->
         for version_id in _version_ids(store):
             if is_expired(store, version_id):
                 continue
-            if _reached_by(store, config, read_version(store, version_id), Path(tmp), setup) & keys:
+            reached[version_id] = _reached_by(store, config, read_version(store, version_id), Path(tmp), setup)
+            if reached[version_id] & keys:
                 found.append(version_id)
     return found
 
