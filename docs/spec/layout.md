@@ -72,6 +72,25 @@ The `id` lets a copy of the repository tell that it holds the same one. Mirrors 
 
 The default is `data/`. A repository whose data files already sit under another prefix declares that prefix here instead of moving them. Every data file a metadata file names must be under `data_dir`.
 
+A `data_dir` is a folder under the root, written as one or more segments, each followed by `/`:
+
+- Each segment is made of lower-case ASCII letters, digits, `_`, `-` and `.`, and is not dots alone
+- The first segment is not `versions`, `refs` or `assets`
+
+Readers and writers use the value as written. A repository whose `data_dir` breaks these rules, or is not a string, is refused, never corrected (by adding a missing `/`, say): two implementations that corrected it differently would read and write different files. A host may reserve other top-level folders for its own files and refuse a `data_dir` under them. [`cases/data-dir.json`](https://github.com/queria-io/fdl/blob/main/cases/data-dir.json) lists values and what each reads as; every implementation that reads `fdl.json` runs them.
+
+#### Changing data_dir
+
+A host may move the data files of a repository that already has versions. Metadata files name data files relative to `data_dir`, so the versions are not rewritten. The host does it in this order:
+
+1. Copy every data file a live version reaches to the same path under the new `data_dir`
+2. Check that each of them is there
+3. Write `fdl.json` with the new `data_dir`
+
+Until step 3, readers read the old place and find every file there. After it, they read the new place, which already holds every file. The host keeps the old place until no reader can still be using the `data_dir` it read before the change: at least the grace period, and longer if a reader may keep it longer. Then the host deletes the old place (see [Data files](/spec/data-files#files-outside-data_dir)).
+
+A working metadata file checked out before step 3 writes its new data files to the old place, where no version will read them. A writer remembers the `data_dir` it checked out with and refuses to commit or push when `fdl.json` names another one; the build checks out again. A host may also refuse such a push.
+
 ### signers
 
 The keys the repository's writers sign versions with (see [Reading](/spec/reading#signatures)). A reader must not trust a key because it is listed here: a mirror can change `fdl.json` too. The list tells a reader which keys to expect, and the reader gets the keys it trusts from the origin by other means.

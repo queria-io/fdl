@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import json
 import os
+import shutil
 import time
 from pathlib import Path
 
@@ -472,3 +473,49 @@ def test_gc_keeps_what_a_version_pushed_since_the_plan_reaches(tmp_path: Path) -
     commit(working, "-m", "first", "--author", "t")
     assert repo.collect(store, plan=plan) == []
     assert len(store.list(layout.DEFAULT_DATA_DIR)) == 1
+
+
+def _move_data_dir(remote: Path, to: str) -> None:
+    """Move the data files the way a host does: copy them, then switch fdl.json."""
+    config = json.loads((remote / layout.CONFIG).read_text())
+    shutil.copytree(remote / config["data_dir"], remote / to)
+    (remote / layout.CONFIG).write_text(json.dumps({**config, "data_dir": to}))
+
+
+def _checked_out_before_the_move(tmp_path: Path) -> tuple[Path, Path, LocalStore]:
+    remote, working = tmp_path / "remote", tmp_path / "work" / "lake.sqlite"
+    store = LocalStore(remote)
+    run("init", remote, "--data-dir", "old/")
+    run("checkout", remote, working)
+    write(working, store, "CREATE TABLE lake.main.towns AS SELECT 1 AS id")
+    commit(working, "-m", "first", "--author", "tester")
+    write(working, store, "INSERT INTO lake.main.towns VALUES (2)")
+    return remote, working, store
+
+
+def test_a_commit_checked_out_before_data_dir_moved_is_refused(tmp_path: Path) -> None:
+    remote, working, store = _checked_out_before_the_move(tmp_path)
+    _move_data_dir(remote, "data/")
+
+    result = runner.invoke(app, ["commit", str(working), "-m", "second", "--author", "tester"])
+    assert result.exit_code != 0
+    assert "data_dir in fdl.json is now 'data/'" in result.output
+    assert "Check out again" in result.output
+    assert len(list(repo.log(store))) == 1
+
+
+def test_a_push_committed_before_data_dir_moved_is_refused(tmp_path: Path) -> None:
+    remote, working, store = _checked_out_before_the_move(tmp_path)
+    run("commit", working, "-m", "second", "--author", "tester")
+    _move_data_dir(remote, "data/")
+
+    result = runner.invoke(app, ["push", str(working)])
+    assert result.exit_code != 0
+    assert "Check out again" in result.output
+    assert len(list(repo.log(store))) == 1
+    # A checkout after the move writes where versions read.
+    again = tmp_path / "again" / "lake.sqlite"
+    run("checkout", remote, again)
+    write(again, store, "INSERT INTO lake.main.towns VALUES (2)")
+    commit(again, "-m", "second", "--author", "tester")
+    assert len(list(repo.log(store))) == 2

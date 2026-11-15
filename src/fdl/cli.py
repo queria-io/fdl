@@ -106,14 +106,16 @@ def checkout(
         else working.with_name(working.name + ".data")
     )
     try:
+        # Read before the checkout: a data_dir moved meanwhile then fails the commit.
+        config = repo.read_config(store)
         version = repo.checkout(store, working, ref=ref, local_data=local, storage=storage)
         if storage:
-            data = repo.storage_data_path(storage, repo.read_config(store))
+            data = repo.storage_data_path(storage, config)
         else:
             data = repo.data_url(store) if local is None else local.resolve().as_posix() + "/"
     except ERRORS as exc:
         raise _fail(exc) from exc
-    state = {"remote": remote, "ref": ref, "base": version.id if version else None}
+    state = {"remote": remote, "ref": ref, "base": version.id if version else None, "data_dir": config.data_dir}
     if local:
         state["data"] = str(local)
     if storage:
@@ -203,6 +205,7 @@ def _commit(
     Its parent is the version the working metadata was checked out at (or last
     pushed). Any version committed before and not pushed is replaced.
     """
+    _check_data_dir(store, working, state)
     out = Path(tempfile.mkdtemp(prefix=".fdl-commit-", dir=working.resolve().parent))
     try:
         parent = repo.read_version(store, state["base"]) if state["base"] else None
@@ -260,6 +263,20 @@ def _commit(
     return version
 
 
+def _check_data_dir(store, working: Path, state: dict) -> None:
+    """Refuse a working metadata checked out before fdl.json moved the data files.
+
+    Its new data files went to the old place, where no version reads them.
+    """
+    now = repo.read_config(store).data_dir
+    if state.get("data_dir") != now:
+        raise repo.RepoError(
+            f"data_dir in fdl.json is now {now!r}, but {working} was checked out with "
+            f"{state.get('data_dir')!r}: its new data files are not where versions read them. "
+            "Check out again and rebuild"
+        )
+
+
 def _drop_pending(working: Path, state: dict, **changes) -> None:
     """Forget the version committed and not pushed, and delete it."""
     _write_state(working, {key: value for key, value in state.items() if key != "pending"} | changes)
@@ -308,6 +325,7 @@ def push(
     store = _store(state["remote"])
     folder = _pending_dir(working) / pending["id"]
     try:
+        _check_data_dir(store, working, state)
         version = parse_version((folder / layout.VERSION_RECORD).read_bytes(), expected_id=pending["id"])
         if not no_profile:
             _profile_pending(store, working, state, folder, version)

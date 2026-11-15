@@ -112,4 +112,6 @@ A push from stale working metadata is refused on two checks:
 1. The new version does not descend from the version the branch holds now. Someone else pushed first
 2. A data file the metadata names, or a file `tree.json` lists, is missing from the repository. A host may check the assets the rows hold as well. A file that no live version named for longer than the grace period may have been deleted, even if the writer found it there
 
-In both cases the writer checks out again, redoes the work and pushes again. After the first, it may instead merge the branch into its work. Nothing in the repository needs to be cleaned up: the refused version is not named by any ref.
+A writer also refuses to commit or push when `fdl.json` names another `data_dir` than the one it checked out with ([Changing data_dir](/spec/layout#changing-data_dir)).
+
+In every case the writer checks out again, redoes the work and pushes again. After the first check, it may instead merge the branch into its work. Nothing in the repository needs to be cleaned up: the refused version is not named by any ref.

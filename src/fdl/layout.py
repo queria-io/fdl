@@ -101,6 +101,23 @@ def check_file_name(value: object) -> str:
     return value
 
 
+#: A segment of `data_dir`: lower-case ASCII letters, digits, `_`, `-` and `.`.
+_DATA_DIR_SEGMENT = re.compile(r"[a-z0-9_.-]+")
+#: Top-level folders of the format, which `data_dir` must not be under.
+_RESERVED_TOP = ("versions", "refs", "assets")
+
+
+def is_data_dir(value: object) -> bool:
+    """Whether ``value`` may be `fdl.json`'s `data_dir`: a folder under the root,
+    apart from the format's own. It is taken as written, never corrected."""
+    if not isinstance(value, str) or not value.endswith("/"):
+        return False
+    segments = value[:-1].split("/")
+    return segments[0] not in _RESERVED_TOP and all(
+        _DATA_DIR_SEGMENT.fullmatch(segment) and segment.strip(".") for segment in segments
+    )
+
+
 def is_shared_object(key: str, data_dir: str) -> bool:
     """Whether ``key`` is named as a shared object: a data file or an asset.
 
