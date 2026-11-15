@@ -109,7 +109,7 @@ A tag is created with `If-None-Match: *` and never moved. Readers who attach `re
 
 ## Taking versions out of retention
 
-Metadata files are small, but a dataset that is rebuilt every day keeps every Parquet file any version names. `fdl expire --keep 30` takes the versions behind the newest 30 out of retention. Each goes through three steps:
+Metadata files are small, but a dataset that is rebuilt every day keeps every Parquet file any version names. `fdl expire --keep 30` takes out of retention the versions behind the newest 30 on each branch, keeping those refs point at and their merge bases with main. Each goes through three steps:
 
 1. Put `versions/<ID>/expired.json`
 2. Delete `versions/<ID>/metadata.db` and any `metadata/`

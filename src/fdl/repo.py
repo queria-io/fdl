@@ -8,7 +8,6 @@ from __future__ import annotations
 
 import datetime as dt
 import hashlib
-import itertools
 import json
 import shutil
 import tempfile
@@ -754,15 +753,20 @@ def ancestors(store: Store, version: Version) -> dict[str, Version]:
 
 
 def merge_bases(store: Store, ours: Version, theirs: Version) -> list[Version]:
-    """The common ancestors of ``ours`` and ``theirs`` that no other common ancestor descends from.
+    """The common ancestors of ``ours`` and ``theirs`` that no other common ancestor descends from."""
+    mine = ancestors(store, ours)
+    return sorted((mine[version_id] for version_id in _bases(mine, ancestors(store, theirs))), key=lambda v: v.id)
+
+
+def _bases(mine: Mapping[str, Version], other: Mapping[str, Version]) -> set[str]:
+    """The IDs of the merge bases of two versions, from everything behind each (`ancestors`).
 
     Every parent of a common ancestor is a common ancestor too, so those that
     are no common ancestor's parent are the ones asked for.
     """
-    mine, other = ancestors(store, ours), ancestors(store, theirs)
-    common = {version_id: mine[version_id] for version_id in mine.keys() & other.keys()}
-    behind = {parent for version in common.values() for parent in version.parents}
-    return sorted((version for version_id, version in common.items() if version_id not in behind), key=lambda v: v.id)
+    common = mine.keys() & other.keys()
+    behind = {parent for version_id in common for parent in mine[version_id].parents}
+    return common - behind
 
 
 def is_expired(store: Store, version_id: str) -> bool:
@@ -1075,49 +1079,100 @@ def _named_files(store: Store, version: Version) -> set[str] | None:
     return None if named is None else set(named)
 
 
-def prune(
+def plan_retention(
     store: Store,
-    newest: Version,
     *,
     keep: int = 1,
     since: str | None = None,
-    reason: str = "retention",
-    by: str | None = None,
+    grace: dt.timedelta = dt.timedelta(days=7),
+    now: dt.datetime | None = None,
 ) -> list[str]:
-    """Expire the versions behind ``newest`` that fall out of retention.
+    """The live versions to take out of retention (Data files, "Choosing the versions to take out").
 
-    Kept are the ``keep`` newest on its first-parent line (``newest`` among
-    them), every one created at or after ``since`` (an ISO time, as
-    ``created_at`` is written), and any a ref points at. The walk stops at
-    the first version already expired: an earlier prune took everything past
-    it. Returns the IDs expired, newest first.
+    Kept are the versions a ref points at, the merge bases of each ref with
+    main, the ``keep`` newest on each branch's first-parent line, those made at
+    or after ``since`` (an ISO time, as ``created_at`` is written), and those
+    made within ``grace``. Nothing is taken out before main has a version.
+    Returns the IDs to take out, newest first.
     """
     if keep < 1:
         raise ValueError(f"keep must be >= 1, got {keep}")
-    held = _held(store)
-    expired: list[str] = []
-    current: Version | None = newest
-    for position in itertools.count():
-        if current is None or (position > 0 and is_expired(store, current.id)):
+    targets = _refs(store)
+    main = targets.get(layout.DEFAULT_BRANCH)
+    if main is None:
+        return []
+    kept = set(targets.values())
+    behind_main = ancestors(store, read_version(store, main))
+    for name, target in targets.items():
+        if target != main:
+            kept.update(_bases(behind_main, ancestors(store, read_version(store, target))))
+        if name.startswith(layout.BRANCH_PREFIX):
+            kept.update(_first_parents(store, target, keep))
+    cutoff = (now or dt.datetime.now(dt.timezone.utc)) - grace
+    after = _instant(since) if since is not None else None
+    taken = []
+    for version_id in _version_ids(store):
+        if version_id in kept or is_expired(store, version_id):
+            continue
+        made = _instant(read_version(store, version_id).created_at)
+        if made >= cutoff or (after is not None and made >= after):
+            continue
+        taken.append(version_id)
+    return sorted(taken, reverse=True)
+
+
+def prune(
+    store: Store,
+    *,
+    keep: int = 1,
+    since: str | None = None,
+    grace: dt.timedelta = dt.timedelta(days=7),
+    reason: str = "retention",
+    by: str | None = None,
+) -> list[str]:
+    """Take out of retention the versions `plan_retention` chooses. Returns their IDs, newest first.
+
+    The refs are read again before each version is taken out, so a version a
+    ref came to point at meanwhile is kept.
+    """
+    taken = []
+    for version_id in plan_retention(store, keep=keep, since=since, grace=grace):
+        if version_id in _held(store):
+            continue
+        expire(store, version_id, reason=reason, by=by)
+        taken.append(version_id)
+    return taken
+
+
+def _first_parents(store: Store, version_id: str, count: int) -> list[str]:
+    """``version_id`` and the versions behind it by first parent, ``count`` in all at most."""
+    found = [version_id]
+    while len(found) < count:
+        parents = read_version(store, found[-1]).parents
+        if not parents:
             break
-        recent = since is not None and _instant(current.created_at) >= _instant(since)
-        if position >= keep and not recent and current.id not in held:
-            expire(store, current.id, reason=reason, by=by)
-            expired.append(current.id)
-        current = read_version(store, current.parents[0]) if current.parents else None
-    return expired
+        found.append(parents[0])
+    return found
 
 
-def _held(store: Store) -> dict[str, str]:
-    """The versions some ref points at, each with one ref that does."""
-    held: dict[str, str] = {}
+def _refs(store: Store) -> dict[str, str]:
+    """Every ref that holds a version, with the version."""
+    found: dict[str, str] = {}
     for name in store.list("refs/"):
         try:
             ref = refs.read(store, name)
         except (refs.RefError, layout.LayoutError):
             continue
         if ref is not None:
-            held.setdefault(ref.target, name)
+            found[name] = ref.target
+    return found
+
+
+def _held(store: Store) -> dict[str, str]:
+    """The versions some ref points at, each with one ref that does."""
+    held: dict[str, str] = {}
+    for name, target in _refs(store).items():
+        held.setdefault(target, name)
     return held
 
 

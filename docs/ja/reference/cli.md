@@ -233,10 +233,10 @@ fdl profile <remote> [--ref refs/heads/main]
 ## fdl expire
 
 ```bash
-fdl expire <remote> [--keep 1] [--since 2026-10-01T00:00:00Z] [--ref refs/heads/main] [--by <name>]
+fdl expire <remote> [--keep 1] [--since 2026-10-01T00:00:00Z] [--grace 7d] [--by <name>]
 ```
 
-ブランチの最初の親のつながりで、新しい `--keep` 個より古いバージョンの保持期間を終わらせます。`expired.json` を置き、メタデータを消します。`--since` 以降に作ったバージョンと、ref が指すバージョンは残します。データファイルは消しません。消すのは `fdl gc` です。`--by` は保持期間を終わらせた人を `expired.json` に記録します。`fdl withdraw` の `--by` も同じです。
+バージョンの保持期間を終わらせます。`expired.json` を置き、メタデータを消します。残すのは、各ブランチの最初の親のつながりで新しい `--keep` 個、ref が指すバージョン、その main との共通祖先、`--since` 以降または `--grace` のうちに作ったバージョンです。それ以外（マージが取り込んだ最初の親以外の親など）は保持期間を終わらせます（[保持期間を終わらせるバージョンの選び方](/ja/spec/data-files#保持期間を終わらせるバージョンの選び方)）。main にバージョンが無いうちは何も終わらせません。データファイルは消しません。消すのは `fdl gc` です。`--by` は保持期間を終わらせた人を `expired.json` に記録します。`fdl withdraw` の `--by` も同じです。
 
 ## fdl gc
 

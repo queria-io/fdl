@@ -233,10 +233,10 @@ Profiles the tables and views of the version the branch or tag holds that have n
 ## fdl expire
 
 ```bash
-fdl expire <remote> [--keep 1] [--since 2026-10-01T00:00:00Z] [--ref refs/heads/main] [--by <name>]
+fdl expire <remote> [--keep 1] [--since 2026-10-01T00:00:00Z] [--grace 7d] [--by <name>]
 ```
 
-Takes versions behind the newest `--keep` on the branch's first-parent line out of retention: puts `expired.json` and deletes their metadata files. Versions made at or after `--since`, and any a ref points at, are kept. Data files are not deleted; `fdl gc` deletes them. `--by` records who takes the versions out in `expired.json`, as does `--by` of `fdl withdraw`.
+Takes versions out of retention: puts `expired.json` and deletes their metadata files. Kept are the newest `--keep` on each branch's first-parent line, the versions refs point at, their merge bases with main, and the versions made at or after `--since` or within `--grace`. Other versions, such as the parents a merge brought in other than its first, are taken out ([Choosing the versions to take out](/spec/data-files#choosing-the-versions-to-take-out)). Nothing is taken out before main has a version. Data files are not deleted; `fdl gc` deletes them. `--by` records who takes the versions out in `expired.json`, as does `--by` of `fdl withdraw`.
 
 ## fdl gc
 

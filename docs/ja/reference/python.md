@@ -99,10 +99,11 @@ ref が指すバージョンを、読み手がメタデータを開く前に行�
 
 ```python
 repo.expire(store, version_id, *, reason="retention") -> None
-repo.prune(store, newest, *, keep=1, since=None, reason="retention") -> list[str]
+repo.plan_retention(store, *, keep=1, since=None, grace=timedelta(days=7), now=None) -> list[str]
+repo.prune(store, *, keep=1, since=None, grace=timedelta(days=7), reason="retention", by=None) -> list[str]
 ```
 
-バージョン 1 つの保持期間を終わらせるか、`newest` より古く保持期間から外れるバージョンをまとめて終わらせます。ref が指すバージョンは残します。
+バージョン 1 つの保持期間を終わらせるか、`plan_retention` が選ぶバージョンをまとめて終わらせます（[保持期間を終わらせるバージョンの選び方](/ja/spec/data-files#保持期間を終わらせるバージョンの選び方)）。`plan_retention` は一覧を返すだけです。ref が指すバージョンは残します。
 
 ```python
 repo.tag(store, name, version_id) -> None
