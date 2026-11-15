@@ -1,6 +1,24 @@
 # CHANGELOG
 
 
+## v0.31.0 (2026-11-15)
+
+### Documentation
+
+- Keep withdrawn data out of expired.json by and message
+  ([#72](https://github.com/queria-io/fdl/pull/72),
+  [`e5147f9`](https://github.com/queria-io/fdl/commit/e5147f936f39356648a7b7e1afaaaafe56492b3b))
+
+- Leave forks out of FDL and say by is free text ([#70](https://github.com/queria-io/fdl/pull/70),
+  [`2432a0a`](https://github.com/queria-io/fdl/commit/2432a0a18528b12f46530b3aea2e0988bcd04521))
+
+### Features
+
+- Record why versions are taken out in expired.json message
+  ([#71](https://github.com/queria-io/fdl/pull/71),
+  [`d3616b7`](https://github.com/queria-io/fdl/commit/d3616b73a2a89ff8fbfac1dde51a424f5a5ac6f9))
+
+
 ## v0.30.0 (2026-11-15)
 
 ### Bug Fixes
