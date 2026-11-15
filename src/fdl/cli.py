@@ -977,7 +977,7 @@ def expire(
     since: str | None = typer.Option(None, help="Also keep those made at or after this time (ISO 8601)"),
     grace: str = typer.Option("7d", help="Also keep those made more recently than this: 7d, 24h or 30m"),
     by: str | None = typer.Option(None, help="Who or what takes them out, recorded in expired.json"),
-    message: str | None = typer.Option(None, "--message", "-m", help="Why they are taken out, recorded in expired.json"),
+    message: str | None = typer.Option(None, "-m", "--message", help="Why they are taken out, recorded in expired.json"),
 ) -> None:
     """Take older versions out of retention: mark them and drop their catalogs.
 
@@ -1053,7 +1053,7 @@ def withdraw(
     ),
     yes: bool = typer.Option(False, "--yes", help="Do it. Without this, only say what would be done"),
     by: str | None = typer.Option(None, help="Who withdraws them, recorded in expired.json"),
-    message: str | None = typer.Option(None, "--message", "-m", help="Why they are withdrawn, recorded in expired.json"),
+    message: str | None = typer.Option(None, "-m", "--message", help="Why they are withdrawn, recorded in expired.json"),
     as_json: bool = typer.Option(False, "--json", help="Print the plan as JSON, listing the refs that block it instead of failing"),
 ) -> None:
     """Remove versions that hold data that must not be published.
