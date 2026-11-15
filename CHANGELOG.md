@@ -1,6 +1,35 @@
 # CHANGELOG
 
 
+## v0.28.0 (2026-11-15)
+
+### Bug Fixes
+
+- Refuse a data_dir that is not a folder under the root, and a build checked out before data_dir
+  moved ([#62](https://github.com/queria-io/fdl/pull/62),
+  [`fba88fc`](https://github.com/queria-io/fdl/commit/fba88fcc54b4cb0ad7106edb4b99009d4f6a9f43))
+
+- The spec states what data_dir may be (segments of [a-z0-9_.-], ending in /, not under versions/,
+  refs/ or assets/), that it is used as written and never corrected, and cases/data-dir.json lists
+  values every implementation runs - read_config refuses other values, so "data" no longer writes
+  datamain/... while other readers read data/main/... - Layout describes how a host changes
+  data_dir; Data files says files outside data_dir are reached by no version and are the host's to
+  delete - checkout remembers data_dir, and commit and push refuse when fdl.json names another one,
+  saying so, instead of failing on missing data files - Two collection cases: a former data_dir is
+  left alone, and an invalid data_dir deletes nothing
+
+BREAKING CHANGE: a repository whose data_dir breaks the rules is refused instead of read.
+
+### Features
+
+- Rename fdl checkout to fdl clone ([#63](https://github.com/queria-io/fdl/pull/63),
+  [`e4213e8`](https://github.com/queria-io/fdl/commit/e4213e8b6c9499367004e2fba9deaf100b49d94a))
+
+### Breaking Changes
+
+- A repository whose data_dir breaks the rules is refused instead of read.
+
+
 ## v0.27.0 (2026-11-15)
 
 ### Features
