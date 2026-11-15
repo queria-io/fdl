@@ -47,10 +47,20 @@ When the current folder holds no `dataset.json` or `dataset.yml`, it also writes
 
 Refused when the version is past retention, when its metadata's sha256 is not the one `version.json` records, when the metadata names a data file outside the data folder, or when a file it would write is already in the current folder.
 
+## fdl config
+
+```bash
+fdl config author.name "Alice"
+fdl config author.email alice@example.com
+fdl config author.name
+```
+
+Sets who makes the versions you commit, kept in `~/.config/fdl/config.json` (under `$XDG_CONFIG_HOME` when it is set), apart from any repository. With no value, it prints the one set. `fdl commit`, `fdl revert` and `fdl merge` take the author from `--author`, else from the environment variables `FDL_AUTHOR_NAME` and `FDL_AUTHOR_EMAIL`, else from these settings, and are refused when none gives a name.
+
 ## fdl commit
 
 ```bash
-fdl commit <working.sqlite> -m "What changed" --author alice [--dataset dataset.json] [--allow-empty] [--assets files/]
+fdl commit <working.sqlite> -m "What changed" [--author alice] [--dataset dataset.json] [--allow-empty] [--assets files/]
 ```
 
 Freezes the working metadata into a new version whose parent is the version it was cloned at (or last pushed), and keeps it in `<working.sqlite>.pending/` until `fdl push` sends it. Nothing in the repository changes. It prints the new version ID and its `seq`. Committing again before pushing replaces the version not pushed yet.
@@ -175,7 +185,7 @@ fdl branch <remote> <name> --delete
 ## fdl revert
 
 ```bash
-fdl revert <version> <working.sqlite> --author <name> [-m <message>]
+fdl revert <version> <working.sqlite> [--author <name>] [-m <message>]
 fdl push <working.sqlite>
 ```
 
@@ -186,7 +196,7 @@ To take out data that must not be published, use `fdl withdraw`: a revert leaves
 ## fdl merge
 
 ```bash
-fdl merge <theirs> <working.sqlite> --author <name> [-m <message>]
+fdl merge <theirs> <working.sqlite> [--author <name>] [-m <message>]
 fdl push <working.sqlite>
 ```
 

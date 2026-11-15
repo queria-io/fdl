@@ -47,10 +47,20 @@ HTTP のリポジトリでは、新しいデータファイルは `<working.sqli
 
 バージョンの保持期間が過ぎているとき、メタデータの sha256 が `version.json` の記録と違うとき、メタデータがデータフォルダの外のデータファイルを指しているとき、書き出すファイルが今のフォルダに既にあるときは断られます。
 
+## fdl config
+
+```bash
+fdl config author.name "Alice"
+fdl config author.email alice@example.com
+fdl config author.name
+```
+
+コミットするバージョンの作者を設定します。設定はリポジトリとは別に `~/.config/fdl/config.json`（`$XDG_CONFIG_HOME` があればその下）に保存します。値を省くと、設定した値を表示します。`fdl commit`・`fdl revert`・`fdl merge` は、作者を `--author`、環境変数 `FDL_AUTHOR_NAME` と `FDL_AUTHOR_EMAIL`、この設定の順に探し、どれにも名前が無ければ断ります。
+
 ## fdl commit
 
 ```bash
-fdl commit <working.sqlite> -m "What changed" --author alice [--dataset dataset.json] [--allow-empty] [--assets files/]
+fdl commit <working.sqlite> -m "What changed" [--author alice] [--dataset dataset.json] [--allow-empty] [--assets files/]
 ```
 
 作業メタデータを、クローンした（または最後に push した）バージョンを親とする新しいバージョンに固め、`fdl push` で送るまで `<working.sqlite>.pending/` に置きます。リポジトリは何も変わりません。新しいバージョン ID と `seq` を表示します。push する前にもう一度コミットすると、まだ push していないバージョンを置き換えます。
@@ -175,7 +185,7 @@ fdl branch <remote> <name> --delete
 ## fdl revert
 
 ```bash
-fdl revert <version> <working.sqlite> --author <name> [-m <message>]
+fdl revert <version> <working.sqlite> [--author <name>] [-m <message>]
 fdl push <working.sqlite>
 ```
 
@@ -186,7 +196,7 @@ fdl push <working.sqlite>
 ## fdl merge
 
 ```bash
-fdl merge <theirs> <working.sqlite> --author <name> [-m <message>]
+fdl merge <theirs> <working.sqlite> [--author <name>] [-m <message>]
 fdl push <working.sqlite>
 ```
 

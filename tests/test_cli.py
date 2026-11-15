@@ -588,3 +588,41 @@ def test_clone_refuses_to_overwrite_a_file_in_the_way(tmp_path: Path, monkeypatc
     assert "README.md already here" in result.output
     assert (elsewhere / "README.md").read_text() == "mine\n"
     assert not (elsewhere / "lake.sqlite").exists()
+
+
+def test_the_author_comes_from_the_settings_when_not_given(tmp_path: Path, monkeypatch) -> None:
+    monkeypatch.setenv("XDG_CONFIG_HOME", str(tmp_path / "config"))
+    monkeypatch.delenv("FDL_AUTHOR_NAME", raising=False)
+    monkeypatch.delenv("FDL_AUTHOR_EMAIL", raising=False)
+    remote, working = tmp_path / "remote", tmp_path / "work" / "lake.sqlite"
+    store = LocalStore(remote)
+    run("init", remote)
+    run("clone", remote, working)
+    write(working, store, "CREATE TABLE lake.main.towns AS SELECT 1 AS id")
+
+    result = runner.invoke(app, ["commit", str(working), "-m", "first"])
+    assert result.exit_code == 1 and "fdl config author.name" in result.output
+
+    run("config", "author.name", "Alice")
+    run("config", "author.email", "alice@example.com")
+    assert run("config", "author.name").strip() == "Alice"
+    commit(working, "-m", "first")
+    assert repo.head(store).author == {"name": "Alice", "email": "alice@example.com"}
+
+    monkeypatch.setenv("FDL_AUTHOR_NAME", "Sync")
+    write(working, store, "INSERT INTO lake.main.towns VALUES (2)")
+    commit(working, "-m", "second")
+    assert repo.head(store).author == {"name": "Sync"}
+
+    write(working, store, "INSERT INTO lake.main.towns VALUES (3)")
+    commit(working, "-m", "third", "--author", "bob")
+    assert repo.head(store).author == {"name": "bob"}
+    assert runner.invoke(app, ["config", "user.name", "x"]).exit_code == 1
+
+
+def test_a_malformed_settings_file_is_refused(tmp_path: Path, monkeypatch) -> None:
+    monkeypatch.setenv("XDG_CONFIG_HOME", str(tmp_path))
+    (tmp_path / "fdl").mkdir()
+    (tmp_path / "fdl" / "config.json").write_text("{", encoding="utf-8")
+    result = runner.invoke(app, ["config", "author.name"])
+    assert result.exit_code == 1 and "is not JSON" in result.output
