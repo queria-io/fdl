@@ -64,7 +64,7 @@ A version is taken out of retention in this order:
 { "expired_at": "2026-12-01T00:00:00Z", "reason": "retention", "by": "nightly retention" }
 ```
 
-- `by` may say who or what took the version out: a person, or a process such as a scheduled job. With it, the history shows who removed each version's data, as it shows who made it
+- `by` may say who or what took the version out: a person, or a process such as a scheduled job. With it, the history shows who removed each version's data, as it shows who made it. It is free text: FDL gives it no meaning, and the tool or host that writes it chooses the value
 - `version.json` stays, so the history still says the version was there and what it was, and the graph of parents stays whole
 - A reader that sees `expired.json` treats the version as past retention and does not open its metadata, whatever the `reason`
 - A version a ref points at must not be taken out
@@ -107,7 +107,7 @@ The shared objects go before the metadata files, so a withdrawal that stops half
 
 - `deleted` names the shared objects step 3 deleted: data files by their path under `data_dir`, assets by their sha256. Names only, so it holds none of the data. Every affected version of one withdrawal carries the same list. A withdrawal run again after stopping half way keeps the names already there, since objects it deleted the first time may no longer be found
 - A host refuses a push that places an object named in `deleted` of any version, and a process that copies versions between repositories copies none of them. Otherwise an old copy, such as a local clone, brings the data back
-- A copy of the repository, such as a mirror or a fork, applies the withdrawal by the names in `deleted`: every live version in it that reaches one of them is an affected version, including versions made only in the copy, and the named objects go even where no version reaches them
+- A copy of the repository, such as a mirror, applies the withdrawal by the names in `deleted`: every live version in it that reaches one of them is an affected version, including versions made only in the copy, and the named objects go even where no version reaches them
 
 - `version.json` stays, as with retention, so every repository holds its history back to the first version. If the record itself holds the data (in `author`, `message` or `inputs`), it is rewritten without it before `expired.json` is put: the value in `author` or `message` is replaced with `withdrawn`, and the entries of `inputs` that hold it are dropped. `id`, `seq`, `parents` and the other fields stay as they were
 - Mirrors keep their own copies. A mirror that copies `expired.json` with `"reason": "withdrawn"` deletes the metadata files and the shared objects named in `deleted`. The origin cannot force this; the host tells the mirrors it knows of
