@@ -21,7 +21,7 @@ from urllib.parse import urlparse
 
 import typer
 
-from . import catalog, dataset, layout, objects, profiles, refs, repo
+from . import catalog, config, dataset, layout, objects, profiles, refs, repo
 from . import merge as merging
 from . import diff as diffs
 from .stores import StoreError, open_store
@@ -55,6 +55,7 @@ def _fail(exc: Exception) -> typer.Exit:
 
 
 ERRORS = (
+    config.ConfigError,
     repo.RepoError,
     refs.RefError,
     layout.LayoutError,
@@ -184,11 +185,28 @@ def _tree_file(store, item: dict) -> bytes:
     return body
 
 
+@app.command("config")
+def config_command(
+    key: str = typer.Argument(help="author.name or author.email"),
+    value: str | None = typer.Argument(None, help="The value to set. Without it, print the one set"),
+) -> None:
+    """Set or print who makes the versions you commit, kept in ~/.config/fdl/config.json.
+
+    FDL_AUTHOR_NAME and FDL_AUTHOR_EMAIL override them, and --author overrides both.
+    """
+    try:
+        if value is None:
+            typer.echo(config.get(key) or "")
+        else:
+            config.set_value(key, value)
+    except config.ConfigError as exc:
+        raise _fail(exc) from exc
+
 @app.command()
 def commit(
     working: Path = Working,
     message: str = typer.Option(..., "-m", "--message", help="What changed"),
-    author: str = typer.Option(..., help="Who made it"),
+    author: str | None = typer.Option(None, help="Who made it (default: fdl config author.name)"),
     describe: Path | None = typer.Option(
         None,
         "--dataset",
@@ -223,7 +241,7 @@ def commit(
             working,
             state,
             message=message,
-            author=author,
+            author=config.author(author),
             declared=declared,
             listed=listed,
             local_objects={item["sha256"]: str(root / item["path"]) for item in listed},
@@ -250,7 +268,7 @@ def _commit(
     state: dict,
     *,
     message: str,
-    author: str,
+    author: dict,
     declared: dict,
     listed: list[dict],
     local_objects: dict[str, str],
@@ -276,7 +294,7 @@ def _commit(
                 out,
                 parent=parent,
                 data_path=repo.data_url(store),
-                author={"name": author},
+                author=author,
                 message=message,
                 dataset=declared,
                 tree=listed,
@@ -426,7 +444,7 @@ def revert(
     version_id: str = typer.Argument(help="The version whose contents come back: a version ID, or a ref"),
     working: Path = Working,
     message: str | None = typer.Option(None, "-m", "--message", help="Why (default: Revert to version <seq>)"),
-    author: str = typer.Option(..., help="Who made it"),
+    author: str | None = typer.Option(None, help="Who made it (default: fdl config author.name)"),
 ) -> None:
     """Commit a new version that holds what an earlier version held.
 
@@ -458,7 +476,7 @@ def revert(
             working,
             state,
             message=message or f"Revert to version {target.seq}",
-            author=author,
+            author=config.author(author),
             declared=declared,
             listed=listed,
             local_objects={},
@@ -479,7 +497,7 @@ def merge(
     theirs_name: str = typer.Argument(..., metavar="THEIRS", help="What to merge: a ref such as refs/heads/<name>, or a version ID"),
     working: Path = Working,
     message: str | None = typer.Option(None, "-m", "--message", help="What the merge brings (default: Merge <THEIRS>)"),
-    author: str = typer.Option(..., help="Who made it"),
+    author: str | None = typer.Option(None, help="Who made it (default: fdl config author.name)"),
 ) -> None:
     """Merge another branch into the working metadata's branch.
 
@@ -515,7 +533,7 @@ def merge(
         for version in (base, theirs):
             if repo.is_expired(store, version.id):
                 raise repo.RepoError(f"{version.id} is past retention, so the merge cannot read it")
-        version, plan = _merge(store, working, state, ours, theirs, base, message=message or f"Merge {theirs_name}", author=author)
+        version, plan = _merge(store, working, state, ours, theirs, base, message=message or f"Merge {theirs_name}", author=config.author(author))
     except merging.Conflicts as exc:
         typer.echo(f"Merging {theirs_name} into {state['ref']}: {len(exc.conflicts)} conflict(s). Nothing was changed.", err=True)
         for conflict in exc.conflicts:
@@ -548,7 +566,7 @@ def _fast_forward(store, working: Path, state: dict, theirs) -> None:
     typer.echo(f"  fdl push {working}")
 
 
-def _merge(store, working: Path, state: dict, ours, theirs, base, *, message: str, author: str):
+def _merge(store, working: Path, state: dict, ours, theirs, base, *, message: str, author: dict):
     """Write the merge into the working metadata and commit it, or raise `merging.Conflicts`."""
     described = {name: diffs.described(store, version) for name, version in (("base", base), ("ours", ours), ("theirs", theirs))}
     listed = {name: diffs.listed(store, version) for name, version in (("base", base), ("ours", ours), ("theirs", theirs))}
