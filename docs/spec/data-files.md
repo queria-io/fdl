@@ -61,10 +61,11 @@ A version is taken out of retention in this order:
 3. After the grace period, delete the shared objects that meet the conditions above
 
 ```json expired.json
-{ "expired_at": "2026-12-01T00:00:00Z", "reason": "retention", "by": "nightly retention" }
+{ "expired_at": "2026-12-01T00:00:00Z", "reason": "retention", "by": "nightly retention", "message": "Keep the newest 7 versions" }
 ```
 
 - `by` may say who or what took the version out: a person, or a process such as a scheduled job. With it, the history shows who removed each version's data, as it shows who made it. It is free text: FDL gives it no meaning, and the tool or host that writes it chooses the value
+- `message` may say why, in free text, as `message` of `version.json` says what changed. `reason` is the value readers act on; `message` is for people
 - `version.json` stays, so the history still says the version was there and what it was, and the graph of parents stays whole
 - A reader that sees `expired.json` treats the version as past retention and does not open its metadata, whatever the `reason`
 - A version a ref points at must not be taken out

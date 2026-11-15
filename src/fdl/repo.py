@@ -779,6 +779,7 @@ def expire(
     *,
     reason: str = "retention",
     by: str | None = None,
+    message: str | None = None,
     deleted: dict[str, list[str]] | None = None,
 ) -> None:
     """Take a version out of retention: the mark first, then its catalogs.
@@ -792,7 +793,12 @@ def expire(
     held = _held(store)
     if version_id in held:
         raise RepoError(f"{held[version_id]} points at {version_id}, so it is kept")
-    record: dict = {"expired_at": utc_now(), "reason": reason, **({"by": by} if by else {})}
+    record: dict = {
+        "expired_at": utc_now(),
+        "reason": reason,
+        **({"by": by} if by else {}),
+        **({"message": message} if message else {}),
+    }
     if deleted is not None:
         record["deleted"] = deleted
     try:
@@ -1111,7 +1117,12 @@ def _reached_assets(store: Store, version: Version, local: Path | None, setup: l
 
 
 def withdraw(
-    store: Store, version_ids: Iterable[str], *, plan: Withdrawal | None = None, by: str | None = None
+    store: Store,
+    version_ids: Iterable[str],
+    *,
+    plan: Withdrawal | None = None,
+    by: str | None = None,
+    message: str | None = None,
 ) -> Withdrawal:
     """Remove versions that hold data that must not be published.
 
@@ -1136,7 +1147,7 @@ def withdraw(
     store.delete([key for key in plan.deleted if not key.startswith(layout.ASSETS_DIR)])
     deleted = deleted_names(plan.deleted, read_config(store).data_dir)
     for version_id in plan.versions:
-        expire(store, version_id, reason="withdrawn", by=by, deleted=deleted)
+        expire(store, version_id, reason="withdrawn", by=by, message=message, deleted=deleted)
     return plan
 
 
@@ -1256,6 +1267,7 @@ def prune(
     grace: dt.timedelta = dt.timedelta(days=7),
     reason: str = "retention",
     by: str | None = None,
+    message: str | None = None,
 ) -> list[str]:
     """Take out of retention the versions `plan_retention` chooses. Returns their IDs, newest first.
 
@@ -1266,7 +1278,7 @@ def prune(
     held = _held(store)
     taken = [version_id for version_id in planned if version_id not in held]
     for version_id in taken:
-        expire(store, version_id, reason=reason, by=by)
+        expire(store, version_id, reason=reason, by=by, message=message)
     return taken
 
 

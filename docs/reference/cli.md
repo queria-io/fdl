@@ -223,7 +223,7 @@ Refused when the working metadata has changes not committed, when a version is c
 ## fdl withdraw
 
 ```bash
-fdl withdraw <remote> [<version>...] [--objects <file>] [--json] [--yes] [--by <name>]
+fdl withdraw <remote> [<version>...] [--objects <file>] [--json] [--yes] [--by <name>] [--message <text>]
 ```
 
 Removes versions that hold data that must not be published, such as personal data published by mistake (see [Withdrawal](/spec/data-files#withdrawal)). First commit a version without the data, so that no branch points at an affected version. The command then deletes the tags that point at the versions, the data files and assets the versions reach that no kept version reaches, and their metadata files, and puts `expired.json` with `"reason": "withdrawn"` and the names of the deleted objects in `deleted`. `version.json` stays. When one of the versions is already past retention, its metadata is gone, so every data file and asset no live version reaches is deleted at once, without waiting for the grace period.
@@ -247,10 +247,10 @@ Profiles the tables and views of the version the branch or tag holds that have n
 ## fdl expire
 
 ```bash
-fdl expire <remote> [--keep 1] [--since 2026-10-01T00:00:00Z] [--grace 7d] [--by <name>]
+fdl expire <remote> [--keep 1] [--since 2026-10-01T00:00:00Z] [--grace 7d] [--by <name>] [--message <text>]
 ```
 
-Takes versions out of retention: puts `expired.json` and deletes their metadata files. Kept are the newest `--keep` on each branch's first-parent line, the versions refs point at, their merge bases with main, and the versions made at or after `--since` or within `--grace`. Other versions, such as the parents a merge brought in other than its first, are taken out ([Choosing the versions to take out](/spec/data-files#choosing-the-versions-to-take-out)). Nothing is taken out before main has a version. Data files are not deleted; `fdl gc` deletes them. `--by` records who takes the versions out in `expired.json`, as does `--by` of `fdl withdraw`.
+Takes versions out of retention: puts `expired.json` and deletes their metadata files. Kept are the newest `--keep` on each branch's first-parent line, the versions refs point at, their merge bases with main, and the versions made at or after `--since` or within `--grace`. Other versions, such as the parents a merge brought in other than its first, are taken out ([Choosing the versions to take out](/spec/data-files#choosing-the-versions-to-take-out)). Nothing is taken out before main has a version. Data files are not deleted; `fdl gc` deletes them. `--by` records who takes the versions out in `expired.json`, and `--message` why, as do the same options of `fdl withdraw`.
 
 ## fdl gc
 
