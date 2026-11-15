@@ -1025,6 +1025,22 @@ def gc(
     typer.echo(f"Deleted {len(deleted)} file(s).")
 
 
+def _withdrawn_objects(path: Path) -> dict[str, list[str]]:
+    """The names `--objects` gives: `deleted` of an expired.json, or that object itself."""
+    try:
+        raw = json.loads(path.read_text())
+    except (OSError, ValueError) as exc:
+        raise repo.RepoError(f"{path}: {exc}") from exc
+    named = raw.get("deleted", raw) if isinstance(raw, dict) else None
+    if not isinstance(named, dict) or not any(kind in named for kind in ("data", "assets")):
+        raise repo.RepoError(f"{path} names no objects: give `deleted` of an expired.json, or that file")
+    for kind in ("data", "assets"):
+        names = named.get(kind, [])
+        if not isinstance(names, list) or not all(isinstance(name, str) for name in names):
+            raise repo.RepoError(f"{path}: `{kind}` is not a list of names")
+    return {"data": named.get("data", []), "assets": named.get("assets", [])}
+
+
 @app.command()
 def withdraw(
     remote: str = Remote,
@@ -1053,8 +1069,7 @@ def withdraw(
     try:
         named = None
         if objects is not None:
-            raw = json.loads(objects.read_text())
-            named = raw.get("deleted", raw) if isinstance(raw, dict) else {}
+            named = _withdrawn_objects(objects)
         if not versions and named is None:
             raise repo.RepoError("Name the versions, or the objects with --objects")
         plan = repo.plan_withdrawal(
