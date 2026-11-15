@@ -24,7 +24,7 @@ import typer
 from . import catalog, dataset, layout, objects, profiles, refs, repo
 from . import merge as merging
 from . import diff as diffs
-from .stores import StoreError, open_store
+from .stores import S3Store, StoreError, open_store
 from .version import VersionError, is_id
 from .version import parse as parse_version
 
@@ -647,7 +647,9 @@ def _storage_setup(storage: str | None) -> list[str]:
 
 
 def _read_setup(store) -> list[str]:
-    """What DuckDB needs to read the repository's data files: the token, over HTTP."""
+    """What DuckDB needs to read the repository's data files: the token over HTTP, the ``AWS_*`` keys on S3."""
+    if isinstance(store, S3Store):
+        return _storage_setup(store.url)
     token = getattr(store, "token", None)
     if not token:
         return []
