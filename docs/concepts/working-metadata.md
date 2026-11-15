@@ -1,6 +1,6 @@
 ---
 title: Working metadata files
-description: "Where writing happens: a DuckLake metadata file in SQLite, checked out from a version and frozen into the next one."
+description: "Where writing happens: a DuckLake metadata file in SQLite, cloned from a version and frozen into the next one."
 ---
 
 A working metadata file is a DuckLake metadata file in a SQLite file, on the writer's own disk or in a container. It is the only place anyone writes to. It is to FDL what a working tree is to Git: made from a version, changed freely, and turned into the next version when the change is ready.
@@ -9,7 +9,7 @@ A working metadata file is a DuckLake metadata file in a SQLite file, on the wri
 
 | Step | Command | What happens |
 | --- | --- | --- |
-| check out | `fdl checkout` | Copy the metadata of the branch's version into SQLite, and remember that version |
+| clone | `fdl clone` | Copy the metadata of the branch's version into SQLite, and remember that version |
 | write | any DuckDB client | DuckLake writes Parquet into the repository and bookkeeping into SQLite |
 | commit | `fdl commit` | Freeze the last snapshot into a new version, kept beside the working metadata |
 | push | `fdl push` | Upload the version and move the branch to it |
@@ -24,7 +24,7 @@ There is one kind of working metadata. A host that writes on behalf of its users
 
 ## Attaching
 
-`fdl checkout` prints the statement to attach the working metadata with:
+`fdl clone` prints the statement to attach the working metadata with:
 
 ```sql
 ATTACH 'ducklake:work/lake.sqlite' AS lake (

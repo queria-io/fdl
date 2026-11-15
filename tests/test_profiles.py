@@ -40,7 +40,7 @@ def repository(tmp_path: Path, monkeypatch):
     monkeypatch.chdir(tmp_path)
     remote, working = tmp_path / "remote", tmp_path / "lake.sqlite"
     run("init", remote)
-    run("checkout", remote, working)
+    run("clone", remote, working)
     (tmp_path / "dataset.yml").write_text("name: towns\ntitle: Towns\n")
     return LocalStore(remote), working
 

@@ -31,15 +31,15 @@ towns/
 
 `fdl init` は、サーバーで `git init --bare` を打つのと同じく、読み手が読む場所にリポジトリを作ります。手元で書く場所は、次に作る作業メタデータです。
 
-## 作業メタデータをチェックアウトする
+## 作業メタデータをクローンする
 
 リポジトリには直接書き込みません。自分のディスクにある SQLite ファイルの DuckLake メタデータ（作業メタデータ）に書き、書き終えたらそれをバージョンにします。
 
 ```bash
-fdl checkout ./towns/ work/lake.sqlite
+fdl clone ./towns/ work/lake.sqlite
 ```
 
-最初のバージョンができる前は、`checkout` は空のメタデータを作ります。その後は、`main` が指すバージョンのメタデータを写します。作業メタデータを ATTACH する文を表示します。
+最初のバージョンができる前は、`clone` は空のメタデータを作ります。その後は、`main` が指すバージョンのメタデータを写します。作業メタデータを ATTACH する文を表示します。
 
 ```sql
 ATTACH 'ducklake:work/lake.sqlite' AS lake (
@@ -49,7 +49,7 @@ ATTACH 'ducklake:work/lake.sqlite' AS lake (
 );
 ```
 
-作業メタデータの隣の `work/lake.sqlite.fdl.json` に、リポジトリ、ブランチ、チェックアウト元のバージョンが記録されます。
+作業メタデータの隣の `work/lake.sqlite.fdl.json` に、リポジトリ、ブランチ、クローン元のバージョンが記録されます。
 
 ## 書く
 
@@ -128,7 +128,7 @@ SELECT count(*) FROM towns.main.towns;
 ## 2 つめのバージョンを作る
 
 ```bash
-fdl checkout ./towns/ work/lake.sqlite
+fdl clone ./towns/ work/lake.sqlite
 ```
 
 ```sql
@@ -142,4 +142,4 @@ fdl push work/lake.sqlite
 
 新しいバージョンは、最初のバージョンを親として記録します。最初の Parquet ファイルは両方のメタデータが参照し、新しいファイルは 2 つめのメタデータだけが参照します。
 
-途中でほかの人が push していたら、この push は断られます。新しいバージョンが、いまの `main` の上に積まれていないためです。チェックアウトし直して、変更をやり直してください。理由は[バージョンと ref](/ja/concepts/versions-and-refs) で説明しています。
+途中でほかの人が push していたら、この push は断られます。新しいバージョンが、いまの `main` の上に積まれていないためです。クローンし直して、変更をやり直してください。理由は[バージョンと ref](/ja/concepts/versions-and-refs) で説明しています。

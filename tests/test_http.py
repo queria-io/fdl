@@ -88,14 +88,14 @@ def test_writes_need_the_token(served, monkeypatch) -> None:
 def test_the_round_trip_over_http(served, tmp_path: Path) -> None:
     local, url, server = served
     working = tmp_path / "work" / "lake.sqlite"
-    run("checkout", url, working)
+    run("clone", url, working)
     write(working, "CREATE TABLE lake.main.towns AS SELECT 1 AS id")
     commit(working, "-m", "first", "--author", "tester")
 
     # A second working catalog reads the published file where it is, and
     # writes its new one locally.
     again = tmp_path / "again" / "lake.sqlite"
-    run("checkout", url, again)
+    run("clone", url, again)
     write(again, "CREATE TABLE lake.main.roads AS SELECT count(*) AS towns FROM lake.main.towns")
     commit(again, "-m", "second", "--author", "tester")
 
@@ -138,7 +138,7 @@ def test_data_files_go_straight_to_storage_when_the_host_signs_urls(tmp_path: Pa
     monkeypatch.setenv("FDL_TOKEN", TOKEN)
     url = f"http://127.0.0.1:{server.server_address[1]}/"
     working = tmp_path / "work" / "lake.sqlite"
-    run("checkout", url, working)
+    run("clone", url, working)
     write(working, "CREATE TABLE lake.main.towns AS SELECT 1 AS id")
     commit(working, "-m", "first", "--author", "tester")
     server.shutdown()
@@ -169,12 +169,12 @@ def test_a_file_the_host_will_not_sign_goes_through_the_host(tmp_path: Path) -> 
 def test_a_rebuild_of_the_same_rows_over_http_is_nothing_to_commit(served, tmp_path: Path) -> None:
     local, url, _ = served
     working = tmp_path / "work" / "lake.sqlite"
-    run("checkout", url, working)
+    run("clone", url, working)
     write(working, "CREATE SCHEMA lake.s; CREATE TABLE lake.s.towns AS SELECT 1 AS id")
     commit(working, "-m", "first", "--author", "tester")
     # The way dbt rebuilds a table: a new table beside it, then renames.
     again = tmp_path / "again" / "lake.sqlite"
-    run("checkout", url, again)
+    run("clone", url, again)
     write(
         again,
         "CREATE TABLE lake.s.towns__dbt_tmp AS SELECT 1 AS id; "
@@ -290,7 +290,7 @@ def test_plain_http_is_only_for_this_machine() -> None:
 def test_a_commit_over_http_frees_the_local_data_files(served, tmp_path: Path) -> None:
     local, url, _ = served
     working = tmp_path / "work" / "lake.sqlite"
-    run("checkout", url, working)
+    run("clone", url, working)
     write(working, "CREATE TABLE lake.main.towns AS SELECT 1 AS id")
     commit(working, "-m", "first", "--author", "tester")
     folder = working.with_name(working.name + ".data")
@@ -311,10 +311,10 @@ def test_a_commit_over_http_frees_the_local_data_files(served, tmp_path: Path) -
     assert con.execute("SELECT id FROM v.main.towns ORDER BY id").fetchall() == [(1,), (2,)]
 
 
-def test_a_checkout_with_storage_writes_data_files_there(served, tmp_path: Path) -> None:
+def test_a_clone_with_storage_writes_data_files_there(served, tmp_path: Path) -> None:
     local, url, _ = served
     working = tmp_path / "work" / "lake.sqlite"
-    out = run("checkout", url, working, "--storage", local.root)
+    out = run("clone", url, working, "--storage", local.root)
     data = f"{Path(local.root).resolve().as_posix()}/data/"
     assert f"DATA_PATH '{data}'" in out
     assert not working.with_name(working.name + ".data").exists()
@@ -387,11 +387,11 @@ def test_a_refused_token_is_asked_for_again(tmp_path: Path, monkeypatch) -> None
 def test_a_merge_over_http(served, tmp_path: Path) -> None:
     local, url, _ = served
     main, feature = tmp_path / "main" / "lake.sqlite", tmp_path / "feature" / "lake.sqlite"
-    run("checkout", url, main)
+    run("clone", url, main)
     write(main, "CREATE TABLE lake.main.towns AS SELECT * FROM range(3) t(id)")
     commit(main, "-m", "first", "--author", "tester")
     run("branch", url, "feature")
-    run("checkout", url, feature, "--ref", "refs/heads/feature")
+    run("clone", url, feature, "--branch", "feature")
     write(feature, "INSERT INTO lake.main.towns VALUES (3)")
     commit(feature, "-m", "feature", "--author", "tester")
     write(main, "CREATE TABLE lake.main.roads AS SELECT 1 AS id")

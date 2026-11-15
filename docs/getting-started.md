@@ -31,15 +31,15 @@ towns/
 
 `fdl init` makes the repository where readers will find it, as `git init --bare` does on a server. Your own place to write is the working metadata, made next.
 
-## Check out a working metadata file
+## Clone a working metadata file
 
 You never write to the repository directly. You write to a working metadata file, a DuckLake metadata file in a SQLite file on your own disk, and turn it into a version when you are done.
 
 ```bash
-fdl checkout ./towns/ work/lake.sqlite
+fdl clone ./towns/ work/lake.sqlite
 ```
 
-Before the first version, `checkout` makes an empty metadata. Later it copies the metadata of the version `main` holds. It prints the statement to attach the working metadata with:
+Before the first version, `clone` makes an empty metadata. Later it copies the metadata of the version `main` holds. It prints the statement to attach the working metadata with:
 
 ```sql
 ATTACH 'ducklake:work/lake.sqlite' AS lake (
@@ -49,7 +49,7 @@ ATTACH 'ducklake:work/lake.sqlite' AS lake (
 );
 ```
 
-Beside the working metadata, `work/lake.sqlite.fdl.json` remembers the repository, the branch and the version the checkout was made from.
+Beside the working metadata, `work/lake.sqlite.fdl.json` remembers the repository, the branch and the version the clone was made from.
 
 ## Write
 
@@ -128,7 +128,7 @@ A version's metadata never changes, so a reader may cache it forever. Only `HEAD
 ## Make a second version
 
 ```bash
-fdl checkout ./towns/ work/lake.sqlite
+fdl clone ./towns/ work/lake.sqlite
 ```
 
 ```sql
@@ -142,4 +142,4 @@ fdl push work/lake.sqlite
 
 The new version lists the first as its parent. Both metadata files name the first Parquet file; only the second names the new one.
 
-If someone else pushed in between, the push is refused, because the new version would not be built on what `main` holds now. Check out again and redo the change. [Versions and refs](/concepts/versions-and-refs) explains why.
+If someone else pushed in between, the push is refused, because the new version would not be built on what `main` holds now. Clone again and redo the change. [Versions and refs](/concepts/versions-and-refs) explains why.

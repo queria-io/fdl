@@ -16,7 +16,7 @@ s3://public/towns/         the tables chosen for publication
 
 A version of the public repository is made from a version of the private one:
 
-1. Check out the public repository
+1. Clone the public repository
 2. Copy the chosen tables from the private version into the working metadata. The Parquet files are copied into the public repository's data folder
 3. Commit, and name the private version in `inputs`
 

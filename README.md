@@ -27,14 +27,14 @@ The documentation and the specification are at [fdl.queria.io](https://fdl.queri
 pip install 'fdl-cli[s3]'
 
 fdl init s3://my-bucket/towns/
-fdl checkout s3://my-bucket/towns/ work/lake.sqlite
+fdl clone s3://my-bucket/towns/ work/lake.sqlite
 ```
 
 The package is `fdl-cli` on PyPI. It installs the `fdl` command and the `fdl` Python package (`import fdl`).
 
-`fdl init` makes the repository in the store itself, as `git init --bare` does on a server. Your own copy to write to is the working metadata that `checkout` makes, a SQLite file.
+`fdl init` makes the repository in the store itself, as `git init --bare` does on a server. Your own copy to write to is the working metadata that `clone` makes, a SQLite file.
 
-Write to the working metadata with DuckDB, attached the way `checkout` prints:
+Write to the working metadata with DuckDB, attached the way `clone` prints:
 
 ```sql
 ATTACH 'ducklake:work/lake.sqlite' AS lake (
@@ -80,11 +80,11 @@ Credentials and the endpoint come from boto3's usual places (`AWS_*` environment
 | Command | What it does |
 | --- | --- |
 | `fdl init <remote>` | Start a repository (`fdl.json` and `HEAD`) |
-| `fdl checkout <remote> <working>` | Make a working metadata file from the version `main` holds |
+| `fdl clone <remote> <working>` | Make a working metadata file from the version `main` holds |
 | `fdl commit <working> -m … --author …` | Freeze the working metadata into a version |
 | `fdl push <working>` | Upload the committed version and move `main` to it |
 | `fdl log <remote>` | List versions from `main` back to the first |
-| `fdl status <working>` | What the working metadata changed since the checkout |
+| `fdl status <working>` | What the working metadata changed since the clone |
 | `fdl diff <remote> [version]` | What a version changed since its parent: tables, rows, columns, data files, descriptions |
 | `fdl show <remote> [version]` | A version's record, its tables and its changes |
 | `fdl url <remote> [--attach]` | Print the metadata URL of the version `main` holds, or the whole `ATTACH` statement |
@@ -96,7 +96,7 @@ Credentials and the endpoint come from boto3's usual places (`AWS_*` environment
 | `fdl withdraw <remote> <version>…` | Remove versions that hold data that must not be published |
 | `fdl assets <folder>` | List files for an asset column (path, sha256, bytes, media type) |
 
-A push that is not built on what `main` holds now is refused: check out again and redo the work, or work on a branch and merge it.
+A push that is not built on what `main` holds now is refused: clone again and redo the work, or work on a branch and merge it.
 
 ## Python
 
@@ -109,7 +109,7 @@ for version in repo.log(store):
     print(version.seq, version.id, version.message)
 ```
 
-`fdl.repo` has the operations without a terminal (`init`, `checkout`, `commit`, `push`, `log`, `expire`, `prune`), for tools and services that build on FDL.
+`fdl.repo` has the operations without a terminal (`init`, `clone`, `commit`, `push`, `log`, `expire`, `prune`), for tools and services that build on FDL.
 
 ## Earlier releases
 

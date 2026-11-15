@@ -31,13 +31,13 @@ fdl init <remote> [--data-dir data/]
 
 新しい `id` を入れた `fdl.json` と、`HEAD` を書きます。既にあるリポジトリに流すと、何も変えずに設定を表示します。
 
-## fdl checkout
+## fdl clone
 
 ```bash
-fdl checkout <remote> <working.sqlite> [--ref refs/heads/main] [--storage s3://bucket/prefix/]
+fdl clone <remote> [<working.sqlite>] [--branch main] [--storage s3://bucket/prefix/]
 ```
 
-ブランチが指すバージョンのメタデータから作業メタデータ（SQLite の DuckLake）を作ります。最初のバージョンの前は空のものを作ります。隣の `<working.sqlite>.fdl.json` に、リポジトリ、ブランチ、元のバージョンを記録します。書くときの `ATTACH` 文を表示します。
+ブランチが指すバージョンのメタデータから作業メタデータ（SQLite の DuckLake）を作ります。最初のバージョンの前は空のものを作ります。`<working.sqlite>` を省くと、今のフォルダにリポジトリの URL の最後の部分の名前で作ります（`https://example.com/towns/` なら `towns.sqlite`）。`--branch` には `main` のようなブランチ名か、`refs/heads/main` のような ref を渡します。隣の `<working.sqlite>.fdl.json` に、リポジトリ、ブランチ、元のバージョンを記録します。書くときの `ATTACH` 文を表示します。
 
 HTTP のリポジトリでは、新しいデータファイルは `<working.sqlite>.data/` に書かれ、push でアップロードされます。リポジトリに既にあるファイルは、その場所から HTTP で読みます。push はアップロードを終えると、新しいバージョンから作業メタデータを作り直して手元の写しを削除するので、このフォルダにはまだ push していないファイルだけが残ります。
 
@@ -51,7 +51,7 @@ HTTP のリポジトリでは、新しいデータファイルは `<working.sqli
 fdl commit <working.sqlite> -m "What changed" --author alice [--dataset dataset.json] [--allow-empty] [--assets files/]
 ```
 
-作業メタデータを、チェックアウトした（または最後に push した）バージョンを親とする新しいバージョンに固め、`fdl push` で送るまで `<working.sqlite>.pending/` に置きます。リポジトリは何も変わりません。新しいバージョン ID と `seq` を表示します。push する前にもう一度コミットすると、まだ push していないバージョンを置き換えます。
+作業メタデータを、クローンした（または最後に push した）バージョンを親とする新しいバージョンに固め、`fdl push` で送るまで `<working.sqlite>.pending/` に置きます。リポジトリは何も変わりません。新しいバージョン ID と `seq` を表示します。push する前にもう一度コミットすると、まだ push していないバージョンを置き換えます。
 
 バージョンはそれぞれ `dataset.json`（[バージョン](/ja/spec/versions#datasetjson)を参照）で説明します。`--dataset` で指定したファイルか、なければいまのディレクトリの `dataset.json` か `dataset.yml` から読みます。そのフォルダより下にある `*.table.yml`（または `*.table.json`）のテーブルの説明も合わせて読みます。隠しフォルダの中は読みません。コマンドはそれをメタデータと照らし合わせ、列の型、行数、メタデータのコメントを書き足します。
 
@@ -82,7 +82,7 @@ fdl push <working.sqlite> [--no-profile]
 
 次のときは断られます。
 
-- チェックアウトのあとにブランチが動き、バージョンがいまブランチの指すバージョンの子孫でないとき。チェックアウトし直して作業をやり直す
+- クローンのあとにブランチが動き、バージョンがいまブランチの指すバージョンの子孫でないとき。クローンし直して作業をやり直す
 - メタデータが参照するデータファイルがリポジトリに無いとき
 - アセットの列が、リポジトリにも `--assets` にも無いファイルを指すとき
 
@@ -110,7 +110,7 @@ ref が指すバージョンから最初のバージョンまで、最初の親�
 fdl status <working.sqlite> [--json]
 ```
 
-作業メタデータが checkout してから何を変えたかを、`fdl diff` と同じ区分で表示します。元のバージョンと同じ内容なら `Nothing to commit` と表示します。`dataset.json` の文言はコミットまで比べません。コミットしてまだ push していないバージョンがあれば、先にそれを表示し、変更はそのバージョンから数えます。`--json` では `pending` にその ID を入れます。fast-forward の `fdl merge` のあとは、`fdl push` でブランチが動くことを表示します。
+作業メタデータが clone してから何を変えたかを、`fdl diff` と同じ区分で表示します。元のバージョンと同じ内容なら `Nothing to commit` と表示します。`dataset.json` の文言はコミットまで比べません。コミットしてまだ push していないバージョンがあれば、先にそれを表示し、変更はそのバージョンから数えます。`--json` では `pending` にその ID を入れます。fast-forward の `fdl merge` のあとは、`fdl push` でブランチが動くことを表示します。
 
 ## fdl diff
 
@@ -168,7 +168,7 @@ fdl branch <remote> <name> [<version>]    # バージョンからブランチを
 fdl branch <remote> <name> --delete
 ```
 
-`<version>` にはバージョン ID か、`refs/heads/main` のような ref を渡します。別のバージョンを指す同じ名前のブランチがあるときは断られます。同じバージョンなら何も変えません。保持期間を過ぎたバージョンからはブランチを作れません。`HEAD` が指すブランチは削除できません。ブランチは `fdl checkout --ref refs/heads/<name>` でチェックアウトします。ブランチを作るか削除すると `refs.json` を書き直します。
+`<version>` にはバージョン ID か、`refs/heads/main` のような ref を渡します。別のバージョンを指す同じ名前のブランチがあるときは断られます。同じバージョンなら何も変えません。保持期間を過ぎたバージョンからはブランチを作れません。`HEAD` が指すブランチは削除できません。ブランチは `fdl clone --branch <name>` でクローンします。ブランチを作るか削除すると `refs.json` を書き直します。
 
 ## fdl revert
 
@@ -177,7 +177,7 @@ fdl revert <version> <working.sqlite> --author <name> [-m <message>]
 fdl push <working.sqlite>
 ```
 
-作業メタデータを `<version>` が持っていたテーブルとビューに書き戻し、`<version>` の `dataset.json` と `tree.json` で、`fdl commit` と同じく新しいバージョンをコミットします。作業メタデータのコミットしていない変更は失われます。そのあと `fdl push` でブランチを前に進めます。間のバージョンは履歴に残り、読み続けられます。`<version>` から変わっていないテーブルはデータファイルをそのまま使い、変わったテーブルは `<version>` の時点の行から書き直します。`<version>` にはバージョン ID か ref を渡し、作業メタデータをチェックアウトしたバージョンから最初の親をたどった履歴にあって（マージで取り込んだだけのバージョンは含みません）保持期間内のバージョンを指定します。そのバージョンがすでに `<version>` と同じものを持つときは、何も作りません。
+作業メタデータを `<version>` が持っていたテーブルとビューに書き戻し、`<version>` の `dataset.json` と `tree.json` で、`fdl commit` と同じく新しいバージョンをコミットします。作業メタデータのコミットしていない変更は失われます。そのあと `fdl push` でブランチを前に進めます。間のバージョンは履歴に残り、読み続けられます。`<version>` から変わっていないテーブルはデータファイルをそのまま使い、変わったテーブルは `<version>` の時点の行から書き直します。`<version>` にはバージョン ID か ref を渡し、作業メタデータをクローンしたバージョンから最初の親をたどった履歴にあって（マージで取り込んだだけのバージョンは含みません）保持期間内のバージョンを指定します。そのバージョンがすでに `<version>` と同じものを持つときは、何も作りません。
 
 公開してはいけないデータを除くときは `fdl withdraw` を使います。revert は間のバージョンとそのデータファイルをそのまま残します。
 
@@ -188,10 +188,10 @@ fdl merge <theirs> <working.sqlite> --author <name> [-m <message>]
 fdl push <working.sqlite>
 ```
 
-別のブランチを、作業メタデータをチェックアウトしたブランチにマージします（[マージ](/ja/spec/writing#マージ)）。`<theirs>` には `refs/heads/feature` のような ref か、バージョン ID を渡します。基点は 2 つのバージョンの共通の祖先です。
+別のブランチを、作業メタデータをクローンしたブランチにマージします（[マージ](/ja/spec/writing#マージ)）。`<theirs>` には `refs/heads/feature` のような ref か、バージョン ID を渡します。基点は 2 つのバージョンの共通の祖先です。
 
 - `<theirs>` が作業メタデータのバージョンの履歴にすでにあるときは `Already up to date` と表示し、何も作りません
-- 作業メタデータのバージョンが `<theirs>` の履歴にあるときは、作業メタデータを `<theirs>` でチェックアウトし直し、バージョンは作りません。そのあと `fdl push` でブランチをそこへ動かします（fast-forward）
+- 作業メタデータのバージョンが `<theirs>` の履歴にあるときは、作業メタデータを `<theirs>` から作り直し、バージョンは作りません。そのあと `fdl push` でブランチをそこへ動かします（fast-forward）
 - それ以外は、マージの結果を作業メタデータに書き、マージのバージョンをコミットします。`parents` は作業メタデータのバージョンと `<theirs>` です。`fdl push` はコミットと同じくそれをアップロードします。メッセージの既定は `Merge <theirs>` です
 
 基点から `<theirs>` だけが変えた・追加した・削除したテーブルは、`<theirs>` の内容を新しいデータファイルに書いて取り込みます。両方が変えたテーブルは、両方が `dataset.json` で宣言した `primary_key` で行をマージします。`<theirs>` だけが追加・変更・削除した行は、その変更を取り込みます。`dataset.json` と `tree.json` はキーごとにマージします。行数・型・NULL の可否は、マージしたメタデータから書き直します。コマンドは、取り込んだテーブルと、`<theirs>` が追加・変更・削除した行数を表示します。`fdl commit` は説明を手元のファイルから読むので、`<theirs>` が `dataset.json` か `tree.json` を変えたときは警告を出します。次のコミットの前に、その変更を手元のファイルに反映してください。

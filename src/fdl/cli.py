@@ -2,7 +2,7 @@
 
 A working metadata file is a DuckLake metadata file in SQLite that you write to with any
 DuckDB client. Beside it sits ``<working>.fdl.json``, which remembers the
-repository it came from and the version it was checked out at, so a commit
+repository it came from and the version it was cloned at, so a commit
 knows what it builds on. A commit waits in ``<working>.pending/`` until it is
 pushed.
 """
@@ -40,7 +40,7 @@ def _state_path(working: Path) -> Path:
 def _read_state(working: Path) -> dict:
     path = _state_path(working)
     if not path.is_file():
-        raise typer.BadParameter(f"{working} was not made by `fdl checkout`")
+        raise typer.BadParameter(f"{working} was not made by `fdl clone`")
     return json.loads(path.read_text())
 
 
@@ -85,17 +85,31 @@ def init(
     typer.echo(f"fdl {config.fdl} repository, data in {config.data_dir}")
 
 
+def _default_working(remote: str) -> Path:
+    """Where `fdl clone` puts the working metadata when not told: <name>.sqlite, as git names the folder."""
+    if "://" in remote:
+        name = remote.rstrip("/").rsplit("/", 1)[-1]
+    else:
+        # A folder given as `.` or `..` is named by where it is.
+        name = Path(remote).resolve().name
+    return Path(f"{name or 'lake'}.sqlite")
+
+
 @app.command()
-def checkout(
+def clone(
     remote: str = Remote,
-    working: Path = Working,
-    ref: str = typer.Option(layout.DEFAULT_BRANCH, help="The branch to build on"),
+    working: Path | None = typer.Argument(
+        None, help="The working metadata (.sqlite). Default: <the repository's last path segment>.sqlite here"
+    ),
+    branch: str = typer.Option(layout.DEFAULT_BRANCH.removeprefix("refs/heads/"), "--branch", "-b", help="The branch to build on: a name such as main, or refs/heads/<name>"),
     storage: str | None = typer.Option(
         None,
         help="The repository's root in its object storage (s3://…), to write new data files there directly instead of uploading them on commit",
     ),
 ) -> None:
     """Make a working metadata file from the version a branch holds."""
+    ref = branch if branch.startswith("refs/") else f"refs/heads/{branch}"
+    working = working or _default_working(remote)
     store = _store(remote)
     # A repository over HTTP takes no writes from DuckDB: new data files go to
     # a folder beside the working metadata until the commit uploads them, or
@@ -106,9 +120,9 @@ def checkout(
         else working.with_name(working.name + ".data")
     )
     try:
-        # Read before the checkout: a data_dir moved meanwhile then fails the commit.
+        # Read before the clone: a data_dir moved meanwhile then fails the commit.
         config = repo.read_config(store)
-        version = repo.checkout(store, working, ref=ref, local_data=local, storage=storage)
+        version = repo.clone(store, working, ref=ref, local_data=local, storage=storage)
         if storage:
             data = repo.storage_data_path(storage, config)
         else:
@@ -202,7 +216,7 @@ def _commit(
 ):
     """Freeze the working metadata into a version beside it, to push later.
 
-    Its parent is the version the working metadata was checked out at (or last
+    Its parent is the version the working metadata was cloned at (or last
     pushed). Any version committed before and not pushed is replaced.
     """
     _check_data_dir(store, working, state)
@@ -264,16 +278,16 @@ def _commit(
 
 
 def _check_data_dir(store, working: Path, state: dict) -> None:
-    """Refuse a working metadata checked out before fdl.json moved the data files.
+    """Refuse a working metadata cloned before fdl.json moved the data files.
 
     Its new data files went to the old place, where no version reads them.
     """
     now = repo.read_config(store).data_dir
     if state.get("data_dir") != now:
         raise repo.RepoError(
-            f"data_dir in fdl.json is now {now!r}, but {working} was checked out with "
+            f"data_dir in fdl.json is now {now!r}, but {working} was cloned with "
             f"{state.get('data_dir')!r}: its new data files are not where versions read them. "
-            "Check out again and rebuild"
+            "Clone again and rebuild"
         )
 
 
@@ -311,7 +325,7 @@ def push(
     columns changed since the parent, and the views when any table or view
     changed, and uploads the profiles with the version.
 
-    Refused when someone else moved the branch since the checkout: check out
+    Refused when someone else moved the branch since the clone: clone
     again, redo the work, commit and push, or merge the branch into your work.
     """
     state = _read_state(working)
@@ -352,7 +366,7 @@ def push(
 
 
 def _push_forward(working: Path, state: dict) -> None:
-    """Move the branch to the version a fast-forward merge checked out."""
+    """Move the branch to the version a fast-forward merge rebuilt the working metadata from."""
     store = _store(state["remote"])
     try:
         version = repo.read_version(store, state["base"])
@@ -373,7 +387,7 @@ def revert(
     """Commit a new version that holds what an earlier version held.
 
     The working metadata is written back to the earlier version's tables, and
-    the new version builds on the one it was checked out at, so the branch
+    the new version builds on the one it was cloned at, so the branch
     moves forward when you push: the versions in between stay in its history.
     Changes not committed are lost. To take out data that must not be
     published, use withdraw instead.
@@ -441,7 +455,7 @@ def merge(
         if ours is None:
             raise repo.RepoError(f"{state['ref']} holds no version yet, so there is nothing to merge into")
         if catalog.last_snapshot(working) != ours.ducklake.snapshot_id:
-            raise repo.RepoError(f"the working metadata has changes not committed: commit and push them, or check out again")
+            raise repo.RepoError(f"the working metadata has changes not committed: commit and push them, or clone again")
         bases = repo.merge_bases(store, ours, theirs)
         if not bases:
             raise repo.RepoError(f"{ours.id} and {theirs.id} have no version in common")
@@ -482,9 +496,9 @@ def merge(
 
 
 def _fast_forward(store, working: Path, state: dict, theirs) -> None:
-    """Check the working metadata out at ``theirs``, for push to move the branch there."""
+    """Rebuild the working metadata from ``theirs``, for push to move the branch there."""
     local = Path(state["data"]) if state.get("data") else None
-    repo.checkout(store, working, local_data=local, version=theirs, storage=state.get("storage"))
+    repo.clone(store, working, local_data=local, version=theirs, storage=state.get("storage"))
     _write_state(working, {**state, "base": theirs.id, "forward": True})
     typer.echo(f"Fast-forward to {theirs.id} (version {theirs.seq}). Move {state['ref']} there with:")
     typer.echo(f"  fdl push {working}")
@@ -552,7 +566,7 @@ def _drop_uploaded(store, working: Path, local: Path, version) -> None:
     failure the working metadata and its local files stay as they were.
     """
     try:
-        repo.checkout(store, working, local_data=local, version=version)
+        repo.clone(store, working, local_data=local, version=version)
     except (*ERRORS, catalog.CatalogError, OSError) as exc:
         typer.echo(f"warning: kept the local data files ({exc})", err=True)
         return
@@ -742,7 +756,7 @@ def status(
     working: Path = Working,
     as_json: bool = typer.Option(False, "--json", help="Print the differences as JSON"),
 ) -> None:
-    """What the working metadata changed since it was checked out, or since the commit not pushed yet."""
+    """What the working metadata changed since it was cloned, or since the commit not pushed yet."""
     state = _read_state(working)
     store = _store(state["remote"])
     pending_id = (state.get("pending") or {}).get("id")

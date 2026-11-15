@@ -14,7 +14,7 @@ for version in repo.log(store):
 
 | モジュール | 中身 |
 | --- | --- |
-| `fdl.repo` | 操作: `init`、`checkout`、`commit`、`push`、`log`、`expire`、`prune` |
+| `fdl.repo` | 操作: `init`、`clone`、`commit`、`push`、`log`、`expire`、`prune` |
 | `fdl.diff` | 2 つのバージョンの違い（`diff.versions`）と作業メタデータの変更（`diff.working`） |
 | `fdl.refs` | ref を読み、条件付きで動かす |
 | `fdl.version` | `Version`（`version.json` の記録）と新しい ID |
@@ -45,7 +45,7 @@ repo.init(store, *, data_dir="data/") -> Config
 リポジトリを作ります。既にあればそのままにして、設定を返します。
 
 ```python
-repo.checkout(store, working, *, ref="HEAD", local_data=None, version=None) -> Version | None
+repo.clone(store, working, *, ref="HEAD", local_data=None, version=None) -> Version | None
 ```
 
 `ref` が指すバージョン、または `version` を渡したときはそのバージョンから、`working` に作業メタデータを作ります。そのバージョンを返し、最初のバージョンの前は `None` を返します。HTTP の置き場では、新しいデータファイルを書くフォルダ `local_data` が要ります。メタデータの sha256 が `version.json` の記録と違うときと、メタデータがデータフォルダの外のデータファイルを指しているときは断ります。
@@ -141,7 +141,7 @@ diff.working(working, base) -> dict
 diff.lines(result) -> list[str]
 ```
 
-`versions` は 2 つのバージョンを、古い方が親なら新しい方の `diff` から、それ以外は `dataset.json`・`files.json` から比べます（最初のバージョンの前は `old` を `None` にします）。`working` は作業メタデータを、checkout したときのバージョン `base` と比べます。どちらも `tables`（`added`・`dropped`）・`rows`・`columns`・`data`・`descriptions` を返し、`fdl diff --json` と同じ形です。`lines` は `fdl diff` が表示する行を返します。
+`versions` は 2 つのバージョンを、古い方が親なら新しい方の `diff` から、それ以外は `dataset.json`・`files.json` から比べます（最初のバージョンの前は `old` を `None` にします）。`working` は作業メタデータを、clone したときのバージョン `base` と比べます。どちらも `tables`（`added`・`dropped`）・`rows`・`columns`・`data`・`descriptions` を返し、`fdl diff --json` と同じ形です。`lines` は `fdl diff` が表示する行を返します。
 
 ## fdl.refs
 
