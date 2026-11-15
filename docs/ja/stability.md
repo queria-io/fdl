@@ -15,12 +15,12 @@ FDL 0.1 で書いたリポジトリは、この先のリリースの `fdl` で�
 
 - `fdl.json`・`HEAD`・`refs/`・`refs.json`
 - `version.json` とその必須の項目
-- 固めたカタログ `ducklake.duckdb`
+- 固めたメタデータ（`metadata.path` の名前。`metadata.db`、fdl-cli 0.26 以前が書いたバージョンでは `ducklake.duckdb`）
 - `dataset.json` の `name`・`title`・`tables` と、各表の `fields`
 - `expired.json`
 - データファイルと `assets/<sha256>`
 
-バージョンの任意のファイル `files.json`・`tree.json`・`profiles/` は、カタログとデータから作るもので、読み手はこれらが無くても読めます。この先のリリースでキーが増えることがあります。読み手は、どのファイルでも知らないキーを無視します。
+バージョンの任意のファイル `files.json`・`tree.json`・`profiles/` は、メタデータとデータから作るもので、読み手はこれらが無くても読めます。この先のリリースでキーが増えることがあります。読み手は、どのファイルでも知らないキーを無視します。
 
 ## fdl-cli
 
@@ -33,7 +33,7 @@ pip install 'fdl-cli[s3]>=0.21,<0.22'
 ## 動く環境
 
 - Python 3.10 以降
-- DuckDB 1.5.2 以降（2.x を含む。2.x は Python 3.11 以降）と `ducklake` 拡張。どの DuckDB で書いても、`fdl` が書くカタログは DuckLake の形式 1.0、DuckDB のストレージ v1.5.0 なので、DuckDB 1.5 以降で読めます
+- DuckDB 1.5.2 以降（2.x を含む。2.x は Python 3.11 以降）と `ducklake` 拡張。どの DuckDB で書いても、`fdl` が書くメタデータは DuckLake の形式 1.0、DuckDB のストレージ v1.5.0 なので、DuckDB 1.5 以降で読めます
 
 ## 問題の報告
 

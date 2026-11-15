@@ -2,10 +2,10 @@
 title: FDL
 sidebar:
   label: Introduction
-description: Versions of a DuckLake catalog on object storage, kept the way Git keeps commits.
+description: Versions of a DuckLake metadata file on object storage, kept the way Git keeps commits.
 ---
 
-FDL keeps the history of a [DuckLake](https://ducklake.select/) catalog in a bucket or a folder. Each version is a frozen copy of the catalog with a record of its parent, its author and a message. Refs such as `refs/heads/main` say which version readers get. The Parquet files are shared between versions and never rewritten.
+FDL keeps the history of [DuckLake](https://ducklake.select/) metadata in a bucket or a folder. Each version is a frozen copy of the metadata with a record of its parent, its author and a message. Refs such as `refs/heads/main` say which version readers get. The Parquet files are shared between versions and never rewritten.
 
 ```
 s3://my-bucket/towns/
@@ -14,11 +14,11 @@ s3://my-bucket/towns/
   refs/heads/main                   019a3c4e-…
   versions/019a3c4e-…/
     version.json                    parents, author, message, sha256
-    ducklake.duckdb                 the frozen catalog
+    metadata.db                     the frozen metadata
   data/main/towns/ducklake-….parquet
 ```
 
-A reader needs nothing but DuckDB: it reads `refs/heads/main`, then attaches the catalog of that version read-only, over HTTP or S3. A writer needs a store that can read, write and write on condition. There is no server.
+A reader needs nothing but DuckDB: it reads `refs/heads/main`, then attaches the metadata of that version read-only, over HTTP or S3. A writer needs a store that can read, write and write on condition. There is no server.
 
 ## What FDL is for
 
@@ -34,16 +34,16 @@ It is not a transactional database. Two people who push at once are settled by t
 
 ## FDL and Git
 
-FDL keeps a catalog's versions the way Git keeps a project's commits. If you know Git, most of FDL maps onto it:
+FDL keeps a metadata file's versions the way Git keeps a project's commits. If you know Git, most of FDL maps onto it:
 
 | Git | FDL |
 | --- | --- |
 | A bare repository on a server | A repository: a prefix of a bucket, or a folder |
 | Commit | Version (`versions/<ID>/version.json`) |
-| Tree | The frozen catalog (`ducklake.duckdb`) |
+| Tree | The frozen metadata (`metadata.db`) |
 | Blob | Data file (Parquet), asset |
 | Branch, tag, `HEAD` | `refs/heads/`, `refs/tags/`, `HEAD` |
-| Working tree | Working catalog (SQLite on your disk) |
+| Working tree | Working metadata (SQLite on your disk) |
 | `git init --bare` | `fdl init` |
 | `git commit`, `git push` | `fdl commit`, `fdl push` |
 | `git log`, `git tag` | `fdl log`, `fdl tag` |
@@ -56,7 +56,7 @@ FDL is in beta. [Stability](/stability) says what stays the same across releases
 ## How the documentation is organized
 
 - [Getting started](/getting-started) makes a repository, writes a first version and reads it back
-- [Concepts](/concepts/repositories) explains repositories, versions, refs and working catalogs
+- [Concepts](/concepts/repositories) explains repositories, versions, refs and working metadata files
 - [How it works](/internals/inside-a-repository) follows the files in a repository through a few commits
 - [Guides](/guides/stores) cover stores, serving over HTTP, mirrors and building a host
 - The [specification](/spec) is the normative description of the format. Tools are written against it

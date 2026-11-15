@@ -104,7 +104,7 @@ def test_the_round_trip_over_http(served, tmp_path: Path) -> None:
     assert described["title"] == "Towns"
     assert [t["name"] for t in described["tables"]] == ["towns"]
     frozen = tmp_path / "frozen.duckdb"
-    frozen.write_bytes(local.get(layout.version_catalog(second.id)))
+    frozen.write_bytes(local.get(layout.version_metadata(second)))
     assert catalog.absolute_paths(frozen) == []
     assert len(catalog.data_files(frozen)) == 2
     # Nothing was deleted or listed beyond what push needs.
@@ -302,7 +302,7 @@ def test_a_commit_over_http_frees_the_local_data_files(served, tmp_path: Path) -
     second = repo.head(local)
     assert second.seq == 2
     frozen = tmp_path / "frozen.duckdb"
-    frozen.write_bytes(local.get(layout.version_catalog(second.id)))
+    frozen.write_bytes(local.get(layout.version_metadata(second)))
     con = duckdb.connect()
     con.execute("INSTALL ducklake; LOAD ducklake;")
     con.execute(
@@ -336,7 +336,7 @@ def test_a_checkout_with_storage_writes_data_files_there(served, tmp_path: Path)
 
     second = repo.head(local)
     frozen = tmp_path / "frozen.duckdb"
-    frozen.write_bytes(local.get(layout.version_catalog(second.id)))
+    frozen.write_bytes(local.get(layout.version_metadata(second)))
     assert not catalog.absolute_paths(frozen)
     con = duckdb.connect()
     con.execute("INSTALL ducklake; LOAD ducklake;")
@@ -403,7 +403,7 @@ def test_a_merge_over_http(served, tmp_path: Path) -> None:
     merged = repo.head(local, "refs/heads/main")
     assert len(merged.parents) == 2
     frozen = tmp_path / "frozen.duckdb"
-    frozen.write_bytes(local.get(layout.version_catalog(merged.id)))
+    frozen.write_bytes(local.get(layout.version_metadata(merged)))
     con = duckdb.connect()
     con.execute("INSTALL ducklake; LOAD ducklake;")
     con.execute(

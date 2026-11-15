@@ -37,13 +37,13 @@ Writes `fdl.json`, with a new `id`, and `HEAD`. Running it on an existing reposi
 fdl checkout <remote> <working.sqlite> [--ref refs/heads/main] [--storage s3://bucket/prefix/]
 ```
 
-Makes a working catalog (DuckLake in SQLite) from the catalog of the version the branch holds, or an empty one before the first version. Beside it, `<working.sqlite>.fdl.json` remembers the repository, the branch and the version it was made from. It prints the `ATTACH` statement to write with.
+Makes a working metadata file (DuckLake in SQLite) from the metadata of the version the branch holds, or an empty one before the first version. Beside it, `<working.sqlite>.fdl.json` remembers the repository, the branch and the version it was made from. It prints the `ATTACH` statement to write with.
 
-For a repository over HTTP, new data files are written to `<working.sqlite>.data/` and uploaded by the push. Files already in the repository are read over HTTP where they are. Once a push has uploaded them, it makes the working catalog again from the new version and deletes the local copies, so the folder holds only what has not been pushed.
+For a repository over HTTP, new data files are written to `<working.sqlite>.data/` and uploaded by the push. Files already in the repository are read over HTTP where they are. Once a push has uploaded them, it makes the working metadata again from the new version and deletes the local copies, so the folder holds only what has not been pushed.
 
-With `--storage`, the working catalog reads and writes the data files in the repository's own storage instead: `--storage` is the repository's root there, and new files go straight under its `data_dir`, so the push has none to upload. The keys come from the `AWS_*` variables (`AWS_ENDPOINT_URL` for R2 and other S3-compatible stores), or from a DuckDB secret of your own. The build that writes to the working catalog needs them too.
+With `--storage`, the working metadata reads and writes the data files in the repository's own storage instead: `--storage` is the repository's root there, and new files go straight under its `data_dir`, so the push has none to upload. The keys come from the `AWS_*` variables (`AWS_ENDPOINT_URL` for R2 and other S3-compatible stores), or from a DuckDB secret of your own. The build that writes to the working metadata needs them too.
 
-Refused when the version is past retention, when its catalog's sha256 is not the one `version.json` records, or when the catalog names a data file outside the data folder.
+Refused when the version is past retention, when its metadata's sha256 is not the one `version.json` records, or when the metadata names a data file outside the data folder.
 
 ## fdl commit
 
@@ -51,9 +51,9 @@ Refused when the version is past retention, when its catalog's sha256 is not the
 fdl commit <working.sqlite> -m "What changed" --author alice [--dataset dataset.json] [--allow-empty] [--assets files/]
 ```
 
-Freezes the working catalog into a new version whose parent is the version it was checked out at (or last pushed), and keeps it in `<working.sqlite>.pending/` until `fdl push` sends it. Nothing in the repository changes. It prints the new version ID and its `seq`. Committing again before pushing replaces the version not pushed yet.
+Freezes the working metadata into a new version whose parent is the version it was checked out at (or last pushed), and keeps it in `<working.sqlite>.pending/` until `fdl push` sends it. Nothing in the repository changes. It prints the new version ID and its `seq`. Committing again before pushing replaces the version not pushed yet.
 
-Every version is described by a `dataset.json` (see [Versions](/spec/versions#datasetjson)), read from `--dataset` or else from `dataset.json` or `dataset.yml` in the current directory. Tables described in `*.table.yml` (or `*.table.json`) files below that folder are added to it; hidden folders are skipped. The command checks it against the catalog and fills in the column types, row counts and catalog comments.
+Every version is described by a `dataset.json` (see [Versions](/spec/versions#datasetjson)), read from `--dataset` or else from `dataset.json` or `dataset.yml` in the current directory. Tables described in `*.table.yml` (or `*.table.json`) files below that folder are added to it; hidden folders are skipped. The command checks it against the metadata and fills in the column types, row counts and metadata comments.
 
 The command puts `README.md` beside the description and every file below `docs/` there (hidden ones left out) in the version's tree: it writes `tree.json` with their paths from that folder and the push uploads those the repository lacks to `assets/<sha256>`, as written (see [tree.json](/spec/versions#treejson)).
 
@@ -63,8 +63,8 @@ When the version would hold what its parent holds (see [When nothing changed](/s
 
 Refused when:
 
-- there is no `dataset.json`, or it describes a table or column the catalog lacks. Keys the format does not define are kept as written, with a warning
-- the working catalog holds inlined rows
+- there is no `dataset.json`, or it describes a table or column the metadata lacks. Keys the format does not define are kept as written, with a warning
+- the working metadata holds inlined rows
 - an asset column is not `varchar`, or holds a value that is not a sha256
 
 ## fdl push
@@ -75,14 +75,14 @@ fdl push <working.sqlite> [--no-profile]
 
 Uploads the version `fdl commit` made and moves the branch to it on condition (see [Order of writes](/spec/writing#order-of-writes)). It prints the branch, the version ID and its `seq`. After a fast-forward `fdl merge`, it moves the branch to the version merged, uploading nothing. With nothing committed, it prints `Nothing to push`.
 
-Before uploading, it writes a profile of each table and view (see [profiles/](/spec/versions#profiles)) and uploads the profiles before `version.json`, so they are there when the branch moves. It reads only the tables whose data files or columns changed since the parent; the others keep the parent's profile. A view is profiled again, by running its query, whenever a table's data files or a view's query changed. A table it cannot read gets none, with a warning. When the working catalog changed after the commit, it profiles nothing and warns. `--no-profile` skips profiling; `fdl profile` adds the profiles later.
+Before uploading, it writes a profile of each table and view (see [profiles/](/spec/versions#profiles)) and uploads the profiles before `version.json`, so they are there when the branch moves. It reads only the tables whose data files or columns changed since the parent; the others keep the parent's profile. A view is profiled again, by running its query, whenever a table's data files or a view's query changed. A table it cannot read gets none, with a warning. When the working metadata changed after the commit, it profiles nothing and warns. `--no-profile` skips profiling; `fdl profile` adds the profiles later.
 
-Data files the working catalog wrote into the repository are there before the push, but no version names them until it. Files never pushed are deleted after the grace period.
+Data files the working metadata wrote into the repository are there before the push, but no version names them until it. Files never pushed are deleted after the grace period.
 
 Refused when:
 
 - the branch has moved since the checkout, so the version does not descend from what the branch holds now. Check out again and redo the work
-- a data file the catalog names is not in the repository
+- a data file the metadata names is not in the repository
 - an asset column points at a file that is neither in the repository nor in `--assets`
 - a data file is recorded with an absolute path outside the data directory
 
@@ -110,7 +110,7 @@ Versions from the one the ref holds back to the first, by first parent. Each sho
 fdl status <working.sqlite> [--json]
 ```
 
-What the working catalog changed since it was checked out, in the same kinds as `fdl diff`. `Nothing to commit` when it holds what the version it came from holds. The words of `dataset.json` are not compared until the commit. When a version is committed and not pushed yet, it is named first and the changes are counted from it; `--json` gives its ID as `pending`. After a fast-forward `fdl merge`, it says that `fdl push` will move the branch.
+What the working metadata changed since it was checked out, in the same kinds as `fdl diff`. `Nothing to commit` when it holds what the version it came from holds. The words of `dataset.json` are not compared until the commit. When a version is committed and not pushed yet, it is named first and the changes are counted from it; `--json` gives its ID as `pending`. After a fast-forward `fdl merge`, it says that `fdl push` will move the branch.
 
 ## fdl diff
 
@@ -148,7 +148,7 @@ A version's number, ID, parent, author, time and message, its tables with their 
 fdl url <remote> [--ref HEAD] [--attach] [--alias lake]
 ```
 
-Prints the URL of the catalog of the version the ref holds, to `ATTACH` read-only. With `--attach`, prints the whole `ATTACH` statement with the data path (and, over HTTP with a token, the `CREATE SECRET` before it). A version past retention or withdrawn is refused, even where its catalog is still served.
+Prints the URL of the metadata of the version the ref holds, to `ATTACH` read-only. With `--attach`, prints the whole `ATTACH` statement with the data path (and, over HTTP with a token, the `CREATE SECRET` before it). A version past retention or withdrawn is refused, even where its metadata is still served.
 
 ## fdl tag
 
@@ -177,7 +177,7 @@ fdl revert <version> <working.sqlite> --author <name> [-m <message>]
 fdl push <working.sqlite>
 ```
 
-Writes the working catalog back to what `<version>` held (its tables and views) and commits a new version with `<version>`'s `dataset.json` and `tree.json`, as `fdl commit` does. Changes in the working catalog not committed are lost. `fdl push` then moves the branch forward, so the versions in between stay in its history and can still be read. A table unchanged since `<version>` keeps its data files; any other is written again from its rows there. `<version>` is a version ID or a ref, and must be in the first-parent history of the version the working catalog was checked out at (a version only a merge brought in is not), and in retention. When that version already holds what `<version>` held, nothing is made.
+Writes the working metadata back to what `<version>` held (its tables and views) and commits a new version with `<version>`'s `dataset.json` and `tree.json`, as `fdl commit` does. Changes in the working metadata not committed are lost. `fdl push` then moves the branch forward, so the versions in between stay in its history and can still be read. A table unchanged since `<version>` keeps its data files; any other is written again from its rows there. `<version>` is a version ID or a ref, and must be in the first-parent history of the version the working metadata was checked out at (a version only a merge brought in is not), and in retention. When that version already holds what `<version>` held, nothing is made.
 
 To take out data that must not be published, use `fdl withdraw`: a revert leaves the versions in between, and their data files, as they are.
 
@@ -188,13 +188,13 @@ fdl merge <theirs> <working.sqlite> --author <name> [-m <message>]
 fdl push <working.sqlite>
 ```
 
-Merges another branch into the branch the working catalog was checked out from (see [Merging](/spec/writing#merging)). `<theirs>` is a ref such as `refs/heads/feature`, or a version ID. The base is the common ancestor of the two versions.
+Merges another branch into the branch the working metadata was checked out from (see [Merging](/spec/writing#merging)). `<theirs>` is a ref such as `refs/heads/feature`, or a version ID. The base is the common ancestor of the two versions.
 
-- When `<theirs>` is already in the history of the working catalog's version, it prints `Already up to date` and makes nothing
-- When the working catalog's version is in the history of `<theirs>`, the working catalog is checked out at `<theirs>` and no version is made. `fdl push` then moves the branch there (a fast-forward)
-- Otherwise it writes the merge into the working catalog and commits a merge version, whose `parents` are the working catalog's version and `<theirs>`. `fdl push` uploads it as it does a commit. The message defaults to `Merge <theirs>`
+- When `<theirs>` is already in the history of the working metadata's version, it prints `Already up to date` and makes nothing
+- When the working metadata's version is in the history of `<theirs>`, the working metadata is checked out at `<theirs>` and no version is made. `fdl push` then moves the branch there (a fast-forward)
+- Otherwise it writes the merge into the working metadata and commits a merge version, whose `parents` are the working metadata's version and `<theirs>`. `fdl push` uploads it as it does a commit. The message defaults to `Merge <theirs>`
 
-A table only `<theirs>` changed, added or dropped since the base comes over as `<theirs>` holds it, written to new data files. Rows of a table both sides changed are merged by the `primary_key` both declare in `dataset.json`: a row only `<theirs>` added, changed or deleted takes that change. `dataset.json` and `tree.json` are merged key by key; the row counts, types and nulls are written again from the merged catalog. The command lists the tables that came over and how many rows `<theirs>` added, changed or deleted. `fdl commit` reads the description from your local files, so when `<theirs>` changed `dataset.json` or `tree.json`, the command warns: bring those changes into your local files before the next commit.
+A table only `<theirs>` changed, added or dropped since the base comes over as `<theirs>` holds it, written to new data files. Rows of a table both sides changed are merged by the `primary_key` both declare in `dataset.json`: a row only `<theirs>` added, changed or deleted takes that change. `dataset.json` and `tree.json` are merged key by key; the row counts, types and nulls are written again from the merged metadata. The command lists the tables that came over and how many rows `<theirs>` added, changed or deleted. `fdl commit` reads the description from your local files, so when `<theirs>` changed `dataset.json` or `tree.json`, the command warns: bring those changes into your local files before the next commit.
 
 When anything conflicts, the command lists each conflict, by table and, for rows, by the values of the primary key, exits with 1 and changes nothing. A conflict is:
 
@@ -206,7 +206,7 @@ When anything conflicts, the command lists each conflict, by table and, for rows
 
 Change one of the branches so that the two no longer conflict, and merge again.
 
-Refused when the working catalog has changes not committed, when a version is committed and not pushed, when the two versions have more than one common ancestor that no other descends from, and when the base or `<theirs>` is past retention.
+Refused when the working metadata has changes not committed, when a version is committed and not pushed, when the two versions have more than one common ancestor that no other descends from, and when the base or `<theirs>` is past retention.
 
 ## fdl withdraw
 
@@ -214,7 +214,7 @@ Refused when the working catalog has changes not committed, when a version is co
 fdl withdraw <remote> <version>... [--yes]
 ```
 
-Removes versions that hold data that must not be published, such as personal data published by mistake (see [Withdrawal](/spec/data-files#withdrawal)). First commit a version without the data, so that no branch points at an affected version. The command then deletes the tags that point at the versions, the data files and assets the versions reach that no kept version reaches, and their catalogs, and puts `expired.json` with `"reason": "withdrawn"`. `version.json` stays. When one of the versions is already past retention, its catalog is gone, so every data file and asset no live version reaches is deleted at once, without waiting for the grace period.
+Removes versions that hold data that must not be published, such as personal data published by mistake (see [Withdrawal](/spec/data-files#withdrawal)). First commit a version without the data, so that no branch points at an affected version. The command then deletes the tags that point at the versions, the data files and assets the versions reach that no kept version reaches, and their metadata files, and puts `expired.json` with `"reason": "withdrawn"`. `version.json` stays. When one of the versions is already past retention, its metadata is gone, so every data file and asset no live version reaches is deleted at once, without waiting for the grace period.
 
 A version reaches the assets its `tree.json` lists and those its asset columns hold.
 
@@ -226,7 +226,7 @@ Without `--yes` it only prints what it would delete. Files a kept version still 
 fdl profile <remote> [--ref refs/heads/main]
 ```
 
-Profiles the tables and views of the version the branch or tag holds that have no [profile](/spec/versions#profiles), and puts the profiles beside the version. `fdl push` profiles the version it uploads; this is for a version pushed without them: made before fdl wrote profiles, pushed with `--no-profile`, or whose tables could not be read then. Profiles already there are left as they are. Refused for a version past retention, which has no catalog.
+Profiles the tables and views of the version the branch or tag holds that have no [profile](/spec/versions#profiles), and puts the profiles beside the version. `fdl push` profiles the version it uploads; this is for a version pushed without them: made before fdl wrote profiles, pushed with `--no-profile`, or whose tables could not be read then. Profiles already there are left as they are. Refused for a version past retention, which has no metadata.
 
 ## fdl expire
 
@@ -234,7 +234,7 @@ Profiles the tables and views of the version the branch or tag holds that have n
 fdl expire <remote> [--keep 1] [--since 2026-10-01T00:00:00Z] [--ref refs/heads/main]
 ```
 
-Takes versions behind the newest `--keep` on the branch's first-parent line out of retention: puts `expired.json` and deletes their catalogs. Versions made at or after `--since`, and any a ref points at, are kept. Data files are not deleted; `fdl gc` deletes them.
+Takes versions behind the newest `--keep` on the branch's first-parent line out of retention: puts `expired.json` and deletes their metadata files. Versions made at or after `--since`, and any a ref points at, are kept. Data files are not deleted; `fdl gc` deletes them.
 
 ## fdl gc
 
@@ -242,6 +242,6 @@ Takes versions behind the newest `--keep` on the branch's first-parent line out 
 fdl gc <remote> [--grace 7d] [--yes]
 ```
 
-Deletes the data files and assets no live version reaches and that were written longer ago than `--grace` (`7d`, `24h` or `30m`), as [When a shared object may be deleted](/spec/data-files#when-a-shared-object-may-be-deleted) allows. These are the files only versions past retention reached, and files working catalogs wrote and never pushed. Without `--yes`, it only lists them.
+Deletes the data files and assets no live version reaches and that were written longer ago than `--grace` (`7d`, `24h` or `30m`), as [When a shared object may be deleted](/spec/data-files#when-a-shared-object-may-be-deleted) allows. These are the files only versions past retention reached, and files working metadata files wrote and never pushed. Without `--yes`, it only lists them.
 
-It reads `files.json` of every live version, and the catalog of a version whose rows hold assets. Refused for a repository over HTTP, where deleting is the host's, and when a live version has neither `files.json` nor a catalog.
+It reads `files.json` of every live version, and the metadata of a version whose rows hold assets. Refused for a repository over HTTP, where deleting is the host's, and when a live version has neither `files.json` nor a metadata file.

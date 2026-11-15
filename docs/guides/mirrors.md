@@ -30,24 +30,24 @@ A mirror is for reading. Pushing to both the origin and a mirror would give them
 
 ## Reading from a mirror
 
-The catalog records where the writer published its data files: the origin's data folder, as an absolute URL. A reader of the mirror gives DuckDB the mirror's data folder instead:
+The metadata records where the writer published its data files: the origin's data folder, as an absolute URL. A reader of the mirror gives DuckDB the mirror's data folder instead:
 
 ```sql
-ATTACH 'ducklake:https://mirror.example.org/towns/versions/019a3c4e-…/ducklake.duckdb' AS towns (
+ATTACH 'ducklake:https://mirror.example.org/towns/versions/019a3c4e-…/metadata.db' AS towns (
   DATA_PATH 'https://mirror.example.org/towns/data/', OVERRIDE_DATA_PATH true, READ_ONLY
 );
 ```
 
-Without `OVERRIDE_DATA_PATH true`, DuckDB refuses to use a data path other than the one the catalog records. Readers always pass both options, at the origin too, so the same statement works anywhere with only the root changed.
+Without `OVERRIDE_DATA_PATH true`, DuckDB refuses to use a data path other than the one the metadata records. Readers always pass both options, at the origin too, so the same statement works anywhere with only the root changed.
 
 ## Checking what was copied
 
-`version.json` records the size and sha256 of the catalog. A mirror can check each catalog after copying it. Parquet files are named by a UUID and carry their own checksums, and DuckLake records each file's size in the catalog.
+`version.json` records the size and sha256 of the metadata. A mirror can check each metadata file after copying it. Parquet files are named by a UUID and carry their own checksums, and DuckLake records each file's size in the metadata.
 
 Anyone can write a `version.json`, so a checksum shows the copy matches the record, not that the record came from the origin. A version signed by the origin can be checked on a mirror: see [Signatures](/spec/reading#signatures).
 
 ## Expired versions and withdrawn data
 
-When the origin takes a version out of retention, the mirror sees `expired.json` appear and the catalog disappear on the next copy. Copy `expired.json` and delete the catalogs the origin deleted. A mirror that keeps them serves versions its origin no longer does.
+When the origin takes a version out of retention, the mirror sees `expired.json` appear and the metadata disappear on the next copy. Copy `expired.json` and delete the metadata files the origin deleted. A mirror that keeps them serves versions its origin no longer does.
 
-An `expired.json` with `"reason": "withdrawn"` means the origin removed data that must not be published. Delete the catalogs, the data files and the assets the origin deleted, without waiting.
+An `expired.json` with `"reason": "withdrawn"` means the origin removed data that must not be published. Delete the metadata files, the data files and the assets the origin deleted, without waiting.

@@ -22,7 +22,7 @@ const rows = await readWhere(await openParquet(store, file), "town_code", "13101
 
 ## 読めるもの
 
-[読み方](/ja/spec/reading)の手順にカタログの手前まで従い、カタログの代わりに `files.json` を読みます。
+[読み方](/ja/spec/reading)の手順にメタデータの手前まで従い、メタデータの代わりに `files.json` を読みます。
 
 - `files.json` の無いバージョンは読めません。fdl-cli 0.16 より前の書き手は作りません
 - ファイルに `deletes` がある表と、`renamed_columns` が `true` の表は断ります（[files.json](/ja/spec/versions#filesjson) を参照）

@@ -29,17 +29,17 @@ towns/
 
 `HEAD` names the default branch, `main`. The branch itself does not exist yet: there is no version for it to point at.
 
-`fdl init` makes the repository where readers will find it, as `git init --bare` does on a server. Your own place to write is the working catalog, made next.
+`fdl init` makes the repository where readers will find it, as `git init --bare` does on a server. Your own place to write is the working metadata, made next.
 
-## Check out a working catalog
+## Check out a working metadata file
 
-You never write to the repository directly. You write to a working catalog, a DuckLake catalog in a SQLite file on your own disk, and turn it into a version when you are done.
+You never write to the repository directly. You write to a working metadata file, a DuckLake metadata file in a SQLite file on your own disk, and turn it into a version when you are done.
 
 ```bash
 fdl checkout ./towns/ work/lake.sqlite
 ```
 
-Before the first version, `checkout` makes an empty catalog. Later it copies the catalog of the version `main` holds. It prints the statement to attach the working catalog with:
+Before the first version, `checkout` makes an empty metadata. Later it copies the metadata of the version `main` holds. It prints the statement to attach the working metadata with:
 
 ```sql
 ATTACH 'ducklake:work/lake.sqlite' AS lake (
@@ -49,7 +49,7 @@ ATTACH 'ducklake:work/lake.sqlite' AS lake (
 );
 ```
 
-Beside the working catalog, `work/lake.sqlite.fdl.json` remembers the repository, the branch and the version the checkout was made from.
+Beside the working metadata, `work/lake.sqlite.fdl.json` remembers the repository, the branch and the version the checkout was made from.
 
 ## Write
 
@@ -60,7 +60,7 @@ CREATE TABLE lake.main.towns AS
 SELECT * FROM 'towns.csv';
 ```
 
-`DATA_INLINING_ROW_LIMIT 0` makes DuckLake write every row to Parquet. Left at its default, DuckLake keeps small tables inside the catalog, and a version has to carry its rows in data files that a reader can fetch.
+`DATA_INLINING_ROW_LIMIT 0` makes DuckLake write every row to Parquet. Left at its default, DuckLake keeps small tables inside the metadata, and a version has to carry its rows in data files that a reader can fetch.
 
 ## Describe
 
@@ -74,7 +74,7 @@ Every version carries a `dataset.json` that says what it holds. Write one next t
 }
 ```
 
-Only `name` and `title` are required. `fdl commit` checks the file against the catalog and fills in each table's row count and each column's type.
+Only `name` and `title` are required. `fdl commit` checks the file against the metadata and fills in each table's row count and each column's type.
 
 ## Commit and push
 
@@ -83,7 +83,7 @@ fdl commit work/lake.sqlite -m "First towns" --author alice
 fdl push work/lake.sqlite
 ```
 
-`commit` freezes the working catalog into a version on your disk. `push` measures each table into a small summary (a profile) that readers can show without reading the data, uploads the version with them and moves `main` to it, and prints `refs/heads/main -> 019a3c4e-… (version 1)`. The repository now holds:
+`commit` freezes the working metadata into a version on your disk. `push` measures each table into a small summary (a profile) that readers can show without reading the data, uploads the version with them and moves `main` to it, and prints `refs/heads/main -> 019a3c4e-… (version 1)`. The repository now holds:
 
 ```
 towns/
@@ -91,7 +91,7 @@ towns/
   HEAD
   refs/heads/main                       019a3c4e-…
   versions/019a3c4e-…/
-    ducklake.duckdb
+    metadata.db
     dataset.json
     files.json
     profiles/main/towns.json
@@ -114,16 +114,16 @@ fdl log ./towns/
 fdl url ./towns/
 ```
 
-prints the catalog of the version `main` holds. Attach it read-only, and tell DuckDB where the data files are:
+prints the metadata of the version `main` holds. Attach it read-only, and tell DuckDB where the data files are:
 
 ```sql
-ATTACH 'ducklake:towns/versions/019a3c4e-…/ducklake.duckdb' AS towns (
+ATTACH 'ducklake:towns/versions/019a3c4e-…/metadata.db' AS towns (
   DATA_PATH 'towns/data/', OVERRIDE_DATA_PATH true, READ_ONLY
 );
 SELECT count(*) FROM towns.main.towns;
 ```
 
-A version's catalog never changes, so a reader may cache it forever. Only `HEAD` and the files under `refs/` change.
+A version's metadata never changes, so a reader may cache it forever. Only `HEAD` and the files under `refs/` change.
 
 ## Make a second version
 
@@ -140,6 +140,6 @@ fdl commit work/lake.sqlite -m "Add 2026" --author alice
 fdl push work/lake.sqlite
 ```
 
-The new version lists the first as its parent. Both catalogs name the first Parquet file; only the second names the new one.
+The new version lists the first as its parent. Both metadata files name the first Parquet file; only the second names the new one.
 
 If someone else pushed in between, the push is refused, because the new version would not be built on what `main` holds now. Check out again and redo the change. [Versions and refs](/concepts/versions-and-refs) explains why.

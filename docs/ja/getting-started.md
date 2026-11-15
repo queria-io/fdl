@@ -29,17 +29,17 @@ towns/
 
 `HEAD` は既定のブランチ `main` を指します。ブランチそのものはまだありません。指す先のバージョンがないためです。
 
-`fdl init` は、サーバーで `git init --bare` を打つのと同じく、読み手が読む場所にリポジトリを作ります。手元で書く場所は、次に作る作業カタログです。
+`fdl init` は、サーバーで `git init --bare` を打つのと同じく、読み手が読む場所にリポジトリを作ります。手元で書く場所は、次に作る作業メタデータです。
 
-## 作業カタログをチェックアウトする
+## 作業メタデータをチェックアウトする
 
-リポジトリには直接書き込みません。自分のディスクにある SQLite ファイルの DuckLake カタログ（作業カタログ）に書き、書き終えたらそれをバージョンにします。
+リポジトリには直接書き込みません。自分のディスクにある SQLite ファイルの DuckLake メタデータ（作業メタデータ）に書き、書き終えたらそれをバージョンにします。
 
 ```bash
 fdl checkout ./towns/ work/lake.sqlite
 ```
 
-最初のバージョンができる前は、`checkout` は空のカタログを作ります。その後は、`main` が指すバージョンのカタログを写します。作業カタログを ATTACH する文を表示します。
+最初のバージョンができる前は、`checkout` は空のメタデータを作ります。その後は、`main` が指すバージョンのメタデータを写します。作業メタデータを ATTACH する文を表示します。
 
 ```sql
 ATTACH 'ducklake:work/lake.sqlite' AS lake (
@@ -49,7 +49,7 @@ ATTACH 'ducklake:work/lake.sqlite' AS lake (
 );
 ```
 
-作業カタログの隣の `work/lake.sqlite.fdl.json` に、リポジトリ、ブランチ、チェックアウト元のバージョンが記録されます。
+作業メタデータの隣の `work/lake.sqlite.fdl.json` に、リポジトリ、ブランチ、チェックアウト元のバージョンが記録されます。
 
 ## 書く
 
@@ -60,7 +60,7 @@ CREATE TABLE lake.main.towns AS
 SELECT * FROM 'towns.csv';
 ```
 
-`DATA_INLINING_ROW_LIMIT 0` を付けると、DuckLake はすべての行を Parquet に書きます。既定のままだと小さな表をカタログの中に持ちますが、バージョンは行を、読み手が取得できるデータファイルとして持つ必要があります。
+`DATA_INLINING_ROW_LIMIT 0` を付けると、DuckLake はすべての行を Parquet に書きます。既定のままだと小さな表をメタデータの中に持ちますが、バージョンは行を、読み手が取得できるデータファイルとして持つ必要があります。
 
 ## 説明を書く
 
@@ -74,7 +74,7 @@ SELECT * FROM 'towns.csv';
 }
 ```
 
-必須なのは `name` と `title` だけです。`fdl commit` がこのファイルをカタログと照らし合わせ、表ごとの行数と列ごとの型を書き足します。
+必須なのは `name` と `title` だけです。`fdl commit` がこのファイルをメタデータと照らし合わせ、表ごとの行数と列ごとの型を書き足します。
 
 ## コミットして push する
 
@@ -83,7 +83,7 @@ fdl commit work/lake.sqlite -m "First towns" --author alice
 fdl push work/lake.sqlite
 ```
 
-`commit` は作業カタログを固めて手元でバージョンにします。`push` はテーブルごとに、データを読まずに表示できる小さな要約（profile）を測り、バージョンと一緒にアップロードして `main` をそこへ動かし、`refs/heads/main -> 019a3c4e-… (version 1)` と表示します。リポジトリは次のようになります。
+`commit` は作業メタデータを固めて手元でバージョンにします。`push` はテーブルごとに、データを読まずに表示できる小さな要約（profile）を測り、バージョンと一緒にアップロードして `main` をそこへ動かし、`refs/heads/main -> 019a3c4e-… (version 1)` と表示します。リポジトリは次のようになります。
 
 ```
 towns/
@@ -91,7 +91,7 @@ towns/
   HEAD
   refs/heads/main                       019a3c4e-…
   versions/019a3c4e-…/
-    ducklake.duckdb
+    metadata.db
     dataset.json
     files.json
     profiles/main/towns.json
@@ -114,16 +114,16 @@ fdl log ./towns/
 fdl url ./towns/
 ```
 
-`main` が指すバージョンのカタログを表示します。読み取り専用で ATTACH し、データファイルの場所を DuckDB に渡してください。
+`main` が指すバージョンのメタデータを表示します。読み取り専用で ATTACH し、データファイルの場所を DuckDB に渡してください。
 
 ```sql
-ATTACH 'ducklake:towns/versions/019a3c4e-…/ducklake.duckdb' AS towns (
+ATTACH 'ducklake:towns/versions/019a3c4e-…/metadata.db' AS towns (
   DATA_PATH 'towns/data/', OVERRIDE_DATA_PATH true, READ_ONLY
 );
 SELECT count(*) FROM towns.main.towns;
 ```
 
-バージョンのカタログは変わらないので、読み手はいつまでもキャッシュしてかまいません。変わるのは `HEAD` と `refs/` の下のファイルだけです。
+バージョンのメタデータは変わらないので、読み手はいつまでもキャッシュしてかまいません。変わるのは `HEAD` と `refs/` の下のファイルだけです。
 
 ## 2 つめのバージョンを作る
 
@@ -140,6 +140,6 @@ fdl commit work/lake.sqlite -m "Add 2026" --author alice
 fdl push work/lake.sqlite
 ```
 
-新しいバージョンは、最初のバージョンを親として記録します。最初の Parquet ファイルは両方のカタログが参照し、新しいファイルは 2 つめのカタログだけが参照します。
+新しいバージョンは、最初のバージョンを親として記録します。最初の Parquet ファイルは両方のメタデータが参照し、新しいファイルは 2 つめのメタデータだけが参照します。
 
 途中でほかの人が push していたら、この push は断られます。新しいバージョンが、いまの `main` の上に積まれていないためです。チェックアウトし直して、変更をやり直してください。理由は[バージョンと ref](/ja/concepts/versions-and-refs) で説明しています。

@@ -3,18 +3,18 @@ title: Serving over HTTP
 description: Letting readers attach a repository from a plain HTTP server or a CDN, and the caching each kind of file allows.
 ---
 
-Readers only read files, so a repository can be served by any HTTP server, a bucket's public URL or a CDN in front of one. DuckDB fetches the catalog and the Parquet files with range requests.
+Readers only read files, so a repository can be served by any HTTP server, a bucket's public URL or a CDN in front of one. DuckDB fetches the metadata and the Parquet files with range requests.
 
 ## What a reader fetches
 
 1. `HEAD`, or the ref it was asked for
 2. `refs/heads/main`, if `HEAD` pointed there
 3. `versions/<ID>/version.json`, to check the version is not expired and that it can open the format
-4. `versions/<ID>/ducklake.duckdb`, with range requests
+4. `versions/<ID>/metadata.db`, with range requests
 5. the Parquet files the query needs, with range requests
 
 ```sql
-ATTACH 'ducklake:https://data.example.org/towns/versions/019a3c4e-…/ducklake.duckdb' AS towns (
+ATTACH 'ducklake:https://data.example.org/towns/versions/019a3c4e-…/metadata.db' AS towns (
   DATA_PATH 'https://data.example.org/towns/data/', OVERRIDE_DATA_PATH true, READ_ONLY
 );
 ```
@@ -38,11 +38,11 @@ The server must answer range requests (`Accept-Ranges: bytes`, `206 Partial Cont
 
 Readers do not list. A reader that knows a ref name gets everything else by following IDs, and one that does not reads `refs.json` for the names. Leave directory listings off; nothing needs them.
 
-## Serving the latest catalog at a fixed URL
+## Serving the latest metadata at a fixed URL
 
-Some readers do not know FDL and expect one catalog URL. A host may serve the catalog of the version `HEAD` holds at `<root>/ducklake.duckdb`. It must then send the version ID in an `FDL-Version` response header, so a reader can tell which version it got, and must not let it be cached longer than the ref.
+Some readers do not know FDL and expect one metadata file URL. A host may serve the metadata of the version `HEAD` holds at `<root>/metadata.db`. It must then send the version ID in an `FDL-Version` response header, so a reader can tell which version it got, and must not let it be cached longer than the ref.
 
-This is a convenience for readers, not part of the repository: the store holds no catalog outside `versions/`.
+This is a convenience for readers, not part of the repository: the store holds no metadata outside `versions/`.
 
 ## CORS
 

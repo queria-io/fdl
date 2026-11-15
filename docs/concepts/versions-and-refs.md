@@ -1,17 +1,17 @@
 ---
 title: Versions and refs
-description: A version is a frozen catalog with a record; a ref is a name that points at one. How they relate to DuckLake snapshots and to Git commits.
+description: A version is a frozen metadata file with a record; a ref is a name that points at one. How they relate to DuckLake snapshots and to Git commits.
 ---
 
 ## Versions
 
-A version is one frozen DuckLake catalog and a record of how it came to be. It lives in its own folder and is never changed once written.
+A version is one frozen DuckLake metadata and a record of how it came to be. It lives in its own folder and is never changed once written.
 
 ```
 versions/019a3c4e-7b21-7f3a-9c55-2f0d8e1a4b6c/
   version.json         the record: parents, author, message, checksums
   dataset.json         what it holds: tables, columns, license
-  ducklake.duckdb      the frozen catalog
+  metadata.db          the frozen metadata
 ```
 
 The record says:
@@ -20,10 +20,10 @@ The record says:
 - `seq`: the number shown to people, the parent's `seq` plus one
 - `parents`: the version it was built on. Empty for the first
 - `author`, `message` and `created_at`
-- `catalog`: the size and sha256 of the catalog file, so a reader can check what it fetched
-- `ducklake`: the DuckLake format of the catalog and the snapshot it was frozen at
+- `metadata`: the size and sha256 of the metadata file, so a reader can check what it fetched
+- `ducklake`: the DuckLake format of the metadata and the snapshot it was frozen at
 
-The ID is not a hash of the content, as a Git commit's is. The same catalog can be written as different bytes by two DuckDB releases, so a content hash would not be stable. The sha256 in `catalog` checks the content instead.
+The ID is not a hash of the content, as a Git commit's is. The same metadata can be written as different bytes by two DuckDB releases, so a content hash would not be stable. The sha256 in `metadata` checks the content instead.
 
 The full list of fields is in [Versions](/spec/versions) in the specification.
 
@@ -31,7 +31,7 @@ The full list of fields is in [Versions](/spec/versions) in the specification.
 
 DuckLake makes a snapshot on every write: each `INSERT`, `CREATE TABLE` or `ALTER` in its own transaction. A day of work can make hundreds. A version is made when you decide the work is ready, and it takes the last of those snapshots.
 
-A snapshot is to a version what a commit on a work branch is to the squashed commit that lands on `main`. The snapshots stay inside the catalog, with their `commit_message` and `commit_extra_info`, so the detail is not lost. `version.json` records the range of snapshots the version adds after its parent, but does not copy them.
+A snapshot is to a version what a commit on a work branch is to the squashed commit that lands on `main`. The snapshots stay inside the metadata, with their `commit_message` and `commit_extra_info`, so the detail is not lost. `version.json` records the range of snapshots the version adds after its parent, but does not copy them.
 
 ## Refs
 
@@ -94,4 +94,4 @@ Moving a branch back, to undo a version, is allowed only when asked for explicit
       First towns
 ```
 
-Versions that were taken out of retention stay in the history. Their record is kept, only their catalog is gone. See [Retention](/internals/inside-a-repository#taking-versions-out-of-retention).
+Versions that were taken out of retention stay in the history. Their record is kept, only their metadata is gone. See [Retention](/internals/inside-a-repository#taking-versions-out-of-retention).

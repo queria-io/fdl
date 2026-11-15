@@ -1,11 +1,11 @@
 ---
 title: Writing
-description: Checkout, commit and push - the working catalog, the order of writes, and when a push is refused.
+description: Checkout, commit and push - the working metadata, the order of writes, and when a push is refused.
 ---
 
-## Working catalog
+## Working metadata
 
-A writer writes to a working catalog: a DuckLake catalog in SQLite, outside the repository. There is one kind of working catalog, whether it is on a laptop or in a host's container.
+A writer writes to a working metadata file: a DuckLake metadata file in SQLite, outside the repository. There is one kind of working metadata, whether it is on a laptop or in a host's container.
 
 - It must be attached with `DATA_INLINING_ROW_LIMIT 0`, so that every row goes to a data file
 - Its data path is the repository's data folder (`<root><data_dir>`), so new data files land in the repository. A repository over HTTP is the exception: new data files go to a folder on the writer's machine and the push uploads them (see [Pushing over HTTP](/spec/http#writing-to-it))
@@ -15,18 +15,18 @@ A writer writes to a working catalog: a DuckLake catalog in SQLite, outside the 
 
 | Step | What happens |
 | --- | --- |
-| checkout | Make a working catalog from the catalog of the branch's version, and remember that version. Before the first version, make an empty one |
-| commit | Freeze the working catalog's last snapshot into a new version, with the remembered version as its parent, and describe it in `dataset.json` |
-| push | Check the data files, measure each table into a profile (optional), upload the catalog, `dataset.json`, `files.json`, `tree.json` and the profiles, then `version.json`, then move the ref on condition |
+| checkout | Make a working metadata file from the metadata of the branch's version, and remember that version. Before the first version, make an empty one |
+| commit | Freeze the working metadata's last snapshot into a new version, with the remembered version as its parent, and describe it in `dataset.json` |
+| push | Check the data files, measure each table into a profile (optional), upload the metadata, `dataset.json`, `files.json`, `tree.json` and the profiles, then `version.json`, then move the ref on condition |
 
-A writer may keep a committed version on its own disk and push it later, as Git keeps commits until `git push`. Until the push, nothing in the repository changes, apart from data files the working catalog wrote there. No version names those yet, so they are deleted after the grace period if the version is never pushed.
+A writer may keep a committed version on its own disk and push it later, as Git keeps commits until `git push`. Until the push, nothing in the repository changes, apart from data files the working metadata wrote there. No version names those yet, so they are deleted after the grace period if the version is never pushed.
 
-Checking out copies DuckLake's bookkeeping tables from the frozen catalog into SQLite as they are. Freezing does the reverse, keeping the rows up to the last snapshot. Neither rewrites a data file.
+Checking out copies DuckLake's bookkeeping tables from the frozen metadata into SQLite as they are. Freezing does the reverse, keeping the rows up to the last snapshot. Neither rewrites a data file.
 
 When freezing, a writer must:
 
-- refuse a working catalog that holds inlined rows
-- set the frozen catalog's `data_path` to the absolute URL of `<root><data_dir>`
+- refuse a working metadata file that holds inlined rows
+- set the frozen metadata's `data_path` to the absolute URL of `<root><data_dir>`
 - refuse if any data file is recorded with an absolute path, or outside `data_dir`
 
 ## When nothing changed
@@ -36,13 +36,13 @@ A writer should not make a version that holds what its parent holds, as Git make
 - the last snapshot is the parent's (`ducklake.snapshot_id`), or
 - the same tables and views are there, each table with the same columns and types and the same rows, counted as a multiset (order does not matter), and `dataset.json` and `tree.json` have the parent's sha256 (or neither version has a `tree.json`)
 
-A table rebuilt from the same input is written to new data files, so comparing files or catalog bytes is not enough. A writer compares the files first and reads the rows only of tables whose files differ. A writer that cannot read the rows makes the version. A writer may make one anyway when asked, as `git commit --allow-empty` does.
+A table rebuilt from the same input is written to new data files, so comparing files or metadata bytes is not enough. A writer compares the files first and reads the rows only of tables whose files differ. A writer that cannot read the rows makes the version. A writer may make one anyway when asked, as `git commit --allow-empty` does.
 
 ## Reverting
 
 A writer that brings back what an earlier version held makes a new version, as `git revert` makes a new commit. It does not move a branch back: a branch moves only forward by default (see [Refs](/spec/refs)), and readers may already hold the versions in between.
 
-The new version's parent is the version the working catalog was checked out at, so pushing it is refused if the branch has moved since, as for any commit. Its tables and views are those of the earlier version at its snapshot, with the same columns and rows, and its `dataset.json` and `tree.json` are the earlier version's. The working catalog gets there in a new snapshot: tables the earlier version did not hold are dropped, and tables changed since are written again from their rows at the earlier snapshot. The earlier snapshot must still be in the catalog.
+The new version's parent is the version the working metadata was checked out at, so pushing it is refused if the branch has moved since, as for any commit. Its tables and views are those of the earlier version at its snapshot, with the same columns and rows, and its `dataset.json` and `tree.json` are the earlier version's. The working metadata gets there in a new snapshot: tables the earlier version did not hold are dropped, and tables changed since are written again from their rows at the earlier snapshot. The earlier snapshot must still be in the metadata.
 
 ## Branches
 
@@ -52,11 +52,11 @@ A branch is made by creating `refs/heads/<name>` at a version (see [Refs](/spec/
 
 Merging brings what another branch changed into the branch being written. The writer works out the result from three versions:
 
-- ours: the version the working catalog was checked out at, on the branch being written
+- ours: the version the working metadata was checked out at, on the branch being written
 - theirs: the version of the other branch
 - the base: a common ancestor of ours and theirs that no other common ancestor descends from, following every entry of `parents`. When there is more than one, the writer refuses to merge
 
-When the base is theirs, there is nothing to merge. When the base is ours, the branch is moved to theirs, with no new version. Otherwise the writer makes a merge version: its `parents` are ours, then theirs, and pushing it is refused if the branch has moved since, as for any commit. The base's catalog must still be there, with its snapshot; a writer refuses to merge from a base past retention.
+When the base is theirs, there is nothing to merge. When the base is ours, the branch is moved to theirs, with no new version. Otherwise the writer makes a merge version: its `parents` are ours, then theirs, and pushing it is refused if the branch has moved since, as for any commit. The base's metadata must still be there, with its snapshot; a writer refuses to merge from a base past retention.
 
 ### Tables
 
@@ -83,7 +83,7 @@ A table without a primary key is not merged by rows, even when the two sides cha
 
 `dataset.json` and `tree.json` are merged key by key. An object is compared member by member, and the entries of `tables` are matched by `schema` and `name`, and those of `fields` by `name`. Any other value (a string, a number, a list) is taken whole: when only one side changed it, that side's value; when both changed it differently, a conflict. A file of `tree.json` is matched by its path.
 
-The values made from the catalog (`rows`, and each field's `type` and `nullable`) are written again from the merge version's catalog, not merged.
+The values made from the metadata (`rows`, and each field's `type` and `nullable`) are written again from the merge version's metadata, not merged.
 
 ### Conflicts
 
@@ -91,12 +91,12 @@ A merge with any conflict makes no version. The writer lists each conflict, by t
 
 ### The merge version
 
-The working catalog is checked out from ours and gets the result in a new snapshot. Data files may be written anew or, for a table taken whole from theirs, named as theirs names them. `diff` compares the merge version with ours, its first parent.
+The working metadata is checked out from ours and gets the result in a new snapshot. Data files may be written anew or, for a table taken whole from theirs, named as theirs names them. `diff` compares the merge version with ours, its first parent.
 
 ## Order of writes
 
 1. Data files and assets
-2. `versions/<ID>/ducklake.duckdb` (and any `catalogs/`)
+2. `versions/<ID>/metadata.db` (and any `metadata/`)
 3. `versions/<ID>/dataset.json`, `versions/<ID>/files.json`, `versions/<ID>/tree.json` and `versions/<ID>/profiles/`
 4. `versions/<ID>/version.json`
 5. The ref, on condition
@@ -107,9 +107,9 @@ Files of a version are written once. A writer that finds one already there with 
 
 ## When a push is refused
 
-A push from a stale working catalog is refused on two checks:
+A push from stale working metadata is refused on two checks:
 
 1. The new version does not descend from the version the branch holds now. Someone else pushed first
-2. A data file the catalog names, or a file `tree.json` lists, is missing from the repository. A host may check the assets the rows hold as well. A file that no live version named for longer than the grace period may have been deleted, even if the writer found it there
+2. A data file the metadata names, or a file `tree.json` lists, is missing from the repository. A host may check the assets the rows hold as well. A file that no live version named for longer than the grace period may have been deleted, even if the writer found it there
 
 In both cases the writer checks out again, redoes the work and pushes again. After the first, it may instead merge the branch into its work. Nothing in the repository needs to be cleaned up: the refused version is not named by any ref.

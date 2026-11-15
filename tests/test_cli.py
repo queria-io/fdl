@@ -278,7 +278,7 @@ def test_url_prints_the_attach_statement(tmp_path: Path) -> None:
 def rows(store: LocalStore, sql: str) -> list[tuple]:
     con = duckdb.connect()
     con.execute("INSTALL ducklake; LOAD ducklake;")
-    con.execute(f"ATTACH 'ducklake:{store.root / layout.version_catalog(repo.head(store).id)}' AS v (READ_ONLY)")
+    con.execute(f"ATTACH 'ducklake:{store.root / layout.version_metadata(repo.head(store))}' AS v (READ_ONLY)")
     found = con.execute(sql).fetchall()
     con.close()
     return found

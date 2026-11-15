@@ -37,7 +37,9 @@ def is_id(value: str) -> bool:
 
 
 @dataclass(frozen=True)
-class Catalog:
+class Metadata:
+    """The version's DuckLake metadata file: its name, storage format, size and hash."""
+
     path: str
     storage: str
     bytes: int
@@ -69,7 +71,7 @@ class Version:
     created_at: str
     author: dict
     message: str
-    catalog: Catalog
+    metadata: Metadata
     ducklake: DuckLake
     #: What changed since the first parent, as `fdl diff --json` prints it. Optional.
     diff: dict | None = None
@@ -97,11 +99,11 @@ class Version:
             "created_at": self.created_at,
             "author": self.author,
             "message": self.message,
-            "catalog": {
-                "path": self.catalog.path,
-                "storage": self.catalog.storage,
-                "bytes": self.catalog.bytes,
-                "sha256": self.catalog.sha256,
+            "metadata": {
+                "path": self.metadata.path,
+                "storage": self.metadata.storage,
+                "bytes": self.metadata.bytes,
+                "sha256": self.metadata.sha256,
             },
             **(
                 {
@@ -151,7 +153,8 @@ def parse(data: bytes, *, expected_id: str | None = None) -> Version:
             raise VersionError(f"written for fdl {record['fdl']}, this reads {layout.FDL_VERSION}")
         if expected_id is not None and record["id"] != expected_id:
             raise VersionError(f"records id {record['id']} but sits under {expected_id}")
-        catalog = record["catalog"]
+        # Versions written by 0.26 and earlier record it as `catalog`.
+        metadata = record["metadata"] if "metadata" in record else record["catalog"]
         ducklake = record["ducklake"]
         dataset = record.get("dataset")
         return Version(
@@ -162,11 +165,11 @@ def parse(data: bytes, *, expected_id: str | None = None) -> Version:
             created_at=record["created_at"],
             author=dict(record["author"]),
             message=record["message"],
-            catalog=Catalog(
-                path=layout.check_file_name(catalog["path"]),
-                storage=catalog["storage"],
-                bytes=int(catalog["bytes"]),
-                sha256=catalog["sha256"],
+            metadata=Metadata(
+                path=layout.check_file_name(metadata["path"]),
+                storage=metadata["storage"],
+                bytes=int(metadata["bytes"]),
+                sha256=metadata["sha256"],
             ),
             ducklake=DuckLake(
                 format=ducklake["format"],

@@ -22,7 +22,7 @@ from . import catalog, layout, objects, profiles, refs
 from . import dataset as dataset_json
 from . import diff as diffs
 from .store import Store, is_conflict, is_missing
-from .version import Catalog, DuckLake, File, Version, VersionError, new_id, parse, utc_now
+from .version import DuckLake, File, Metadata, Version, VersionError, new_id, parse, utc_now
 
 
 class RepoError(RuntimeError):
@@ -34,7 +34,7 @@ class NotFastForward(RepoError):
 
 
 class NothingToCommit(RepoError):
-    """The working catalog holds what its parent holds, so no version is made."""
+    """The working metadata holds what its parent holds, so no version is made."""
 
     def __init__(self, parent: Version) -> None:
         super().__init__(f"nothing changed since {parent.id} (version {parent.seq})")
@@ -123,7 +123,7 @@ def readable(store: Store, name: str = layout.HEAD) -> Version:
     if version is None:
         raise RepoError(f"{name} holds no version yet")
     if is_expired(store, version.id):
-        raise RepoError(f"{version.id} is past retention or withdrawn and has no catalog")
+        raise RepoError(f"{version.id} is past retention or withdrawn and has no metadata")
     return version
 
 
@@ -144,10 +144,10 @@ def commit(
     parent_dataset: dict | None = None,
     merged: Version | None = None,
 ) -> Version:
-    """Freeze the working catalog into a version under ``out_dir/<ID>/``.
+    """Freeze the working metadata into a version under ``out_dir/<ID>/``.
 
     ``dataset`` is the writer's description (`dataset.json`), checked against
-    the frozen catalog and completed from it. ``tree`` lists the version's
+    the frozen metadata and completed from it. ``tree`` lists the version's
     other files (`tree.json`: path, sha256, bytes), such as its README.
 
     ``allow_empty=False`` refuses a version that would hold what ``parent``
@@ -160,7 +160,7 @@ def commit(
     relative to it, or the version would point readers at the writer's disk.
     Nothing is uploaded: that is `push`.
 
-    ``working_data`` is where the working catalog wrote its new data files,
+    ``working_data`` is where the working metadata wrote its new data files,
     when not where it records (see `checkout`): comparing reads them there.
 
     ``parent_dataset`` is the parent's `dataset.json`, which the version's
@@ -173,7 +173,7 @@ def commit(
     try:
         catalog.convert(working, frozen, data_path=data_path)
         catalog.set_data_path(frozen, data_path)
-        # Files a working catalog read from the repository where they are.
+        # Files a working metadata file read from the repository where they are.
         catalog.unpin_files(frozen, data_path)
         absolute = catalog.absolute_paths(frozen)
         if absolute:
@@ -181,7 +181,7 @@ def commit(
                 f"{len(absolute)} file(s) are recorded with an absolute path "
                 f"(first: {absolute[0].path}); rebuild so they sit under the data path"
             )
-        # The description first: it reads the catalog alone, while comparing
+        # The description first: it reads the metadata alone, while comparing
         # the contents can read every row of a rebuilt table.
         if (
             not allow_empty
@@ -242,18 +242,18 @@ def checkout(
     version: Version | None = None,
     storage: str | None = None,
 ) -> Version | None:
-    """Make a working catalog from the version ``ref`` holds, or from ``version`` when given.
+    """Make a working metadata file from the version ``ref`` holds, or from ``version`` when given.
 
     Before the first version there is nothing to copy, and an empty working
-    catalog is created instead. Returns the version checked out, which a
-    commit from this working catalog builds on.
+    metadata is created instead. Returns the version checked out, which a
+    commit from this working metadata builds on.
 
     A store DuckDB cannot write to (one over HTTP) needs ``local_data``, a
     folder on this machine: new data files are written there and uploaded by
     `push`, while the files already in the repository are read where they are.
 
     ``storage`` is instead the repository's root in its object storage (an
-    ``s3://`` URL, say): the working catalog reads and writes the data files
+    ``s3://`` URL, say): the working metadata reads and writes the data files
     there directly, with keys of the writer's own, and `push` has none to
     upload.
     """
@@ -274,11 +274,11 @@ def checkout(
         catalog.create(working, alias="lake", data_path=data_path)
         return None
     if is_expired(store, version.id):
-        raise RepoError(f"{version.id} is past retention and has no catalog")
+        raise RepoError(f"{version.id} is past retention and has no metadata")
     working.parent.mkdir(parents=True, exist_ok=True)
     frozen = working.with_name(f".{working.name}.{version.id}.duckdb")
     try:
-        frozen.write_bytes(store.get(layout.version_catalog(version.id)))
+        frozen.write_bytes(store.get(layout.version_metadata(version)))
         check_catalog(frozen, version)
         if data_path != remote_data and storage is None:
             catalog.pin_files(frozen, remote_data)
@@ -289,20 +289,20 @@ def checkout(
 
 
 def check_catalog(frozen: Path, version: Version) -> None:
-    """Refuse a catalog that is not the one ``version`` records, or that names
+    """Refuse a metadata file that is not the one ``version`` records, or that names
     a data file outside the repository's data folder.
 
-    A reader that trusted such a catalog would read files the repository does
+    A reader that trusted such a metadata file would read files the repository does
     not hold, with the reader's own credentials.
     """
-    if _sha256(frozen) != version.catalog.sha256:
-        raise RepoError(f"{version.id}: the catalog's sha256 is not the one version.json records")
+    if _sha256(frozen) != version.metadata.sha256:
+        raise RepoError(f"{version.id}: the metadata's sha256 is not the one version.json records")
     absolute = catalog.absolute_paths(frozen)
     if absolute:
-        raise RepoError(f"{version.id}: the catalog names a data file by an absolute path: {absolute[0].path}")
+        raise RepoError(f"{version.id}: the metadata names a data file by an absolute path: {absolute[0].path}")
     for key in catalog.data_files(frozen):
         if key.startswith("/") or "\\" in key or any(part in ("", ".", "..") for part in key.split("/")):
-            raise RepoError(f"{version.id}: the catalog names a data file outside the data folder: {key}")
+            raise RepoError(f"{version.id}: the metadata names a data file outside the data folder: {key}")
 
 
 def storage_data_path(storage: str, config: Config) -> str:
@@ -342,12 +342,12 @@ def record(
     parent_dataset: dict | None = None,
     merged: Version | None = None,
 ) -> Version:
-    """Make a version out of a catalog that is already frozen.
+    """Make a version out of a metadata file that is already frozen.
 
-    For a writer that freezes the catalog itself (with checks of its own) and
-    only needs the version around it. The catalog is copied, not moved.
+    For a writer that freezes the metadata itself (with checks of its own) and
+    only needs the version around it. The metadata is copied, not moved.
 
-    The version's ``diff`` compares the catalog at the parent's snapshot with
+    The version's ``diff`` compares the metadata at the parent's snapshot with
     the frozen one. Its descriptions are compared only when both ``dataset``
     and ``parent_dataset`` (the parent's `dataset.json`) are given.
 
@@ -360,7 +360,7 @@ def record(
     version_id = new_id()
     target = Path(out_dir) / version_id
     target.mkdir(parents=True)
-    copied = target / layout.CATALOG
+    copied = target / layout.METADATA
     try:
         shutil.copyfile(frozen, copied)
         recorded = catalog.recorded_format(copied)
@@ -398,8 +398,8 @@ def record(
             created_at=utc_now(),
             author=dict(author),
             message=message,
-            catalog=Catalog(
-                path=layout.CATALOG,
+            metadata=Metadata(
+                path=layout.METADATA,
                 storage=catalog.storage_version(copied),
                 bytes=copied.stat().st_size,
                 sha256=_sha256(copied),
@@ -415,14 +415,14 @@ def record(
         (target / layout.VERSION_RECORD).write_bytes(version.to_json())
     except BaseException:
         # Whatever stopped it (a full disk included), a half-made version is a
-        # copy of the catalog that nothing will ever read.
+        # copy of the metadata that nothing will ever read.
         shutil.rmtree(target, ignore_errors=True)
         raise
     return version
 
 
 def _write_files_index(target: Path, frozen: Path, snapshot_id: int) -> File:
-    """Write `files.json`: each table's files at the frozen snapshot, and every file the catalog names."""
+    """Write `files.json`: each table's files at the frozen snapshot, and every file the metadata names."""
     written = target / layout.FILES
     index = {"tables": catalog.table_files(frozen, snapshot_id), "named": catalog.data_files(frozen)}
     written.write_bytes((json.dumps(index, ensure_ascii=False, indent=2) + "\n").encode())
@@ -443,13 +443,13 @@ def push(
     """Upload a committed version, then move ``ref`` to it.
 
     In the order the format asks for: the data files must already be there,
-    then the catalog, then `version.json`, and the ref last. A push stopped
+    then the metadata, then `version.json`, and the ref last. A push stopped
     half way leaves files no ref points at, which readers never see.
 
     ``move_ref=False`` uploads the version and stops: for a host that moves
     its refs itself (after an approval, say).
 
-    ``local_data`` is the folder a working catalog wrote new data files to
+    ``local_data`` is the folder a working metadata file wrote new data files to
     (see `checkout`). Those the repository lacks are uploaded first.
 
     ``assets`` are the sha256 the version's asset columns hold (see
@@ -470,15 +470,15 @@ def push(
         return
     _refuse_unless_fast_forward(store, current_ref, version)
 
-    frozen = Path(local) / layout.CATALOG
+    frozen = Path(local) / version.metadata.path
     if local_data is not None:
         _upload_data_files(store, config, frozen, Path(local_data))
     missing = _missing_data_files(store, config, frozen)
     if missing:
         raise RepoError(
-            f"{len(missing)} data file(s) the catalog names are not in the "
+            f"{len(missing)} data file(s) the metadata names are not in the "
             f"repository (first: {missing[0]}). Rebuild from the working "
-            f"catalog and commit again."
+            f"metadata and commit again."
         )
     _upload_objects(store, _needed_objects(Path(local), version, assets), local_objects or {})
     upload(store, local, version)
@@ -654,7 +654,7 @@ def add_profiles(store: Store, version: Version, *, setup: Iterable[str] = ()) -
     For a version made before its writer profiled tables, or whose profiling
     failed. A profile already there is left as it is. Returns the paths put,
     under the version, and the tables (``schema.name``) that could not be read.
-    Refused for a version past retention, which has no catalog to check out.
+    Refused for a version past retention, which has no metadata to check out.
     """
     wanted = missing_profiles(store, version)
     if not wanted:
@@ -677,12 +677,12 @@ def add_profiles(store: Store, version: Version, *, setup: Iterable[str] = ()) -
 
 
 def upload(store: Store, local: Path, version: Version) -> None:
-    """Put a committed version's files, catalog first and the record last.
+    """Put a committed version's files, metadata first and the record last.
 
     No checks and no ref: for a host that checks and moves its refs itself.
     """
     local = Path(local)
-    _put_once(store, layout.version_catalog(version.id), local / layout.CATALOG)
+    _put_once(store, layout.version_metadata(version), local / version.metadata.path)
     # Before the record, which is what makes a version there at all.
     if version.dataset is not None:
         _put_once(store, layout.version_dir(version.id) + version.dataset.path, local / version.dataset.path)
@@ -727,9 +727,9 @@ def is_ancestor(store: Store, ancestor_id: str, descendant: Version) -> bool:
 def in_history(store: Store, ancestor_id: str, descendant: Version) -> bool:
     """Whether ``ancestor_id`` is ``descendant`` or behind it by first parent.
 
-    The first-parent history is the one a working catalog's snapshots follow;
+    The first-parent history is the one a working metadata file's snapshots follow;
     a version reached only through a merge's second parent has snapshots of
-    another catalog. ``seq`` falls by one at each step, so the walk stops
+    another metadata file. ``seq`` falls by one at each step, so the walk stops
     once it is below the ancestor's.
     """
     target = read_version(store, ancestor_id)
@@ -778,7 +778,7 @@ def expire(store: Store, version_id: str, *, reason: str = "retention") -> None:
     which ones may go is for a pass over the whole repository to decide.
     Running it again finishes a run that stopped between the two steps.
     """
-    read_version(store, version_id)
+    version = read_version(store, version_id)
     held = _held(store)
     if version_id in held:
         raise RepoError(f"{held[version_id]} points at {version_id}, so it is kept")
@@ -800,11 +800,12 @@ def expire(store: Store, version_id: str, *, reason: str = "retention") -> None:
             store.put(mark, (json.dumps(record) + "\n").encode(), content_type="application/json")
     store.delete(
         [
-            layout.version_catalog(version_id),
+            layout.version_metadata(version),
             # The index names files the grace period may delete.
             layout.version_dir(version_id) + layout.FILES,
             layout.version_dir(version_id) + layout.TREE,
-            *store.list(layout.version_dir(version_id) + layout.CATALOGS_DIR),
+            *store.list(layout.version_dir(version_id) + layout.METADATA_DIR),
+            *store.list(layout.version_dir(version_id) + layout.LEGACY_METADATA_DIR),
             *store.list(layout.version_dir(version_id) + layout.PROFILES_DIR),
         ]
     )
@@ -832,7 +833,7 @@ def plan_withdrawal(store: Store, version_ids: Iterable[str], *, setup: Iterable
     the first step, a new version without the data, is the writer's.
 
     Shared objects are data files and assets. ``setup`` runs before a
-    catalog is attached to read its asset columns: a ``CREATE SECRET`` for
+    metadata is attached to read its asset columns: a ``CREATE SECRET`` for
     data files in private storage, say.
     """
     config = read_config(store)
@@ -862,9 +863,9 @@ def plan_withdrawal(store: Store, version_ids: Iterable[str], *, setup: Iterable
         for version_id in _version_ids(store):
             if version_id in affected:
                 version = read_version(store, version_id)
-                local = _fetch_catalog(store, version_id, Path(tmp))
+                local = _fetch_catalog(store, version, Path(tmp))
                 if local is not None:
-                    # Every file the catalog has ever named: earlier snapshots
+                    # Every file the metadata has ever named: earlier snapshots
                     # in it may hold the data too.
                     candidates.update(config.data_dir + key for key in catalog.data_files(local))
                     try:
@@ -872,7 +873,7 @@ def plan_withdrawal(store: Store, version_ids: Iterable[str], *, setup: Iterable
                     except objects.ObjectError:
                         # A run stopped half way may have deleted the data
                         # files that held its asset columns: then, as for a
-                        # version without a catalog, every asset no live
+                        # version without a metadata file, every asset no live
                         # version reaches goes.
                         catalogless = True
                     local.unlink()
@@ -902,21 +903,21 @@ def plan_withdrawal(store: Store, version_ids: Iterable[str], *, setup: Iterable
 def _reached_by(store: Store, config: Config, version: Version, tmp: Path, setup: list[str]) -> set[str]:
     """The shared objects a live version reaches, as store keys.
 
-    A version reaches every data file its catalog names, at any snapshot the
-    catalog keeps, not only those it reads at its own snapshot.
+    A version reaches every data file its metadata names, at any snapshot the
+    metadata keeps, not only those it reads at its own snapshot.
     """
-    # files.json names them without the catalog, when it holds `named`.
+    # files.json names them without the metadata, when it holds `named`.
     named = _named_files(store, version)
     local = None
     if named is None or _asset_columns(store, version):
-        local = _fetch_catalog(store, version.id, tmp)
+        local = _fetch_catalog(store, version, tmp)
     reached: set[str] = set()
     if named is not None:
         reached.update(config.data_dir + key for key in named)
     elif local is not None:
         reached.update(config.data_dir + key for key in catalog.data_files(local))
     else:
-        raise RepoError(f"{version.id} is live but has neither files.json with `named` nor a catalog to say what it reaches")
+        raise RepoError(f"{version.id} is live but has neither files.json with `named` nor a metadata file to say what it reaches")
     reached.update(_reached_assets(store, version, local, setup))
     if local is not None:
         local.unlink()
@@ -967,7 +968,7 @@ def _reached_by_all(store: Store, config: Config, version_ids: Iterable[str], se
 def collect(store: Store, *, plan: Collection, setup: Iterable[str] = ()) -> list[str]:
     """Delete the shared objects no live version reaches, once past the grace period.
 
-    Data files left by working catalogs that were never pushed, and those only
+    Data files left by working metadata files that were never pushed, and those only
     versions past retention reached, go this way. Versions written since the
     plan are read first, and what they reach is kept. Returns the keys deleted.
     """
@@ -1019,8 +1020,8 @@ def withdraw(store: Store, version_ids: Iterable[str], *, plan: Withdrawal | Non
 
     Unlike retention it takes live versions and deletes their data files and
     assets at once. In the spec's order: the shared objects go before the
-    catalogs, so a run that stops half way can be run again while the
-    catalogs still say which objects they are. `version.json` stays.
+    metadata files, so a run that stops half way can be run again while the
+    metadata files still say which objects they are. `version.json` stays.
     """
     plan = plan or plan_withdrawal(store, version_ids)
     for name in plan.tags:
@@ -1043,11 +1044,11 @@ def _version_ids(store: Store) -> list[str]:
     return [version_id for version_id in ids if layout.is_version_id(version_id)]
 
 
-def _fetch_catalog(store: Store, version_id: str, tmp: Path) -> Path | None:
-    """The version's catalog in ``tmp``, or ``None`` when it is gone."""
-    local = tmp / f"{version_id}.duckdb"
+def _fetch_catalog(store: Store, version: Version, tmp: Path) -> Path | None:
+    """The version's metadata in ``tmp``, or ``None`` when it is gone."""
+    local = tmp / f"{version.id}.duckdb"
     try:
-        local.write_bytes(store.get(layout.version_catalog(version_id)))
+        local.write_bytes(store.get(layout.version_metadata(version)))
     except Exception as exc:  # noqa: BLE001 - stores raise their own types
         if is_missing(exc):
             return None
@@ -1056,7 +1057,7 @@ def _fetch_catalog(store: Store, version_id: str, tmp: Path) -> Path | None:
 
 
 def _named_files(store: Store, version: Version) -> set[str] | None:
-    """Every data file the version's catalog names, from `named` in its `files.json`.
+    """Every data file the version's metadata names, from `named` in its `files.json`.
 
     ``None`` without a `files.json`, or with one written before `named`: its
     `tables` hold only the files at the version's snapshot.

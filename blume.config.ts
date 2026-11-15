@@ -24,5 +24,9 @@ export default defineConfig({
       fonts: ["Noto Sans JP"],
     },
   },
-  redirects: [{ from: "/cli", to: "/reference/cli" }],
+  redirects: [
+    { from: "/cli", to: "/reference/cli" },
+    { from: "/concepts/working-catalogs", to: "/concepts/working-metadata" },
+    { from: "/ja/concepts/working-catalogs", to: "/ja/concepts/working-metadata" },
+  ],
 });

@@ -1,6 +1,6 @@
 """The ``fdl`` command: the operations in `fdl.repo`, on a terminal.
 
-A working catalog is a DuckLake catalog in SQLite that you write to with any
+A working metadata file is a DuckLake metadata file in SQLite that you write to with any
 DuckDB client. Beside it sits ``<working>.fdl.json``, which remembers the
 repository it came from and the version it was checked out at, so a commit
 knows what it builds on. A commit waits in ``<working>.pending/`` until it is
@@ -30,7 +30,7 @@ from .version import parse as parse_version
 app = typer.Typer(no_args_is_help=True, pretty_exceptions_short=True)
 
 Remote = typer.Argument(help="The repository: s3://bucket/prefix/, https://host/path/ or a folder")
-Working = typer.Argument(help="The working catalog (.sqlite)")
+Working = typer.Argument(help="The working metadata (.sqlite)")
 
 
 def _state_path(working: Path) -> Path:
@@ -95,10 +95,10 @@ def checkout(
         help="The repository's root in its object storage (s3://…), to write new data files there directly instead of uploading them on commit",
     ),
 ) -> None:
-    """Make a working catalog from the version a branch holds."""
+    """Make a working metadata file from the version a branch holds."""
     store = _store(remote)
     # A repository over HTTP takes no writes from DuckDB: new data files go to
-    # a folder beside the working catalog until the commit uploads them, or
+    # a folder beside the working metadata until the commit uploads them, or
     # straight to the repository's storage when the writer has keys to it.
     local = (
         None
@@ -119,7 +119,7 @@ def checkout(
     if storage:
         state["storage"] = storage
     _write_state(working, state)
-    typer.echo(f"{working} at {version.id if version else 'an empty catalog'}")
+    typer.echo(f"{working} at {version.id if version else 'empty metadata'}")
     typer.echo("Write to it with:")
     typer.echo("  " + catalog.attach_sql(working, alias="lake", data_path=data)[-1] + ";")
 
@@ -145,7 +145,7 @@ def commit(
         help="A folder with the files the asset columns point at, to upload those the repository lacks",
     ),
 ) -> None:
-    """Freeze the working catalog into a version, kept beside it until you push it.
+    """Freeze the working metadata into a version, kept beside it until you push it.
 
     Nothing is made when the tables, their rows and the description are what
     the last pushed version holds. Committing again before pushing replaces
@@ -198,9 +198,9 @@ def _commit(
     allow_empty: bool,
     merged=None,
 ):
-    """Freeze the working catalog into a version beside it, to push later.
+    """Freeze the working metadata into a version beside it, to push later.
 
-    Its parent is the version the working catalog was checked out at (or last
+    Its parent is the version the working metadata was checked out at (or last
     pushed). Any version committed before and not pushed is replaced.
     """
     out = Path(tempfile.mkdtemp(prefix=".fdl-commit-", dir=working.resolve().parent))
@@ -239,7 +239,7 @@ def _commit(
         shutil.rmtree(pending, ignore_errors=True)
         out.rename(pending)
     except repo.NothingToCommit:
-        # The working catalog holds what the last pushed version holds, so a
+        # The working metadata holds what the last pushed version holds, so a
         # version committed before and not pushed no longer matches it.
         _drop_pending(working, state)
         raise
@@ -267,7 +267,7 @@ def _drop_pending(working: Path, state: dict, **changes) -> None:
 
 
 def _written(store, state: dict) -> str | None:
-    """Where the working catalog writes its new data files, when not where it records."""
+    """Where the working metadata writes its new data files, when not where it records."""
     if state.get("storage"):
         return repo.storage_data_path(state["storage"], repo.read_config(store))
     if state.get("data"):
@@ -276,7 +276,7 @@ def _written(store, state: dict) -> str | None:
 
 
 def _reading(store, state: dict) -> tuple[str, list[str]]:
-    """Where the working catalog's data files are read from, and the setup to read them."""
+    """Where the working metadata's data files are read from, and the setup to read them."""
     return _written(store, state) or repo.data_url(store), _read_setup(store) + _storage_setup(state.get("storage"))
 
 
@@ -354,7 +354,7 @@ def revert(
 ) -> None:
     """Commit a new version that holds what an earlier version held.
 
-    The working catalog is written back to the earlier version's tables, and
+    The working metadata is written back to the earlier version's tables, and
     the new version builds on the one it was checked out at, so the branch
     moves forward when you push: the versions in between stay in its history.
     Changes not committed are lost. To take out data that must not be
@@ -367,10 +367,10 @@ def revert(
         if repo.is_expired(store, target.id):
             raise repo.RepoError(f"{target.id} is past retention or withdrawn and cannot come back")
         base = repo.read_version(store, state["base"]) if state["base"] else None
-        # By first parent: the snapshots of a version merged in belong to another catalog.
+        # By first parent: the snapshots of a version merged in belong to another metadata file.
         if base is None or not repo.in_history(store, target.id, base):
-            raise repo.RepoError(f"{target.id} is not in the first-parent history of {base.id if base else 'the working catalog'}")
-        # Read before the working catalog is written back, so a refusal leaves it as it was.
+            raise repo.RepoError(f"{target.id} is not in the first-parent history of {base.id if base else 'the working metadata'}")
+        # Read before the working metadata is written back, so a refusal leaves it as it was.
         declared = diffs.described(store, target)
         if declared is None:
             raise repo.RepoError(f"{target.id} has no dataset.json to bring back")
@@ -405,13 +405,13 @@ def merge(
     message: str | None = typer.Option(None, "-m", "--message", help="What the merge brings (default: Merge <THEIRS>)"),
     author: str = typer.Option(..., help="Who made it"),
 ) -> None:
-    """Merge another branch into the working catalog's branch.
+    """Merge another branch into the working metadata's branch.
 
     Tables, rows and descriptions only the other branch changed come over.
     Rows of a table both branches changed are merged by the primary key both
     declare in dataset.json; anything both changed differently is a conflict,
     and then nothing is changed. The merge version waits beside the working
-    catalog until you push it.
+    metadata until you push it.
     """
     state = _read_state(working)
     store = _store(state["remote"])
@@ -423,7 +423,7 @@ def merge(
         if ours is None:
             raise repo.RepoError(f"{state['ref']} holds no version yet, so there is nothing to merge into")
         if catalog.last_snapshot(working) != ours.ducklake.snapshot_id:
-            raise repo.RepoError(f"the working catalog has changes not committed: commit and push them, or check out again")
+            raise repo.RepoError(f"the working metadata has changes not committed: commit and push them, or check out again")
         bases = repo.merge_bases(store, ours, theirs)
         if not bases:
             raise repo.RepoError(f"{ours.id} and {theirs.id} have no version in common")
@@ -464,7 +464,7 @@ def merge(
 
 
 def _fast_forward(store, working: Path, state: dict, theirs) -> None:
-    """Check the working catalog out at ``theirs``, for push to move the branch there."""
+    """Check the working metadata out at ``theirs``, for push to move the branch there."""
     local = Path(state["data"]) if state.get("data") else None
     repo.checkout(store, working, local_data=local, version=theirs, storage=state.get("storage"))
     _write_state(working, {**state, "base": theirs.id, "forward": True})
@@ -473,7 +473,7 @@ def _fast_forward(store, working: Path, state: dict, theirs) -> None:
 
 
 def _merge(store, working: Path, state: dict, ours, theirs, base, *, message: str, author: str):
-    """Write the merge into the working catalog and commit it, or raise `merging.Conflicts`."""
+    """Write the merge into the working metadata and commit it, or raise `merging.Conflicts`."""
     described = {name: diffs.described(store, version) for name, version in (("base", base), ("ours", ours), ("theirs", theirs))}
     listed = {name: diffs.listed(store, version) for name, version in (("base", base), ("ours", ours), ("theirs", theirs))}
     declared, conflicts = merging.values(*(merging.declared(described[name]) for name in ("base", "ours", "theirs")))
@@ -483,7 +483,7 @@ def _merge(store, working: Path, state: dict, ours, theirs, base, *, message: st
         frozen = {}
         for name, version in (("base", base), ("theirs", theirs)):
             frozen[name] = Path(tmp) / f"{name}.duckdb"
-            frozen[name].write_bytes(store.get(layout.version_catalog(version.id)))
+            frozen[name].write_bytes(store.get(layout.version_metadata(version)))
             repo.check_catalog(frozen[name], version)
         plan = merging.tables(
             working,
@@ -528,10 +528,10 @@ def _merge(store, working: Path, state: dict, ours, theirs, base, *, message: st
 def _drop_uploaded(store, working: Path, local: Path, version) -> None:
     """Free the disk the uploaded data files took.
 
-    The working catalog is made again from the version just pushed, so it
+    The working metadata is made again from the version just pushed, so it
     reads those files from the repository, and the local copies go. The
-    conversion replaces the working catalog only once it is complete, so on
-    failure the working catalog and its local files stay as they were.
+    conversion replaces the working metadata only once it is complete, so on
+    failure the working metadata and its local files stay as they were.
     """
     try:
         repo.checkout(store, working, local_data=local, version=version)
@@ -620,11 +620,11 @@ def url(
     attach: bool = typer.Option(False, "--attach", help="Print the whole ATTACH statement, with the data path"),
     alias: str = typer.Option("lake", help="The name to ATTACH it as, with --attach"),
 ) -> None:
-    """Where the catalog of the version a ref holds is, to ATTACH."""
+    """Where the metadata of the version a ref holds is, to ATTACH."""
     store = _store(remote)
     try:
         version = repo.readable(store, ref)
-        where = store.url.rstrip("/") + "/" + layout.version_catalog(version.id)
+        where = store.url.rstrip("/") + "/" + layout.version_metadata(version)
         data = repo.data_url(store)
     except ERRORS as exc:
         raise _fail(exc) from exc
@@ -724,7 +724,7 @@ def status(
     working: Path = Working,
     as_json: bool = typer.Option(False, "--json", help="Print the differences as JSON"),
 ) -> None:
-    """What the working catalog changed since it was checked out, or since the commit not pushed yet."""
+    """What the working metadata changed since it was checked out, or since the commit not pushed yet."""
     state = _read_state(working)
     store = _store(state["remote"])
     pending_id = (state.get("pending") or {}).get("id")
@@ -839,7 +839,7 @@ def _warn_unread(tables: list[str]) -> None:
 def _profile_pending(store, working: Path, state: dict, folder: Path, version) -> None:
     """Profile the version committed in ``working``, beside it, for the push to upload.
 
-    A profile is never worth a failed push: when the working catalog no longer
+    A profile is never worth a failed push: when the working metadata no longer
     holds what was committed, or the tables cannot be read, it warns and the
     version goes without them (`fdl profile <remote>` adds them later).
     """
@@ -860,7 +860,7 @@ def _profile_pending(store, working: Path, state: dict, folder: Path, version) -
             return  # no tables, or all profiled by a push that stopped before it finished
         if catalog.last_snapshot(working) != version.ducklake.snapshot_id:
             typer.echo(
-                "warning: tables were not profiled, as the working catalog changed after the commit; "
+                "warning: tables were not profiled, as the working metadata changed after the commit; "
                 f"commit again, or run fdl profile {state['remote']} after the push",
                 err=True,
             )
@@ -911,7 +911,7 @@ def gc(
 ) -> None:
     """Delete data files and assets no live version reaches, once past the grace period.
 
-    These are files of versions past retention, and files a working catalog
+    These are files of versions past retention, and files a working metadata file
     wrote and never pushed. Run it after expire.
     """
     store = _store(remote)
@@ -938,8 +938,8 @@ def withdraw(
 
     Move every branch to a version without the data first. This deletes the
     tags that point at the versions, the data files and assets no kept version
-    reaches, and the versions' catalogs, at once. Their version.json stays. A
-    version already past retention has no catalog, so then every data file and
+    reaches, and the versions' metadata files, at once. Their version.json stays. A
+    version already past retention has no metadata, so then every data file and
     asset no live version reaches is deleted.
     """
     store = _store(remote)
