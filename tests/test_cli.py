@@ -612,9 +612,17 @@ def test_the_author_comes_from_the_settings_when_not_given(tmp_path: Path, monke
     monkeypatch.setenv("FDL_AUTHOR_NAME", "Sync")
     write(working, store, "INSERT INTO lake.main.towns VALUES (2)")
     commit(working, "-m", "second")
-    assert repo.head(store).author["name"] == "Sync"
+    assert repo.head(store).author == {"name": "Sync"}
 
     write(working, store, "INSERT INTO lake.main.towns VALUES (3)")
     commit(working, "-m", "third", "--author", "bob")
     assert repo.head(store).author == {"name": "bob"}
     assert runner.invoke(app, ["config", "user.name", "x"]).exit_code == 1
+
+
+def test_a_malformed_settings_file_is_refused(tmp_path: Path, monkeypatch) -> None:
+    monkeypatch.setenv("XDG_CONFIG_HOME", str(tmp_path))
+    (tmp_path / "fdl").mkdir()
+    (tmp_path / "fdl" / "config.json").write_text("{", encoding="utf-8")
+    result = runner.invoke(app, ["config", "author.name"])
+    assert result.exit_code == 1 and "is not JSON" in result.output

@@ -25,9 +25,14 @@ def path() -> Path:
 
 def read() -> dict[str, str]:
     try:
-        return json.loads(path().read_text(encoding="utf-8"))
+        settings = json.loads(path().read_text(encoding="utf-8"))
     except FileNotFoundError:
         return {}
+    except ValueError as exc:
+        raise ConfigError(f"{path()} is not JSON: {exc}") from exc
+    if not isinstance(settings, dict):
+        raise ConfigError(f"{path()} does not hold a JSON object")
+    return settings
 
 
 def get(key: str) -> str | None:
@@ -43,10 +48,18 @@ def set_value(key: str, value: str) -> None:
 
 
 def author(given: str | None) -> dict:
-    """The author of a version: ``given`` (from --author), else the settings."""
+    """The author of a version: ``given`` (from --author), else the environment, else the settings.
+
+    The name and the email come from the same place, so a name set in the
+    environment is never paired with the email of whoever wrote the settings.
+    """
     if given:
         return {"name": given}
-    name, email = get("author.name"), get("author.email")
+    if os.environ.get(KEYS["author.name"]):
+        name, email = os.environ[KEYS["author.name"]], os.environ.get(KEYS["author.email"])
+    else:
+        settings = read()
+        name, email = settings.get("author.name"), settings.get("author.email")
     if not name:
         raise ConfigError("who makes the version is not set: pass --author, or run fdl config author.name <name>")
     return {"name": name, **({"email": email} if email else {})}
