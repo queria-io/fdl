@@ -805,6 +805,7 @@ def expire(store: Store, version_id: str, *, reason: str = "retention") -> None:
             layout.version_dir(version_id) + layout.FILES,
             layout.version_dir(version_id) + layout.TREE,
             *store.list(layout.version_dir(version_id) + layout.METADATA_DIR),
+            *store.list(layout.version_dir(version_id) + layout.LEGACY_METADATA_DIR),
             *store.list(layout.version_dir(version_id) + layout.PROFILES_DIR),
         ]
     )

@@ -33,6 +33,8 @@ FILES = "files.json"
 EXPIRED = "expired.json"
 #: The same metadata in other DuckLake formats, under the version (optional).
 METADATA_DIR = "metadata/"
+#: Where versions written by fdl-cli 0.26 and earlier keep the other formats.
+LEGACY_METADATA_DIR = "catalogs/"
 #: The other files of a version (its README, say), by path to the asset that holds each (optional).
 TREE = "tree.json"
 #: A summary of each table, made from the data, under the version (optional).
