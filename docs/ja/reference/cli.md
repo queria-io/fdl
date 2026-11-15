@@ -211,7 +211,7 @@ fdl push <working.sqlite>
 ## fdl withdraw
 
 ```bash
-fdl withdraw <remote> <version>... [--yes]
+fdl withdraw <remote> <version>... [--yes] [--by <name>]
 ```
 
 間違って公開した個人データなど、公開してはいけないデータを持つバージョンを取り下げます（[取り下げ](/ja/spec/data-files#取り下げ)）。先にそのデータを除いたバージョンをコミットし、該当するバージョンを指すブランチが無い状態にします。そのうえでこのコマンドが、該当するバージョンを指すタグ、そのバージョンが参照し残すバージョンが参照しないデータファイルとアセット、メタデータを消し、`"reason": "withdrawn"` の `expired.json` を置きます。`version.json` は残します。保持期間を過ぎたバージョンを含めると、そのメタデータはもう無いので、有効なバージョンのどれも参照しないデータファイルとアセットを、猶予期間を待たずにすべて消します。
@@ -231,10 +231,10 @@ fdl profile <remote> [--ref refs/heads/main]
 ## fdl expire
 
 ```bash
-fdl expire <remote> [--keep 1] [--since 2026-10-01T00:00:00Z] [--ref refs/heads/main]
+fdl expire <remote> [--keep 1] [--since 2026-10-01T00:00:00Z] [--ref refs/heads/main] [--by <name>]
 ```
 
-ブランチの最初の親のつながりで、新しい `--keep` 個より古いバージョンの保持期間を終わらせます。`expired.json` を置き、メタデータを消します。`--since` 以降に作ったバージョンと、ref が指すバージョンは残します。データファイルは消しません。消すのは `fdl gc` です。
+ブランチの最初の親のつながりで、新しい `--keep` 個より古いバージョンの保持期間を終わらせます。`expired.json` を置き、メタデータを消します。`--since` 以降に作ったバージョンと、ref が指すバージョンは残します。データファイルは消しません。消すのは `fdl gc` です。`--by` は保持期間を終わらせた人を `expired.json` に記録します。`fdl withdraw` の `--by` も同じです。
 
 ## fdl gc
 

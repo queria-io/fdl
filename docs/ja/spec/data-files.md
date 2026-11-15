@@ -61,9 +61,10 @@ DuckLake 自身の片付け（`ducklake_cleanup_old_files`、`ducklake_expire_sn
 3. 猶予期間のあと、上の条件に合う共有オブジェクトを消す
 
 ```json expired.json
-{ "expired_at": "2026-12-01T00:00:00Z", "reason": "retention" }
+{ "expired_at": "2026-12-01T00:00:00Z", "reason": "retention", "by": "nightly retention" }
 ```
 
+- `by` には、保持期間を終わらせた人や仕組み（定期実行のジョブなど）を書いてよい。これで履歴には、バージョンを作った人と同じく、そのデータを消した人も残る
 - `version.json` は残す。履歴にはそのバージョンがあったことと中身が残り、親のつながりも切れない
 - `expired.json` を見た読み手は、`reason` が何であれ、保持期間を過ぎたものとして扱い、メタデータを開かない
 - ref が指すバージョンの保持期間を終わらせてはいけない
@@ -83,5 +84,5 @@ DuckLake 自身の片付け（`ducklake_cleanup_old_files`、`ducklake_expire_sn
 { "expired_at": "2026-12-01T00:00:00Z", "reason": "withdrawn" }
 ```
 
-- `version.json` は、保持期間のときと同じく残す。記録そのもの（`message` や `inputs`）にそのデータがあれば記録も消し、履歴にはその位置で親が欠けて見える
+- `version.json` は、保持期間のときと同じく残す。これで、どのリポジトリも最初のバージョンまでの履歴を持つ。記録そのもの（`author`・`message`・`inputs`）にそのデータがあれば、`expired.json` を置く前に記録を書き換えてデータを除く。`author` や `message` の該当する値は `withdrawn` に置き換え、`inputs` は該当する要素を除く。`id`・`seq`・`parents` などほかの項目はそのまま残す
 - ミラーは自分の写しを持っている。`"reason": "withdrawn"` の `expired.json` を写したミラーは、元が消したメタデータと共有オブジェクトを消す。元のホストはこれを強制できないので、知っているミラーに伝える

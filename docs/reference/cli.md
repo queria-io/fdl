@@ -211,7 +211,7 @@ Refused when the working metadata has changes not committed, when a version is c
 ## fdl withdraw
 
 ```bash
-fdl withdraw <remote> <version>... [--yes]
+fdl withdraw <remote> <version>... [--yes] [--by <name>]
 ```
 
 Removes versions that hold data that must not be published, such as personal data published by mistake (see [Withdrawal](/spec/data-files#withdrawal)). First commit a version without the data, so that no branch points at an affected version. The command then deletes the tags that point at the versions, the data files and assets the versions reach that no kept version reaches, and their metadata files, and puts `expired.json` with `"reason": "withdrawn"`. `version.json` stays. When one of the versions is already past retention, its metadata is gone, so every data file and asset no live version reaches is deleted at once, without waiting for the grace period.
@@ -231,10 +231,10 @@ Profiles the tables and views of the version the branch or tag holds that have n
 ## fdl expire
 
 ```bash
-fdl expire <remote> [--keep 1] [--since 2026-10-01T00:00:00Z] [--ref refs/heads/main]
+fdl expire <remote> [--keep 1] [--since 2026-10-01T00:00:00Z] [--ref refs/heads/main] [--by <name>]
 ```
 
-Takes versions behind the newest `--keep` on the branch's first-parent line out of retention: puts `expired.json` and deletes their metadata files. Versions made at or after `--since`, and any a ref points at, are kept. Data files are not deleted; `fdl gc` deletes them.
+Takes versions behind the newest `--keep` on the branch's first-parent line out of retention: puts `expired.json` and deletes their metadata files. Versions made at or after `--since`, and any a ref points at, are kept. Data files are not deleted; `fdl gc` deletes them. `--by` records who takes the versions out in `expired.json`, as does `--by` of `fdl withdraw`.
 
 ## fdl gc
 

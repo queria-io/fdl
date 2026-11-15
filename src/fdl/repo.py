@@ -769,7 +769,7 @@ def is_expired(store: Store, version_id: str) -> bool:
     return store.head(layout.version_expired(version_id)) is not None
 
 
-def expire(store: Store, version_id: str, *, reason: str = "retention") -> None:
+def expire(store: Store, version_id: str, *, reason: str = "retention", by: str | None = None) -> None:
     """Take a version out of retention: the mark first, then its catalogs.
 
     `version.json` stays, so the history still says the version was there and
@@ -781,7 +781,7 @@ def expire(store: Store, version_id: str, *, reason: str = "retention") -> None:
     held = _held(store)
     if version_id in held:
         raise RepoError(f"{held[version_id]} points at {version_id}, so it is kept")
-    record = {"expired_at": utc_now(), "reason": reason}
+    record = {"expired_at": utc_now(), "reason": reason, **({"by": by} if by else {})}
     try:
         store.put(
             layout.version_expired(version_id),
@@ -1014,7 +1014,9 @@ def _reached_assets(store: Store, version: Version, local: Path | None, setup: l
     return reached
 
 
-def withdraw(store: Store, version_ids: Iterable[str], *, plan: Withdrawal | None = None) -> Withdrawal:
+def withdraw(
+    store: Store, version_ids: Iterable[str], *, plan: Withdrawal | None = None, by: str | None = None
+) -> Withdrawal:
     """Remove versions that hold data that must not be published.
 
     Unlike retention it takes live versions and deletes their data files and
@@ -1033,7 +1035,7 @@ def withdraw(store: Store, version_ids: Iterable[str], *, plan: Withdrawal | Non
     store.delete(assets)
     store.delete([key for key in plan.deleted if not key.startswith(layout.ASSETS_DIR)])
     for version_id in plan.versions:
-        expire(store, version_id, reason="withdrawn")
+        expire(store, version_id, reason="withdrawn", by=by)
     return plan
 
 
@@ -1080,6 +1082,7 @@ def prune(
     keep: int = 1,
     since: str | None = None,
     reason: str = "retention",
+    by: str | None = None,
 ) -> list[str]:
     """Expire the versions behind ``newest`` that fall out of retention.
 
@@ -1099,7 +1102,7 @@ def prune(
             break
         recent = since is not None and _instant(current.created_at) >= _instant(since)
         if position >= keep and not recent and current.id not in held:
-            expire(store, current.id, reason=reason)
+            expire(store, current.id, reason=reason, by=by)
             expired.append(current.id)
         current = read_version(store, current.parents[0]) if current.parents else None
     return expired
