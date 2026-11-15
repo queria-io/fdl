@@ -43,7 +43,9 @@ For a repository over HTTP, new data files are written to `<working.sqlite>.data
 
 With `--storage`, the working metadata reads and writes the data files in the repository's own storage instead: `--storage` is the repository's root there, and new files go straight under its `data_dir`, so the push has none to upload. The keys come from the `AWS_*` variables (`AWS_ENDPOINT_URL` for R2 and other S3-compatible stores), or from a DuckDB secret of your own. The build that writes to the working metadata needs them too.
 
-Refused when the version is past retention, when its metadata's sha256 is not the one `version.json` records, or when the metadata names a data file outside the data folder.
+When the current folder holds no `dataset.json` or `dataset.yml`, it also writes there what `fdl commit` reads: the version's `dataset.json`, without what the commit fills in from the catalog (row counts, column types, nulls), and the files its `tree.json` lists, such as `README.md` and `docs/`. Edit them and commit to change the description. When the folder already holds a description, it is left as it is and nothing is written.
+
+Refused when the version is past retention, when its metadata's sha256 is not the one `version.json` records, when the metadata names a data file outside the data folder, or when a file it would write is already in the current folder.
 
 ## fdl commit
 

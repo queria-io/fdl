@@ -140,6 +140,8 @@ fdl commit work/lake.sqlite -m "Add 2026" --author alice
 fdl push work/lake.sqlite
 ```
 
+今のフォルダには `dataset.json` があるので、クローンはそれをそのままにします。空のフォルダでは、バージョンの `dataset.json`・`README.md`・`docs/` もそこに書き出すので、リポジトリをクローンした人はデータだけでなく説明も変えられます。
+
 新しいバージョンは、最初のバージョンを親として記録します。最初の Parquet ファイルは両方のメタデータが参照し、新しいファイルは 2 つめのメタデータだけが参照します。
 
 途中でほかの人が push していたら、この push は断られます。新しいバージョンが、いまの `main` の上に積まれていないためです。クローンし直して、変更をやり直してください。理由は[バージョンと ref](/ja/concepts/versions-and-refs) で説明しています。

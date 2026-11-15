@@ -535,3 +535,56 @@ def test_clone_names_a_folder_given_as_dot_by_where_it_is(tmp_path: Path, monkey
     monkeypatch.chdir(tmp_path)
     assert _default_working(".") == Path(f"{tmp_path.name}.sqlite")
     assert _default_working("https://data.example.invalid/datasets/alice/towns/") == Path("towns.sqlite")
+
+
+def _published_with_a_readme(tmp_path: Path) -> tuple[Path, LocalStore]:
+    remote, working = tmp_path / "remote", tmp_path / "work" / "lake.sqlite"
+    store = LocalStore(remote)
+    (tmp_path / "README.md").write_text("# Towns\n")
+    (tmp_path / "docs").mkdir()
+    (tmp_path / "docs" / "codes.md").write_text("Codes\n")
+    run("init", remote)
+    run("clone", remote, working)
+    write(working, store, "CREATE TABLE lake.main.towns AS SELECT 1 AS id")
+    commit(working, "-m", "first", "--author", "tester")
+    return remote, store
+
+
+def test_clone_writes_the_description_to_edit_and_commit(tmp_path: Path, monkeypatch) -> None:
+    remote, store = _published_with_a_readme(tmp_path)
+    elsewhere = tmp_path / "elsewhere"
+    elsewhere.mkdir()
+    monkeypatch.chdir(elsewhere)
+    run("clone", remote, "lake.sqlite")
+
+    written = json.loads((elsewhere / "dataset.json").read_text())
+    assert written["title"] == "Towns"
+    assert "rows" not in written["tables"][0]
+    assert (elsewhere / "README.md").read_text() == "# Towns\n"
+    assert (elsewhere / "docs" / "codes.md").read_text() == "Codes\n"
+
+    (elsewhere / "dataset.json").write_text(json.dumps({**written, "title": "Towns of Japan"}))
+    commit(elsewhere / "lake.sqlite", "-m", "retitle", "--author", "tester")
+    head = repo.head(store)
+    assert json.loads(store.get(layout.version_dir(head.id) + layout.DATASET))["title"] == "Towns of Japan"
+    assert head.tree is not None
+
+
+def test_clone_keeps_a_description_already_here(tmp_path: Path, described: Path) -> None:
+    remote, _ = _published_with_a_readme(tmp_path)
+    described.write_text('{"name": "towns", "title": "Mine"}')
+    run("clone", remote, tmp_path / "again.sqlite")
+    assert json.loads(described.read_text())["title"] == "Mine"
+
+
+def test_clone_refuses_to_overwrite_a_file_in_the_way(tmp_path: Path, monkeypatch) -> None:
+    remote, _ = _published_with_a_readme(tmp_path)
+    elsewhere = tmp_path / "elsewhere"
+    elsewhere.mkdir()
+    (elsewhere / "README.md").write_text("mine\n")
+    monkeypatch.chdir(elsewhere)
+    result = runner.invoke(app, ["clone", str(remote), "lake.sqlite"])
+    assert result.exit_code != 0
+    assert "README.md already here" in result.output
+    assert (elsewhere / "README.md").read_text() == "mine\n"
+    assert not (elsewhere / "lake.sqlite").exists()
