@@ -15,7 +15,7 @@ import uuid
 import warnings
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Iterable, Iterator, Mapping
+from typing import Callable, Iterable, Iterator, Mapping
 
 from . import catalog, layout, objects, profiles, refs
 from . import dataset as dataset_json
@@ -1044,8 +1044,12 @@ def withdraw(
 
 
 def _version_ids(store: Store) -> list[str]:
+    return _version_ids_in(store.list("versions/"))
+
+
+def _version_ids_in(keys: Iterable[str]) -> list[str]:
     suffix = "/" + layout.VERSION_RECORD
-    ids = [key[len("versions/") : -len(suffix)] for key in store.list("versions/") if key.endswith(suffix)]
+    ids = [key[len("versions/") : -len(suffix)] for key in keys if key.endswith(suffix)]
     return [version_id for version_id in ids if layout.is_version_id(version_id)]
 
 
@@ -1101,24 +1105,50 @@ def plan_retention(
     main = targets.get(layout.DEFAULT_BRANCH)
     if main is None:
         return []
+    known: dict[str, Version] = {}
+
+    def read(version_id: str) -> Version:
+        if version_id not in known:
+            known[version_id] = read_version(store, version_id)
+        return known[version_id]
+
     kept = set(targets.values())
-    behind_main = ancestors(store, read_version(store, main))
+    behind_main = _ancestors(read, main)
     for name, target in targets.items():
         if target != main:
-            kept.update(_bases(behind_main, ancestors(store, read_version(store, target))))
+            kept.update(_bases(behind_main, _ancestors(read, target)))
         if name.startswith(layout.BRANCH_PREFIX):
-            kept.update(_first_parents(store, target, keep))
-    cutoff = (now or dt.datetime.now(dt.timezone.utc)) - grace
+            kept.update(_first_parents(read, target, keep))
+    cutoff = _utc(now or dt.datetime.now(dt.timezone.utc)) - grace
     after = _instant(since) if since is not None else None
     taken = []
-    for version_id in _version_ids(store):
-        if version_id in kept or is_expired(store, version_id):
+    for version_id in _live_version_ids(store):
+        if version_id in kept:
             continue
-        made = _instant(read_version(store, version_id).created_at)
+        made = _instant(read(version_id).created_at)
         if made >= cutoff or (after is not None and made >= after):
             continue
         taken.append(version_id)
     return sorted(taken, reverse=True)
+
+
+def _ancestors(read: Callable[[str], Version], version_id: str) -> dict[str, Version]:
+    """`ancestors`, reading each version through ``read``."""
+    found: dict[str, Version] = {}
+    pending = [version_id]
+    while pending:
+        current = pending.pop()
+        if current in found:
+            continue
+        found[current] = read(current)
+        pending.extend(parent for parent in found[current].parents if parent not in found)
+    return found
+
+
+def _live_version_ids(store: Store) -> list[str]:
+    """The versions not past retention, from one listing of `versions/`."""
+    keys = set(store.list("versions/"))
+    return [version_id for version_id in _version_ids_in(keys) if layout.version_expired(version_id) not in keys]
 
 
 def prune(
@@ -1132,23 +1162,22 @@ def prune(
 ) -> list[str]:
     """Take out of retention the versions `plan_retention` chooses. Returns their IDs, newest first.
 
-    The refs are read again before each version is taken out, so a version a
-    ref came to point at meanwhile is kept.
+    The refs are read again after choosing, so a version a ref came to point
+    at meanwhile is kept; `expire` checks each once more.
     """
-    taken = []
-    for version_id in plan_retention(store, keep=keep, since=since, grace=grace):
-        if version_id in _held(store):
-            continue
+    planned = plan_retention(store, keep=keep, since=since, grace=grace)
+    held = _held(store)
+    taken = [version_id for version_id in planned if version_id not in held]
+    for version_id in taken:
         expire(store, version_id, reason=reason, by=by)
-        taken.append(version_id)
     return taken
 
 
-def _first_parents(store: Store, version_id: str, count: int) -> list[str]:
+def _first_parents(read: Callable[[str], Version], version_id: str, count: int) -> list[str]:
     """``version_id`` and the versions behind it by first parent, ``count`` in all at most."""
     found = [version_id]
     while len(found) < count:
-        parents = read_version(store, found[-1]).parents
+        parents = read(found[-1]).parents
         if not parents:
             break
         found.append(parents[0])
@@ -1177,7 +1206,12 @@ def _held(store: Store) -> dict[str, str]:
 
 
 def _instant(value: str) -> dt.datetime:
-    return dt.datetime.fromisoformat(value.replace("Z", "+00:00"))
+    """An ISO time; one without an offset is taken as UTC."""
+    return _utc(dt.datetime.fromisoformat(value.replace("Z", "+00:00")))
+
+
+def _utc(value: dt.datetime) -> dt.datetime:
+    return value if value.tzinfo is not None else value.replace(tzinfo=dt.timezone.utc)
 
 
 def _refuse_unless_fast_forward(store: Store, current: refs.Ref | None, version: Version) -> None:

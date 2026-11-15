@@ -15,10 +15,15 @@ description: 保持期間を終わらせるバージョンを選ぶ処理のテ�
       "name": "keeps the newest on main and what a ref points at",
       "keep": 2,
       "since": null,
-      "versions": [{ "id": "<ID>", "parents": [], "created_at": "2026-11-01T00:00:00Z" }],
+      "versions": [
+        { "id": "<ID 1>", "parents": [], "created_at": "2026-11-01T00:00:00Z" },
+        { "id": "<ID 2>", "parents": ["<ID 1>"], "created_at": "2026-11-02T00:00:00Z" },
+        { "id": "<ID 3>", "parents": ["<ID 2>"], "created_at": "2026-11-03T00:00:00Z" },
+        { "id": "<ID 4>", "parents": ["<ID 3>"], "created_at": "2026-11-04T00:00:00Z" }
+      ],
       "expired": [],
-      "refs": { "refs/heads/main": "<ID>", "refs/tags/first": "<ID>" },
-      "take_out": ["<ID>"]
+      "refs": { "refs/heads/main": "<ID 4>", "refs/tags/first": "<ID 1>" },
+      "take_out": ["<ID 2>"]
     }
   ]
 }
