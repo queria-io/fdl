@@ -61,10 +61,11 @@ DuckLake 自身の片付け（`ducklake_cleanup_old_files`、`ducklake_expire_sn
 3. 猶予期間のあと、上の条件に合う共有オブジェクトを消す
 
 ```json expired.json
-{ "expired_at": "2026-12-01T00:00:00Z", "reason": "retention", "by": "nightly retention" }
+{ "expired_at": "2026-12-01T00:00:00Z", "reason": "retention", "by": "nightly retention", "message": "Keep the newest 7 versions" }
 ```
 
 - `by` には、保持期間を終わらせた人や仕組み（定期実行のジョブなど）を書いてよい。これで履歴には、バージョンを作った人と同じく、そのデータを消した人も残る。値は自由な文字列で、FDL は意味を持たせない。書くツールやホストが値を決める
+- `message` には、その理由を自由な文で書いてよい。`version.json` の `message` が変更の内容を書くのと同じ。読み手が動作を決めるのは `reason` で、`message` は人が読むためのもの
 - `version.json` は残す。履歴にはそのバージョンがあったことと中身が残り、親のつながりも切れない
 - `expired.json` を見た読み手は、`reason` が何であれ、保持期間を過ぎたものとして扱い、メタデータを開かない
 - ref が指すバージョンの保持期間を終わらせてはいけない

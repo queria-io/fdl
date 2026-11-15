@@ -223,7 +223,7 @@ fdl push <working.sqlite>
 ## fdl withdraw
 
 ```bash
-fdl withdraw <remote> [<version>...] [--objects <file>] [--json] [--yes] [--by <name>]
+fdl withdraw <remote> [<version>...] [--objects <file>] [--json] [--yes] [--by <name>] [--message <text>]
 ```
 
 間違って公開した個人データなど、公開してはいけないデータを持つバージョンを取り下げます（[取り下げ](/ja/spec/data-files#取り下げ)）。先にそのデータを除いたバージョンをコミットし、該当するバージョンを指すブランチが無い状態にします。そのうえでこのコマンドが、該当するバージョンを指すタグ、そのバージョンが参照し残すバージョンが参照しないデータファイルとアセット、メタデータを消し、`"reason": "withdrawn"` と消したオブジェクトの名前（`deleted`）を持つ `expired.json` を置きます。`version.json` は残します。保持期間を過ぎたバージョンを含めると、そのメタデータはもう無いので、有効なバージョンのどれも参照しないデータファイルとアセットを、猶予期間を待たずにすべて消します。
@@ -247,10 +247,10 @@ fdl profile <remote> [--ref refs/heads/main]
 ## fdl expire
 
 ```bash
-fdl expire <remote> [--keep 1] [--since 2026-10-01T00:00:00Z] [--grace 7d] [--by <name>]
+fdl expire <remote> [--keep 1] [--since 2026-10-01T00:00:00Z] [--grace 7d] [--by <name>] [--message <text>]
 ```
 
-バージョンの保持期間を終わらせます。`expired.json` を置き、メタデータを消します。残すのは、各ブランチの最初の親のつながりで新しい `--keep` 個、ref が指すバージョン、その main との共通祖先、`--since` 以降または `--grace` のうちに作ったバージョンです。それ以外（マージが取り込んだ最初の親以外の親など）は保持期間を終わらせます（[保持期間を終わらせるバージョンの選び方](/ja/spec/data-files#保持期間を終わらせるバージョンの選び方)）。main にバージョンが無いうちは何も終わらせません。データファイルは消しません。消すのは `fdl gc` です。`--by` は保持期間を終わらせた人を `expired.json` に記録します。`fdl withdraw` の `--by` も同じです。
+バージョンの保持期間を終わらせます。`expired.json` を置き、メタデータを消します。残すのは、各ブランチの最初の親のつながりで新しい `--keep` 個、ref が指すバージョン、その main との共通祖先、`--since` 以降または `--grace` のうちに作ったバージョンです。それ以外（マージが取り込んだ最初の親以外の親など）は保持期間を終わらせます（[保持期間を終わらせるバージョンの選び方](/ja/spec/data-files#保持期間を終わらせるバージョンの選び方)）。main にバージョンが無いうちは何も終わらせません。データファイルは消しません。消すのは `fdl gc` です。`--by` は保持期間を終わらせた人を、`--message` はその理由を `expired.json` に記録します。`fdl withdraw` の同じオプションも同じです。
 
 ## fdl gc
 

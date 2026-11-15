@@ -275,8 +275,10 @@ def test_expire_marks_and_drops_the_metadata_but_keeps_the_record(tmp_path: Path
 
 def test_expire_records_who_took_the_version_out(tmp_path: Path, remote) -> None:
     first, _ = pushed_chain(tmp_path, remote, 2)
-    repo.expire(remote, first.id, by="nightly retention")
-    assert json.loads(remote.get(layout.version_expired(first.id)))["by"] == "nightly retention"
+    repo.expire(remote, first.id, by="nightly retention", message="Keep the newest 7 versions")
+    record = json.loads(remote.get(layout.version_expired(first.id)))
+    assert record["by"] == "nightly retention"
+    assert record["message"] == "Keep the newest 7 versions"
 
 
 def test_a_version_a_ref_holds_is_not_expired(tmp_path: Path, remote) -> None:
