@@ -1,6 +1,34 @@
 # CHANGELOG
 
 
+## v0.27.0 (2026-11-15)
+
+### Features
+
+- Name the frozen DuckLake metadata metadata.db and record it as metadata
+  ([#61](https://github.com/queria-io/fdl/pull/61),
+  [`babd57f`](https://github.com/queria-io/fdl/commit/babd57fe57a45468019f00042e9d52f011afe15d))
+
+* feat!: name the frozen DuckLake metadata metadata.db and record it as metadata
+
+A version's metadata file is now versions/<ID>/metadata.db, recorded under "metadata" in
+  version.json; other DuckLake formats go under metadata/, and fdl.json declares them as
+  metadata_formats. Readers open the name the record gives, so versions written by 0.26 and earlier
+  (ducklake.duckdb, recorded as "catalog") are still read.
+
+BREAKING CHANGE: version.json records the metadata file as "metadata", and fdl.json's
+  catalog_formats is now metadata_formats.
+
+* docs: redirect the old working catalog page
+
+* fix(expire): also drop the other formats that fdl-cli 0.26 and earlier kept under catalogs/
+
+### Breaking Changes
+
+- Version.json records the metadata file as "metadata", and fdl.json's catalog_formats is now
+  metadata_formats.
+
+
 ## v0.26.0 (2026-11-14)
 
 ### Features
