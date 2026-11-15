@@ -128,11 +128,11 @@ repo.update_refs_index(store) -> None
 Rewrite `refs.json` from the refs. `push`, `tag` and `delete_tag` call it after moving a ref. A 403 from a host that keeps `refs.json` itself is taken as done.
 
 ```python
-repo.plan_withdrawal(store, version_ids) -> Withdrawal
-repo.withdraw(store, version_ids, *, plan=None) -> Withdrawal
+repo.plan_withdrawal(store, version_ids, *, objects=None, refuse_refs=True) -> Withdrawal
+repo.withdraw(store, version_ids, *, plan=None, by=None) -> Withdrawal
 ```
 
-Withdraw versions that hold data that must not be published. `plan_withdrawal` changes nothing and returns the tags, the data files to delete, and the files kept because a kept version reads them. `withdraw` deletes the tags, the data files and the metadata files, in that order. Both raise `RepoError` while a branch or a request points at one of the versions.
+Withdraw versions that hold data that must not be published. `plan_withdrawal` changes nothing and returns the tags, the data files to delete, and the files kept because a kept version reads them. `withdraw` deletes the tags, the data files and the metadata files, in that order. Both raise `RepoError` while a branch or a request points at one of the versions; with `refuse_refs=False`, `plan_withdrawal` lists them in `blocked` instead and `withdraw` raises. `objects` (`{"data": [...], "assets": [...]}`, as `deleted` of `expired.json`) applies a withdrawal made in the repository this one was copied from: every live version that reaches one of them is affected too.
 
 ## fdl.diff
 

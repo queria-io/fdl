@@ -359,6 +359,15 @@ def test_the_storage_secret_comes_from_the_aws_variables(monkeypatch) -> None:
     duckdb.connect().execute("INSTALL httpfs; LOAD httpfs;").execute(statement)
 
 
+def test_reading_an_s3_repository_takes_the_storage_secret(monkeypatch) -> None:
+    from fdl.cli import _read_setup
+
+    monkeypatch.setenv("AWS_ACCESS_KEY_ID", "id")
+    store = stores.S3Store("b", "p", client=object())
+    [statement] = _read_setup(store)
+    assert "TYPE s3" in statement and "SCOPE 's3://b/p/'" in statement
+
+
 def test_a_refused_token_is_asked_for_again(tmp_path: Path, monkeypatch) -> None:
     answers = iter(["run-out", TOKEN])
     asked: list[str] = []

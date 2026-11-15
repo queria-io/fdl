@@ -90,13 +90,24 @@ Withdrawal removes data that must not be published, such as personal data publis
 1. Make a new version without the data and move every branch that holds an affected version to it. This is a forward move: the new version's parent is the current one. Its metadata must not keep a snapshot that holds the data (`ducklake_expire_snapshots` in the working metadata), since a metadata file reaches every file it names
 2. Delete the tags that point at affected versions
 3. Delete the shared objects that hold the data, at once, such as a data file with personal data or a screenshot showing it: those an affected version reaches and no version kept reaches. Every version that reaches such an object is an affected version. An affected version already past retention has no metadata to say which objects it reached, so when there is one, every shared object no live version reaches is deleted at once too
-4. For every affected version, put `expired.json` with `"reason": "withdrawn"` and delete its metadata files
+4. For every affected version, put `expired.json` with `"reason": "withdrawn"` and `deleted`, and delete its metadata files
 
 The shared objects go before the metadata files, so a withdrawal that stops half way can be run again: the metadata files still say which files hold the data.
 
 ```json expired.json
-{ "expired_at": "2026-12-01T00:00:00Z", "reason": "withdrawn" }
+{
+  "expired_at": "2026-12-01T00:00:00Z",
+  "reason": "withdrawn",
+  "deleted": {
+    "data": ["main/towns/ducklake-019a3c4e-7b21-7f3a-9c55-2f0d8e1a4b6c.parquet"],
+    "assets": ["9f2c…"]
+  }
+}
 ```
 
+- `deleted` names the shared objects step 3 deleted: data files by their path under `data_dir`, assets by their sha256. Names only, so it holds none of the data. Every affected version of one withdrawal carries the same list. A withdrawal run again after stopping half way keeps the names already there, since objects it deleted the first time may no longer be found
+- A host refuses a push that places an object named in `deleted` of any version, and a process that copies versions between repositories copies none of them. Otherwise an old copy, such as a local clone, brings the data back
+- A copy of the repository, such as a mirror or a fork, applies the withdrawal by the names in `deleted`: every live version in it that reaches one of them is an affected version, including versions made only in the copy, and the named objects go even where no version reaches them
+
 - `version.json` stays, as with retention, so every repository holds its history back to the first version. If the record itself holds the data (in `author`, `message` or `inputs`), it is rewritten without it before `expired.json` is put: the value in `author` or `message` is replaced with `withdrawn`, and the entries of `inputs` that hold it are dropped. `id`, `seq`, `parents` and the other fields stay as they were
-- Mirrors keep their own copies. A mirror that copies `expired.json` with `"reason": "withdrawn"` deletes the metadata files and the shared objects the origin deleted. The origin cannot force this; the host tells the mirrors it knows of
+- Mirrors keep their own copies. A mirror that copies `expired.json` with `"reason": "withdrawn"` deletes the metadata files and the shared objects named in `deleted`. The origin cannot force this; the host tells the mirrors it knows of

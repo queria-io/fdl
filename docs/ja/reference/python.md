@@ -128,11 +128,11 @@ repo.update_refs_index(store) -> None
 ref を読み直して `refs.json` を書き直します。`push`・`tag`・`delete_tag` は ref を動かしたあとにこれを呼びます。`refs.json` を自分で書くホストが 403 で断ったときは、済んだものとして扱います。
 
 ```python
-repo.plan_withdrawal(store, version_ids) -> Withdrawal
+repo.plan_withdrawal(store, version_ids, *, objects=None, refuse_refs=True) -> Withdrawal
 repo.withdraw(store, version_ids, *, plan=None) -> Withdrawal
 ```
 
-公開してはいけないデータを持つバージョンを取り下げます。`plan_withdrawal` は何も変えずに、消すタグ、消すデータファイル、残すバージョンが読むので残すファイルを返します。`withdraw` はタグ、データファイル、メタデータの順に消します。ブランチかリクエストが該当するバージョンを指しているあいだは、どちらも `RepoError` を出します。
+公開してはいけないデータを持つバージョンを取り下げます。`plan_withdrawal` は何も変えずに、消すタグ、消すデータファイル、残すバージョンが読むので残すファイルを返します。`withdraw` はタグ、データファイル、メタデータの順に消します。ブランチかリクエストが該当するバージョンを指しているあいだは、どちらも `RepoError` を出します。`refuse_refs=False` のときは、`plan_withdrawal` はそれらを `blocked` に並べ、`withdraw` が `RepoError` を出します。`objects`（`expired.json` の `deleted` と同じ `{"data": [...], "assets": [...]}`）は、写し元のリポジトリで行った取り下げを適用します。それらを参照する有効なバージョンも該当するバージョンになります。
 
 ## fdl.diff
 

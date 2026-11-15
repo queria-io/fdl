@@ -24,7 +24,7 @@ import typer
 from . import catalog, config, dataset, layout, objects, profiles, refs, repo
 from . import merge as merging
 from . import diff as diffs
-from .stores import StoreError, open_store
+from .stores import S3Store, StoreError, open_store
 from .version import VersionError, is_id
 from .version import parse as parse_version
 
@@ -665,7 +665,9 @@ def _storage_setup(storage: str | None) -> list[str]:
 
 
 def _read_setup(store) -> list[str]:
-    """What DuckDB needs to read the repository's data files: the token, over HTTP."""
+    """What DuckDB needs to read the repository's data files: the token over HTTP, the ``AWS_*`` keys on S3."""
+    if isinstance(store, S3Store):
+        return _storage_setup(store.url)
     token = getattr(store, "token", None)
     if not token:
         return []
@@ -1026,9 +1028,15 @@ def gc(
 @app.command()
 def withdraw(
     remote: str = Remote,
-    versions: list[str] = typer.Argument(..., help="The versions that hold the data"),
+    versions: list[str] = typer.Argument(None, help="The versions that hold the data"),
+    objects: Path | None = typer.Option(
+        None,
+        "--objects",
+        help="A JSON file naming objects another repository withdrew, as `deleted` of its expired.json (or that file itself). Every version that reaches one is withdrawn too",
+    ),
     yes: bool = typer.Option(False, "--yes", help="Do it. Without this, only say what would be done"),
     by: str | None = typer.Option(None, help="Who withdraws them, recorded in expired.json"),
+    as_json: bool = typer.Option(False, "--json", help="Print the plan as JSON, listing the refs that block it instead of failing"),
 ) -> None:
     """Remove versions that hold data that must not be published.
 
@@ -1037,25 +1045,51 @@ def withdraw(
     reaches, and the versions' metadata files, at once. Their version.json stays. A
     version already past retention has no metadata, so then every data file and
     asset no live version reaches is deleted.
+
+    With --objects, a mirror or a fork applies a withdrawal made in the
+    repository it was copied from.
     """
     store = _store(remote)
     try:
-        plan = repo.plan_withdrawal(store, versions, setup=_read_setup(store))
-        for name in plan.tags:
-            typer.echo(f"delete tag   {name}")
-        for key in plan.deleted:
-            typer.echo(f"delete file  {key}")
-        for version_id in plan.versions:
-            typer.echo(f"withdraw     {version_id}")
-        for key in plan.still_read:
-            typer.echo(f"keep file    {key} (a kept version reaches it)")
+        named = None
+        if objects is not None:
+            raw = json.loads(objects.read_text())
+            named = raw.get("deleted", raw) if isinstance(raw, dict) else {}
+        if not versions and named is None:
+            raise repo.RepoError("Name the versions, or the objects with --objects")
+        plan = repo.plan_withdrawal(
+            store, versions or [], setup=_read_setup(store), objects=named, refuse_refs=not as_json
+        )
+        if as_json:
+            typer.echo(
+                json.dumps(
+                    {
+                        "versions": plan.versions,
+                        "tags": plan.tags,
+                        "deleted": plan.deleted,
+                        "still_read": plan.still_read,
+                        "blocked": plan.blocked,
+                    }
+                )
+            )
+        else:
+            for name in plan.tags:
+                typer.echo(f"delete tag   {name}")
+            for key in plan.deleted:
+                typer.echo(f"delete file  {key}")
+            for version_id in plan.versions:
+                typer.echo(f"withdraw     {version_id}")
+            for key in plan.still_read:
+                typer.echo(f"keep file    {key} (a kept version reaches it)")
         if not yes:
-            typer.echo("Nothing was changed. Run again with --yes to do this.")
+            if not as_json:
+                typer.echo("Nothing was changed. Run again with --yes to do this.")
             return
-        repo.withdraw(store, versions, plan=plan, by=by)
+        repo.withdraw(store, plan.versions, plan=plan, by=by)
     except ERRORS as exc:
         raise _fail(exc) from exc
-    typer.echo(f"Withdrew {len(plan.versions)} version(s) and deleted {len(plan.deleted)} file(s).")
+    if not as_json:
+        typer.echo(f"Withdrew {len(plan.versions)} version(s) and deleted {len(plan.deleted)} file(s).")
 
 
 def main() -> None:

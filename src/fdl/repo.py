@@ -773,7 +773,14 @@ def is_expired(store: Store, version_id: str) -> bool:
     return store.head(layout.version_expired(version_id)) is not None
 
 
-def expire(store: Store, version_id: str, *, reason: str = "retention", by: str | None = None) -> None:
+def expire(
+    store: Store,
+    version_id: str,
+    *,
+    reason: str = "retention",
+    by: str | None = None,
+    deleted: dict[str, list[str]] | None = None,
+) -> None:
     """Take a version out of retention: the mark first, then its catalogs.
 
     `version.json` stays, so the history still says the version was there and
@@ -785,7 +792,9 @@ def expire(store: Store, version_id: str, *, reason: str = "retention", by: str 
     held = _held(store)
     if version_id in held:
         raise RepoError(f"{held[version_id]} points at {version_id}, so it is kept")
-    record = {"expired_at": utc_now(), "reason": reason, **({"by": by} if by else {})}
+    record: dict = {"expired_at": utc_now(), "reason": reason, **({"by": by} if by else {})}
+    if deleted is not None:
+        record["deleted"] = deleted
     try:
         store.put(
             layout.version_expired(version_id),
@@ -799,7 +808,12 @@ def expire(store: Store, version_id: str, *, reason: str = "retention", by: str 
         # A version already out of retention that is withdrawn says so, for
         # mirrors to delete what the origin deleted.
         mark = layout.version_expired(version_id)
-        if reason == "withdrawn" and json.loads(store.get(mark)).get("reason") != reason:
+        if reason == "withdrawn":
+            before = json.loads(store.get(mark))
+            if before.get("reason") == reason:
+                # Run again after stopping half way: the objects the first run
+                # deleted may no longer be listed, so its names are kept.
+                record = {**before, "deleted": _union_deleted(before.get("deleted"), deleted)}
             store.put(mark, (json.dumps(record) + "\n").encode(), content_type="application/json")
     store.delete(
         [
@@ -812,6 +826,27 @@ def expire(store: Store, version_id: str, *, reason: str = "retention", by: str 
             *store.list(layout.version_dir(version_id) + layout.PROFILES_DIR),
         ]
     )
+
+
+def _union_deleted(*lists: object) -> dict[str, list[str]]:
+    union: dict[str, set[str]] = {"data": set(), "assets": set()}
+    for value in lists:
+        if isinstance(value, dict):
+            for kind, names in union.items():
+                names.update(name for name in value.get(kind, []) if isinstance(name, str))
+    return {kind: sorted(names) for kind, names in union.items()}
+
+
+def deleted_names(keys: Iterable[str], data_dir: str) -> dict[str, list[str]]:
+    """Shared objects as `expired.json` names them: data files from `data_dir`, assets by sha256."""
+    data: list[str] = []
+    assets: list[str] = []
+    for key in keys:
+        if key.startswith(layout.ASSETS_DIR):
+            assets.append(key[len(layout.ASSETS_DIR) :])
+        elif key.startswith(data_dir):
+            data.append(key[len(data_dir) :])
+    return {"data": sorted(data), "assets": sorted(assets)}
 
 
 @dataclass(frozen=True)
@@ -827,23 +862,43 @@ class Withdrawal:
     #: Shared objects the versions reach that a kept version still reaches. Kept:
     #: if they hold the data, the version that reaches them has to be withdrawn too.
     still_read: tuple[str, ...]
+    #: Refs other than tags that point at the versions. `withdraw` refuses while
+    #: there are any: move them to a version without the data first.
+    blocked: tuple[str, ...] = ()
 
 
-def plan_withdrawal(store: Store, version_ids: Iterable[str], *, setup: Iterable[str] = ()) -> Withdrawal:
+def plan_withdrawal(
+    store: Store,
+    version_ids: Iterable[str],
+    *,
+    setup: Iterable[str] = (),
+    objects: dict[str, list[str]] | None = None,
+    refuse_refs: bool = True,
+) -> Withdrawal:
     """Work out a withdrawal (see `withdraw`) without changing anything.
 
     Refused while a branch or a request still points at one of the versions:
-    the first step, a new version without the data, is the writer's.
+    the first step, a new version without the data, is the writer's. With
+    ``refuse_refs=False`` those refs are listed in `blocked` instead, for a
+    host that moves them itself.
+
+    ``objects`` names shared objects another repository withdrew, as `deleted`
+    of its `expired.json` does: a copy of it, such as a mirror or a fork,
+    applies that withdrawal. Every live version that reaches one of them is
+    affected too, and those objects go even where no version reaches them.
 
     Shared objects are data files and assets. ``setup`` runs before a
     metadata is attached to read its asset columns: a ``CREATE SECRET`` for
     data files in private storage, say.
     """
     config = read_config(store)
-    affected = tuple(dict.fromkeys(version_ids))
+    setup = list(setup)
+    named = _named_objects(objects or {}, config.data_dir)
+    affected = tuple(dict.fromkeys([*version_ids, *_reaching(store, config, named, setup)]))
     for version_id in affected:
         read_version(store, version_id)
     tags: list[str] = []
+    blocked: list[str] = []
     for name in store.list("refs/"):
         try:
             ref = refs.read(store, name)
@@ -852,14 +907,17 @@ def plan_withdrawal(store: Store, version_ids: Iterable[str], *, setup: Iterable
         if ref is None or ref.target not in affected:
             continue
         if not name.startswith("refs/tags/"):
-            raise RepoError(
-                f"{name} points at {ref.target}. Move it to a version without the data first"
-            )
+            if refuse_refs:
+                raise RepoError(
+                    f"{name} points at {ref.target}. Move it to a version without the data first"
+                )
+            blocked.append(name)
+            continue
         tags.append(name)
 
-    setup = list(setup)
     # Store keys: data files under the data directory, assets under assets/.
-    candidates: set[str] = set()
+    # Named objects still there go whether or not a version reaches them.
+    candidates: set[str] = {key for key in named if store.head(key) is not None}
     kept: set[str] = set()
     catalogless = False
     with tempfile.TemporaryDirectory(prefix="fdl-") as tmp:
@@ -900,7 +958,33 @@ def plan_withdrawal(store: Store, version_ids: Iterable[str], *, setup: Iterable
         tags=tuple(tags),
         deleted=tuple(sorted(candidates - kept)),
         still_read=tuple(sorted(candidates & kept)),
+        blocked=tuple(blocked),
     )
+
+
+def _named_objects(objects: dict[str, list[str]], data_dir: str) -> set[str]:
+    """Store keys of the objects `deleted` names, leaving out any not in the form of a shared object."""
+    names = [*objects.get("data", []), *objects.get("assets", [])]
+    if any(".." in name.split("/") for name in names):
+        raise RepoError("an object name may not have a .. segment")
+    keys = {data_dir + name for name in objects.get("data", [])} | {
+        layout.ASSETS_DIR + name for name in objects.get("assets", [])
+    }
+    return {key for key in keys if layout.is_shared_object(key, data_dir)}
+
+
+def _reaching(store: Store, config: Config, keys: set[str], setup: list[str]) -> list[str]:
+    """The live versions that reach any of ``keys``."""
+    if not keys:
+        return []
+    found: list[str] = []
+    with tempfile.TemporaryDirectory(prefix="fdl-") as tmp:
+        for version_id in _version_ids(store):
+            if is_expired(store, version_id):
+                continue
+            if _reached_by(store, config, read_version(store, version_id), Path(tmp), setup) & keys:
+                found.append(version_id)
+    return found
 
 
 def _reached_by(store: Store, config: Config, version: Version, tmp: Path, setup: list[str]) -> set[str]:
@@ -1027,8 +1111,12 @@ def withdraw(
     assets at once. In the spec's order: the shared objects go before the
     metadata files, so a run that stops half way can be run again while the
     metadata files still say which objects they are. `version.json` stays.
+    Each `expired.json` names the deleted objects, so that mirrors delete the
+    same ones and hosts refuse to place them again.
     """
     plan = plan or plan_withdrawal(store, version_ids)
+    if plan.blocked:
+        raise RepoError(f"{plan.blocked[0]} points at a version to withdraw. Move it to a version without the data first")
     for name in plan.tags:
         refs.delete(store, name)
     if plan.tags:
@@ -1038,8 +1126,9 @@ def withdraw(
     assets = [key for key in plan.deleted if key.startswith(layout.ASSETS_DIR)]
     store.delete(assets)
     store.delete([key for key in plan.deleted if not key.startswith(layout.ASSETS_DIR)])
+    deleted = deleted_names(plan.deleted, read_config(store).data_dir)
     for version_id in plan.versions:
-        expire(store, version_id, reason="withdrawn", by=by)
+        expire(store, version_id, reason="withdrawn", by=by, deleted=deleted)
     return plan
 
 

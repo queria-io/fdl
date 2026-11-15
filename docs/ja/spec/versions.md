@@ -6,7 +6,7 @@ description: バージョン ID、version.json の項目、固めたメタデー
 バージョンは `versions/<version ID>/` の下のファイルです。一度書いたら変えてはいけません。例外は次のとおりです。
 
 - 保持期間を過ぎたとき、`expired.json` を足し、メタデータを消す（[データファイル](/ja/spec/data-files#保持期間を過ぎたとき)）
-- 取り下げのとき、`"reason": "withdrawn"` の `expired.json` を足してメタデータを消し、`version.json` 自体に取り下げるデータがあればそれも消す（[データファイル](/ja/spec/data-files#取り下げ)）
+- 取り下げのとき、`"reason": "withdrawn"` の `expired.json` を足してメタデータを消し、`version.json` に取り下げるデータがあれば、それを除いて書き換える（[データファイル](/ja/spec/data-files#取り下げ)）
 - `metadata/<format>.db` はあとから足してよい。既にあるファイルは変えない
 - `version.json.sig` は、バージョンを作ったあとに署名する書き手が足してよい
 - `profiles/<schema>/<table>.json` は、profile の無いテーブルについてあとから足してよい。既にある profile は変えない

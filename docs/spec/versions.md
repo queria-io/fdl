@@ -6,7 +6,7 @@ description: The version ID, the fields of version.json, the frozen metadata, an
 A version is the files under `versions/<version ID>/`. They must not change once written, except:
 
 - `expired.json` is added and the metadata files deleted when the version falls out of retention ([Data files](/spec/data-files#past-retention))
-- on withdrawal, `expired.json` is added with `"reason": "withdrawn"` and the metadata files deleted, and `version.json` itself is deleted if it holds the withdrawn data ([Data files](/spec/data-files#withdrawal))
+- on withdrawal, `expired.json` is added with `"reason": "withdrawn"` and the metadata files deleted, and `version.json` is rewritten without the withdrawn data if it holds it ([Data files](/spec/data-files#withdrawal))
 - `metadata/<format>.db` may be added later. Files already there are not changed
 - `version.json.sig` may be added later, by a writer that signs a version after making it
 - `profiles/<schema>/<table>.json` may be added later for a table that has none. Profiles already there are not changed
