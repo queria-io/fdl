@@ -688,21 +688,23 @@ def test_collection_leaves_files_that_are_not_shared_objects(tmp_path: Path, rem
     assert "tables/README.txt" not in plan.deleted and "assets/notes.txt" not in plan.deleted
 
 
-def test_collection_keeps_files_only_an_older_snapshot_of_the_catalog_names(tmp_path: Path, remote) -> None:
+def test_a_version_names_only_the_files_of_its_last_snapshot(tmp_path: Path, remote) -> None:
     import datetime as dt
 
-    # The working catalog keeps the table's first snapshot, so the catalog names
-    # its first data file though the version reads only the second.
+    # The working catalog keeps the table's first snapshot, but the version
+    # keeps only its last, so the first data file is reached by no version.
     build(tmp_path / "work.sqlite", remote, "CREATE TABLE lake.main.towns AS SELECT 1 AS id")
+    first = {key for key in remote.list("tables/") if key.endswith(".parquet")}
     build(tmp_path / "work.sqlite", remote, "CREATE OR REPLACE TABLE lake.main.towns AS SELECT 2 AS id")
     version = commit(tmp_path, remote)
     repo.push(remote, tmp_path / "local" / version.id, version)
     index = json.loads(remote.get(layout.version_dir(version.id) + layout.FILES))
     read = {file["path"] for table in index["tables"].values() for file in table["files"]}
-    assert set(index["named"]) > read
+    assert set(index["named"]) == read
 
     later = dt.datetime.now(dt.timezone.utc) + dt.timedelta(days=1)
     plan = repo.plan_collection(remote, grace=dt.timedelta(0), now=later)
+    assert first and first <= set(plan.deleted)
     assert not {"tables/" + key for key in index["named"]} & set(plan.deleted)
 
 

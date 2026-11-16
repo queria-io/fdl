@@ -274,12 +274,20 @@ class _Merging:
         return {schema for (schema,) in rows}
 
     def files(self, alias: str, table_id: int) -> frozenset[tuple[str, str | None]]:
-        """The table's data and delete files, by path under the repository's data folder."""
+        """The table's data and delete files, by path under the repository's data folder.
+
+        A relative path is relative to the table's folder, so the schema's and
+        the table's paths come first: a working metadata that pinned the files
+        (see `catalog.pin_files`) records the same file as the whole URL.
+        """
         meta = self._meta(alias)
         rows = self.con.execute(
             f"""
-            SELECT d.path, d.path_is_relative, x.path, x.path_is_relative
+            SELECT coalesce(s.path, '') || coalesce(t.path, ''),
+                   d.path, d.path_is_relative, x.path, x.path_is_relative
             FROM {meta}.ducklake_data_file d
+            JOIN {meta}.ducklake_table t ON t.table_id = d.table_id AND t.end_snapshot IS NULL
+            JOIN {meta}.ducklake_schema s ON s.schema_id = t.schema_id AND s.end_snapshot IS NULL
             LEFT JOIN {meta}.ducklake_delete_file x
               ON x.data_file_id = d.data_file_id AND x.end_snapshot IS NULL
             WHERE d.table_id = $t AND d.end_snapshot IS NULL
@@ -287,12 +295,24 @@ class _Merging:
             {"t": table_id},
         ).fetchall()
 
-        def relative(path: str | None, is_relative: bool | None) -> str | None:
-            if path is None or is_relative:
-                return path
-            return path.removeprefix(self.repository_data)
+        def relative(prefix: str, path: str | None, is_relative: bool | None) -> str | None:
+            if path is None:
+                return None
+            return prefix + path if is_relative else path.removeprefix(self.repository_data)
 
-        return frozenset((relative(d, dr), relative(x, xr)) for d, dr, x, xr in rows)
+        return frozenset((relative(p, d, dr), relative(p, x, xr)) for p, d, dr, x, xr in rows)
+
+    def columns(self, alias: str, table_id: int) -> list[tuple]:
+        """The table's columns as DuckLake records them: names, types, defaults and NOT NULL."""
+        return self.con.execute(
+            f"""
+            SELECT column_id, column_order, column_name, column_type, default_value, nulls_allowed, parent_column
+            FROM {self._meta(alias)}.ducklake_column
+            WHERE table_id = $t AND end_snapshot IS NULL
+            ORDER BY column_id
+            """,
+            {"t": table_id},
+        ).fetchall()
 
     @staticmethod
     def name(alias: str, key: tuple[str, str]) -> str:

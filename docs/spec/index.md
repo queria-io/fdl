@@ -45,4 +45,4 @@ The format names no host and no service. Fields a host adds go where the specifi
 | asset | A file the rows of a table point at by its sha256, such as a PDF or an image collected as data |
 | grace period | How long a shared object no version reaches is kept before it may be deleted. 7 days unless a host says otherwise |
 
-A DuckLake snapshot is to a version what a small commit on a work branch is to the squash commit that lands on `main`. Snapshots are made on every write and stay inside the metadata. The unit shown to people is the version.
+A DuckLake snapshot is to a version what a small commit on a work branch is to the squash commit that lands on `main`. Snapshots are made on every write to the working metadata. A frozen metadata keeps only its last snapshot, so the unit a reader can go back to is the version, read from its own metadata.

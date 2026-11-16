@@ -488,7 +488,7 @@ def revert(
         if repo.is_expired(store, target.id):
             raise repo.RepoError(f"{target.id} is past retention or withdrawn and cannot come back")
         base = repo.read_version(store, state["base"]) if state["base"] else None
-        # By first parent: the snapshots of a version merged in belong to another metadata file.
+        # By first parent: a revert brings back an earlier version of this branch.
         if base is None or not repo.in_history(store, target.id, base):
             raise repo.RepoError(f"{target.id} is not in the first-parent history of {base.id if base else 'the working metadata'}")
         # Read before the working metadata is written back, so a refusal leaves it as it was.
@@ -497,7 +497,14 @@ def revert(
             raise repo.RepoError(f"{target.id} has no dataset.json to bring back")
         listed = (diffs.listed(store, target) or {}).get("entries", [])
         reading, setup = _reading(store, state)
-        catalog.restore(working, target.ducklake.snapshot_id, data_path=reading, setup=setup)
+        # Read from the version's own metadata: a frozen metadata holds only its last snapshot.
+        with tempfile.TemporaryDirectory(prefix="fdl-revert-") as tmp:
+            frozen = Path(tmp) / "target.duckdb"
+            frozen.write_bytes(store.get(layout.version_metadata(target)))
+            repo.check_catalog(frozen, target)
+            catalog.restore(
+                working, frozen, data_path=reading, repository_data=repo.data_url(store), setup=setup
+            )
         version = _commit(
             store,
             working,
