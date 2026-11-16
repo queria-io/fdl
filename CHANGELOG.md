@@ -1,6 +1,29 @@
 # CHANGELOG
 
 
+## v0.32.0 (2026-11-16)
+
+### Features
+
+- Keep only the last snapshot in a version's metadata and read earlier versions from their own
+  metadata ([#76](https://github.com/queria-io/fdl/pull/76),
+  [`9da0e4d`](https://github.com/queria-io/fdl/commit/9da0e4d6b97109a088754f856194b27be5fd3cd9))
+
+- Keep tree files under objects/ and make tables/ the default data_dir
+  ([#74](https://github.com/queria-io/fdl/pull/74),
+  [`df01560`](https://github.com/queria-io/fdl/commit/df0156099e3270c89869b7aa3fcf4bbe24b4993a))
+
+- Read only dataset.json and leave its meaning to the writer and host
+  ([#73](https://github.com/queria-io/fdl/pull/73),
+  [`48c15ce`](https://github.com/queria-io/fdl/commit/48c15ce56e22978a05d740f280e45253a527c666))
+
+### Refactoring
+
+- Stop renaming extensions in dataset.json and drop unused catalog helpers
+  ([#75](https://github.com/queria-io/fdl/pull/75),
+  [`c5a8525`](https://github.com/queria-io/fdl/commit/c5a852580edbdf36a3c1f4f531d7d7e92444fa73))
+
+
 ## v0.31.0 (2026-11-15)
 
 ### Documentation
