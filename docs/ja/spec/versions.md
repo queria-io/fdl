@@ -103,7 +103,7 @@ description: バージョン ID、version.json の項目、固めたメタデー
 | `rows` | `table`・`from`・`to`: 両方にあり、行数が違う表 |
 | `columns` | 列の違い（下の表） |
 | `data` | 両方にあり、データファイルが違う表。行が同じでも記録します |
-| `dataset` | `dataset.json` の sha256 が最初の親と違えば `true`、同じなら `false` |
+| `dataset` | 書き手が `dataset.json` に書いた内容が最初の親と違えば `true`、同じなら `false`。書き手のツールがメタデータから書き足すもの（表の `rows` と `kind`、列の `type` と `nullable`、ビューの `sql`）と、それを除くと名前しか残らない列と表を除いて比べる。データに表や列を足しただけでは `true` にならない |
 
 書き手は、親のスナップショットのメタデータと固めたメタデータを比べます。メタデータに親のスナップショットが残っていないときは `diff` を書きません。どちらかのバージョンに `dataset.json` が無いときは `dataset` を書きません。`dataset.json` の中で何が変わったかは記録しないので、知りたい読み手は 2 つのファイルを比べます。fdl-cli 0.31 以前が書いたバージョンは、`dataset` の代わりに `descriptions` を持ちます。`title` か `description` が違うものを、`dataset`、表、または `schema.table.column` で並べたものです。`diff` のないバージョンや、最初の親以外のバージョンと比べるときは、読み手が 2 つのバージョンの `dataset.json` と `files.json` を比べます。
 

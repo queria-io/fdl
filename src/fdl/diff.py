@@ -9,7 +9,7 @@ differences, in five kinds:
 - row counts
 - columns added, dropped, renamed or given another type (``changes``)
 - data files: a table whose files differ, even with the same rows
-- dataset: whether `dataset.json` is another file (by its sha256)
+- dataset: whether what the writer wrote in `dataset.json` changed
 """
 
 from __future__ import annotations
@@ -233,18 +233,52 @@ def versions(store: Store, old: Version | None, new: Version) -> dict[str, Any]:
         from_version(described(store, old) if old else {}, indexed(store, old) if old else {}),
         from_version(described(store, new), indexed(store, new)),
     )
-    changed = dataset_changed(old, new)
-    return result if changed is None else {**result, "dataset": changed}
+    return with_dataset(result, described(store, old) if old else None, described(store, new))
 
 
-def dataset_changed(old: Version | None, new: Version) -> bool | None:
-    """Whether ``new`` has another `dataset.json` than ``old``, by sha256.
+def with_dataset(result: dict[str, Any], old: dict | None, new: dict | None) -> dict[str, Any]:
+    """``result`` with ``dataset``: whether what the writer wrote in `dataset.json` changed.
 
-    ``None`` when either has none to compare, or before the first version.
+    Left out when either version has no `dataset.json`, as before the first.
     """
-    if old is None or old.dataset is None or new.dataset is None:
-        return None
-    return old.dataset.sha256 != new.dataset.sha256
+    if old is None or new is None:
+        return result
+    return {**result, "dataset": written(old) != written(new)}
+
+
+#: What the writer's tool fills in from the metadata, by where it sits.
+FILLED_TABLE = ("rows", "kind")
+FILLED_FIELD = ("type", "nullable")
+
+
+def written(described: dict) -> dict:
+    """A `dataset.json` as the writer wrote it: without what is filled in from the metadata.
+
+    That is each table's `rows` and `kind`, each field's `type` and
+    `nullable`, a view's `sql`, and the fields and tables left with nothing
+    but their names: a table or column added to the data is not a change in
+    what the writer wrote.
+    """
+
+    def field(item: Any) -> Any:
+        return {key: value for key, value in item.items() if key not in FILLED_FIELD} if isinstance(item, dict) else item
+
+    def table(item: Any) -> Any:
+        if not isinstance(item, dict):
+            return item
+        view = item.get("kind") == "view"
+        kept = {
+            key: value
+            for key, value in item.items()
+            if key not in FILLED_TABLE and not (view and key == "sql")
+        }
+        if isinstance(kept.get("fields"), list):
+            fields = [f for f in map(field, kept["fields"]) if not (isinstance(f, dict) and set(f) <= {"name"})]
+            kept = {**{k: v for k, v in kept.items() if k != "fields"}, **({"fields": fields} if fields else {})}
+        return kept
+
+    tables = [t for t in map(table, described.get("tables", [])) if not (isinstance(t, dict) and set(t) <= {"schema", "name"})]
+    return {**{k: v for k, v in described.items() if k != "tables"}, **({"tables": tables} if tables else {})}
 
 
 def working(working_path: Path, base: Version | None) -> dict[str, Any]:

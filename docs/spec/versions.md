@@ -103,7 +103,7 @@ The description and SQL of each snapshot stay in the metadata, in DuckLake's `co
 | `rows` | `table`, `from`, `to`: the tables both hold whose row count differs |
 | `columns` | The column differences, below |
 | `data` | The tables both hold whose data files differ, even with the same rows |
-| `dataset` | `true` when `dataset.json` has another sha256 than the first parent's, `false` when it has the same |
+| `dataset` | `true` when what the writer wrote in `dataset.json` differs from the first parent's, `false` otherwise. The two are compared without what the writer's tool fills in from the metadata (each table's `rows` and `kind`, each field's `type` and `nullable`, a view's `sql`) and without fields and tables left with nothing but their names, so a table or column added to the data alone does not set it |
 
 A writer compares the metadata at the parent's snapshot with the frozen one. It leaves `diff` out when the metadata no longer holds the parent's snapshot, and leaves `dataset` out when either version has no `dataset.json`. What changed inside `dataset.json` is not listed: a reader that wants it compares the two files. Versions written by fdl-cli 0.31 and earlier carry `descriptions` in place of `dataset`: what has another `title` or `description`, as `dataset`, a table, or `schema.table.column`. A reader compares the two versions' `dataset.json` and `files.json` for a version without `diff`, or against a version other than its first parent.
 

@@ -86,9 +86,10 @@ def tree(root: Path, *, leave_out: Iterable[Path] = ()) -> list[dict[str, Any]]:
     ``root`` is the folder of the description. Each file is an entry of
     `tree.json` (path, sha256, bytes), with its path from ``root``. Hidden
     files and folders are left out, and so is each path of ``leave_out`` (the
-    description itself, say) with anything whose path starts with it, such as
-    the files fdl keeps beside the working metadata. Links between files stay
-    as written: a reader resolves them through the tree, as Git does.
+    description itself, say) with the files named after it (``<path>.…``,
+    ``<path>-…``), such as those fdl and SQLite keep beside the working
+    metadata. Links between files stay as written: a reader resolves them
+    through the tree, as Git does.
     """
     root = Path(root).resolve()
     skipped = [
@@ -97,12 +98,13 @@ def tree(root: Path, *, leave_out: Iterable[Path] = ()) -> list[dict[str, Any]]:
         if Path(path).resolve().is_relative_to(root)
     ]
     # Left out before hashing: the working metadata and its data can be large.
-    paths = [
-        path
-        for path in _files(root)
-        if not any(path.startswith(skip) for skip in skipped)
-    ]
+    paths = [path for path in _files(root) if not any(is_beside(path, skip) for skip in skipped)]
     return [{key: value for key, value in entry(root, path).items() if key != "media_type"} for path in paths]
+
+
+def is_beside(path: str, skip: str) -> bool:
+    """Whether ``path`` is ``skip`` or a file named after it (``lake.sqlite.fdl.json``, ``lake.sqlite-wal``)."""
+    return path == skip or path.startswith((f"{skip}.", f"{skip}-", f"{skip}/"))
 
 
 def check_tree(entries: Any) -> None:

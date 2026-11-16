@@ -26,7 +26,7 @@ When the host answers 401 to a token from the helper, fdl runs the helper once m
 ## fdl init
 
 ```bash
-fdl init <remote> [--data-dir tables/]
+fdl init <remote> [--data-dir data/]
 ```
 
 Writes `fdl.json`, with a new `id`, and `HEAD`. Running it on an existing repository changes nothing and prints its settings.
@@ -67,7 +67,7 @@ Freezes the working metadata into a new version whose parent is the version it w
 
 Every version is described by a `dataset.json` (see [Versions](/spec/versions#datasetjson)), read from `--dataset` or else from the current directory. It is read as JSON only. The command checks it against the metadata and fills in the column types, nulls and row counts. Comments in the metadata (`COMMENT ON`) are not read, and keys the format does not define are kept as written.
 
-The command puts every other file in the folder of `dataset.json` and below it in the version's tree, leaving out hidden files and folders, and the working metadata with the files `fdl` keeps beside it (`<working.sqlite>.fdl.json`, `.pending/`, `.data/`) when they are in that folder. Keep the description in a folder of its own, so that nothing else goes in: it writes `tree.json` with their paths from that folder and the push uploads those the repository lacks to `objects/<sha256>`, as written (see [tree.json](/spec/versions#treejson)).
+The command puts every other file in the folder of `dataset.json` and below it in the version's tree, leaving out hidden files and folders, and each working metadata `fdl clone` made in that folder (the one committed and any other, found by its `.fdl.json`) with the files `fdl` and SQLite keep beside it (`<working.sqlite>.fdl.json`, `.pending/`, `.data/`, `-wal`), and the `--assets` folder when it is there. Keep the description in a folder of its own, so that nothing else goes in: it writes `tree.json` with their paths from that folder and the push uploads those the repository lacks to `objects/<sha256>`, as written (see [tree.json](/spec/versions#treejson)).
 
 Columns marked `asset: true` hold the sha256 of files (see [Assets](/spec/versions#assets)). The command reads the values those columns hold, and the push uploads the files the repository lacks from the `--assets` folder to `assets/<sha256>`, by their content: file names in the folder do not matter.
 
@@ -144,7 +144,7 @@ What changed in a version (default: the one `HEAD` holds) since its parent, or s
 ~ dataset.json
 ```
 
-Against its parent, the changes come from the version's `diff` (see [diff](/spec/versions#diff)). Otherwise, or for a version written without one, rows come from `dataset.json`, data files from `files.json`, and columns are compared by name, which does not see a rename. `~ data` means the table's data files differ, even when the rows are the same. `~ dataset.json` means the version's `dataset.json` is another file than its parent's. `--json` prints the same as an object with `tables` (`added`, `dropped`), `rows`, `columns`, `data` and `dataset`. Versions written by fdl-cli 0.31 and earlier show `~ description` lines from their `descriptions` instead.
+Against its parent, the changes come from the version's `diff` (see [diff](/spec/versions#diff)). Otherwise, or for a version written without one, rows come from `dataset.json`, data files from `files.json`, and columns are compared by name, which does not see a rename. `~ data` means the table's data files differ, even when the rows are the same. `~ dataset.json` means what the writer wrote in `dataset.json` changed, apart from what the commit fills in from the metadata. `--json` prints the same as an object with `tables` (`added`, `dropped`), `rows`, `columns`, `data` and `dataset`. Versions written by fdl-cli 0.31 and earlier show `~ description` lines from their `descriptions` instead.
 
 ## fdl show
 
