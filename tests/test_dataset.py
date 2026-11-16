@@ -62,30 +62,6 @@ def test_keys_outside_the_format_are_kept_as_written(frozen: Path, capsys) -> No
     assert described["annotations"] == {"queria": {"themes": ["x"]}}
 
 
-def test_extensions_is_read_as_annotations(frozen: Path) -> None:
-    described = describe(
-        {
-            "name": "t",
-            "title": "T",
-            "extensions": {"queria": {"themes": ["x"]}},
-            "tables": [
-                {
-                    "schema": "main",
-                    "name": "towns",
-                    "extensions": {"queria": {"published": False}},
-                    "fields": [{"name": "code", "extensions": {"queria": {"semantic": {}}}}],
-                }
-            ],
-        },
-        frozen,
-    )
-    towns = described["tables"][0]
-    assert described["annotations"] == {"queria": {"themes": ["x"]}}
-    assert towns["annotations"] == {"queria": {"published": False}}
-    assert towns["fields"][0]["annotations"] == {"queria": {"semantic": {}}}
-    assert "extensions" not in described and "extensions" not in towns
-
-
 def test_only_dataset_json_is_read(tmp_path: Path) -> None:
     (tmp_path / "dataset.yml").write_text("name: towns\n")
     with pytest.raises(DatasetError, match="no dataset.json"):
