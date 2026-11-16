@@ -64,15 +64,6 @@ class CatalogError(RuntimeError):
     """The catalog could not be created, opened or converted."""
 
 
-def data_path_of(catalog_url: str) -> str:
-    """Where a catalog's data files sit, given where the catalog itself is.
-
-    DuckLake derives one from the other and so does everything else here, so
-    the rule lives in one place.
-    """
-    return f"{catalog_url}.files/"
-
-
 def _escape(value: str) -> str:
     return str(value).replace("'", "''")
 
@@ -376,20 +367,6 @@ def _table_exists(con, table: str) -> bool:
         [table],
     ).fetchone()
     return bool(row and row[0])
-
-
-def recorded_data_path(catalog_path: Path) -> str | None:
-    """Return the data path currently recorded in the catalog."""
-    con = _open(Path(catalog_path))
-    try:
-        if not _table_exists(con, "ducklake_metadata"):
-            return None
-        row = con.execute(
-            f"SELECT value FROM ducklake_metadata WHERE key = '{DATA_PATH_KEY}'"
-        ).fetchone()
-    finally:
-        con.close()
-    return row[0] if row else None
 
 
 def recorded_format(catalog_path: Path) -> str | None:
