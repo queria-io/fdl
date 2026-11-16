@@ -28,7 +28,8 @@ Paths are relative to the root, lower case, and separated by `/`. The root is wh
     expired.json                   the past-retention mark (only once expired)
     <others>                       files a host adds
   <data_dir><schema>/<table>/ducklake-<uuid>.parquet   data files (shared, immutable)
-  assets/<sha256>                  files the rows of a table or a version's tree.json point at (shared, immutable)
+  assets/<sha256>                  files the rows of a table point at (shared, immutable)
+  objects/<sha256>                 files a version's tree.json lists (shared, immutable)
 ```
 
 `HEAD` and everything under `refs/` have no extension, as in Git. Their content is UTF-8 text.
@@ -45,7 +46,7 @@ A repository's root must not be under another repository's root. Deleting the ou
 {
   "fdl": "0.1",
   "id": "5f0c8a52-6d3e-4f8e-9b1a-2c7d4e9f0a13",
-  "data_dir": "data/",
+  "data_dir": "tables/",
   "signers": ["alice@example.org ssh-ed25519 AAAAC3…"],
   "metadata_formats": [
     { "ducklake": "1.1" },
@@ -58,7 +59,7 @@ A repository's root must not be under another repository's root. Deleting the ou
 | --- | --- | --- |
 | `fdl` | must | The version of this specification. A reader must not read a major version it does not know |
 | `id` | should | A UUID written when the repository is started and never changed |
-| `data_dir` | may | Where data files are, relative to the root, ending in `/`. Default `data/` |
+| `data_dir` | may | Where data files are, relative to the root, ending in `/`. Default `tables/` |
 | `metadata_formats` | may | The DuckLake formats published for new versions, and until when |
 | `signers` | may | Public keys that sign versions, as lines of an SSH `allowed_signers` file |
 
@@ -70,12 +71,12 @@ The `id` lets a copy of the repository tell that it holds the same one. Mirrors 
 
 ### data_dir
 
-The default is `data/`. A repository whose data files already sit under another prefix declares that prefix here instead of moving them. Every data file a metadata file names must be under `data_dir`.
+The default is `tables/`. A repository whose data files already sit under another prefix declares that prefix here instead of moving them. Every data file a metadata file names must be under `data_dir`.
 
 A `data_dir` is a folder under the root, written as one or more segments, each followed by `/`:
 
 - Each segment is made of lower-case ASCII letters, digits, `_`, `-` and `.`, and is not dots alone
-- The first segment is not `versions`, `refs` or `assets`
+- The first segment is not `versions`, `refs`, `assets` or `objects`
 
 Readers and writers use the value as written. A repository whose `data_dir` breaks these rules, or is not a string, is refused, never corrected (by adding a missing `/`, say): two implementations that corrected it differently would read and write different files. A host may reserve other top-level folders for its own files and refuse a `data_dir` under them. [`cases/data-dir.json`](https://github.com/queria-io/fdl/blob/main/cases/data-dir.json) lists values and what each reads as; every implementation that reads `fdl.json` runs them.
 

@@ -16,7 +16,7 @@ FDL is a storage layout and a tool for it. Each version is a frozen metadata fil
   versions/019a3c4e-…/
     version.json                    parents, author, message, sha256
     metadata.db                     the frozen metadata
-  data/main/towns/ducklake-….parquet
+  tables/main/towns/ducklake-….parquet
 ```
 
 The documentation and the specification are at [fdl.queria.io](https://fdl.queria.io).

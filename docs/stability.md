@@ -18,7 +18,7 @@ These keep their paths and their meaning:
 - the frozen metadata, at the name `metadata.path` gives (`metadata.db`, or `ducklake.duckdb` in versions written by fdl-cli 0.26 and earlier)
 - `dataset.json`: `name`, `title`, `tables` and each table's `fields`
 - `expired.json`
-- data files and `assets/<sha256>`
+- data files, `assets/<sha256>` and `objects/<sha256>`
 
 The optional files of a version, `files.json`, `tree.json` and `profiles/`, are made from the metadata and the data, and a reader works without them. They may gain keys in later releases. A reader ignores keys it does not know, in every file.
 

@@ -15,7 +15,7 @@ Readers only read files, so a repository can be served by any HTTP server, a buc
 
 ```sql
 ATTACH 'ducklake:https://data.example.org/towns/versions/019a3c4e-…/metadata.db' AS towns (
-  DATA_PATH 'https://data.example.org/towns/data/', OVERRIDE_DATA_PATH true, READ_ONLY
+  DATA_PATH 'https://data.example.org/towns/tables/', OVERRIDE_DATA_PATH true, READ_ONLY
 );
 ```
 
@@ -26,11 +26,12 @@ ATTACH 'ducklake:https://data.example.org/towns/versions/019a3c4e-…/metadata.d
 | `HEAD`, `refs/**` | `no-store` | `text/plain; charset=utf-8` |
 | `refs.json` | `no-store` | `application/json` |
 | `versions/**` | `public, max-age=31536000, immutable` | as the file |
-| `data/**` | `public, max-age=31536000, immutable` | `application/octet-stream` |
+| `tables/**` | `public, max-age=31536000, immutable` | `application/octet-stream` |
 | `assets/**` | `public, max-age=31536000, immutable` | as uploaded |
+| `objects/**` | `public, max-age=31536000, immutable` | as uploaded |
 | `fdl.json` | a short `max-age` | `application/json` |
 
-A version folder and a data file never change once written, so they can be cached for as long as the CDN allows. Only `HEAD` and the refs change, and a cached ref sends readers to an old version without telling them. `expired.json` can appear in a version folder later, so a host that expires versions should purge `versions/<ID>/` from its CDN when it does. On withdrawal, it also purges the data files and `assets/<sha256>` it deleted.
+A version folder and a data file never change once written, so they can be cached for as long as the CDN allows. Only `HEAD` and the refs change, and a cached ref sends readers to an old version without telling them. `expired.json` can appear in a version folder later, so a host that expires versions should purge `versions/<ID>/` from its CDN when it does. On withdrawal, it also purges the data files, `assets/<sha256>` and `objects/<sha256>` it deleted.
 
 The server must answer range requests (`Accept-Ranges: bytes`, `206 Partial Content`). DuckDB falls back to whole-file downloads without them, which is slow for large Parquet files.
 

@@ -193,7 +193,7 @@ def _described_files(store, ref: str) -> dict[Path, bytes]:
 
 def _tree_file(store, item: dict) -> bytes:
     """A file of `tree.json`, checked against its sha256."""
-    body = store.get(objects.asset_key(item["sha256"]))
+    body = store.get(objects.tree_key(item["sha256"]))
     if hashlib.sha256(body).hexdigest() != item["sha256"]:
         raise repo.RepoError(f"{item['path']}: the file's sha256 is not the one tree.json records")
     return body
@@ -1060,13 +1060,13 @@ def _withdrawn_objects(path: Path) -> dict[str, list[str]]:
     except (OSError, ValueError) as exc:
         raise repo.RepoError(f"{path}: {exc}") from exc
     named = raw.get("deleted", raw) if isinstance(raw, dict) else None
-    if not isinstance(named, dict) or not any(kind in named for kind in ("data", "assets")):
+    if not isinstance(named, dict) or not any(kind in named for kind in repo.DELETED_KINDS):
         raise repo.RepoError(f"{path} names no objects: give `deleted` of an expired.json, or that file")
-    for kind in ("data", "assets"):
+    for kind in repo.DELETED_KINDS:
         names = named.get(kind, [])
         if not isinstance(names, list) or not all(isinstance(name, str) for name in names):
             raise repo.RepoError(f"{path}: `{kind}` is not a list of names")
-    return {"data": named.get("data", []), "assets": named.get("assets", [])}
+    return {kind: named.get(kind, []) for kind in repo.DELETED_KINDS}
 
 
 @app.command()

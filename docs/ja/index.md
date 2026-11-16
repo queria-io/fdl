@@ -15,7 +15,7 @@ s3://my-bucket/towns/
   versions/019a3c4e-…/
     version.json                    親・作者・メッセージ・sha256
     metadata.db                     固めたメタデータ
-  data/main/towns/ducklake-….parquet
+  tables/main/towns/ducklake-….parquet
 ```
 
 読み手に要るのは DuckDB だけです。`refs/heads/main` を読み、そのバージョンのメタデータを HTTP か S3 で読み取り専用に ATTACH します。書き手に要るのは、読む・書く・条件付きで書くの 3 つができる置き場です。サーバーは要りません。

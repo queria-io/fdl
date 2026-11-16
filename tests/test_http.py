@@ -316,7 +316,7 @@ def test_a_clone_with_storage_writes_data_files_there(served, tmp_path: Path) ->
     local, url, _ = served
     working = tmp_path / "work" / "lake.sqlite"
     out = run("clone", url, working, "--storage", local.root)
-    data = f"{Path(local.root).resolve().as_posix()}/data/"
+    data = f"{Path(local.root).resolve().as_posix()}/tables/"
     assert f"DATA_PATH '{data}'" in out
     assert not working.with_name(working.name + ".data").exists()
 
@@ -330,7 +330,7 @@ def test_a_clone_with_storage_writes_data_files_there(served, tmp_path: Path) ->
 
     build("CREATE TABLE lake.main.towns AS SELECT 1 AS id")
     # Written into the repository before the commit: nothing to upload.
-    assert list((Path(local.root) / "data").rglob("*.parquet"))
+    assert list((Path(local.root) / "tables").rglob("*.parquet"))
     commit(working, "-m", "first", "--author", "tester")
     build("INSERT INTO lake.main.towns VALUES (2)")
     commit(working, "-m", "second", "--author", "tester")

@@ -95,7 +95,7 @@ description: クローン、コミット、push。作業メタデータ、書き
 
 ## 書き込みの順番
 
-1. データファイル・アセット
+1. データファイル・アセット・tree のファイル
 2. `versions/<ID>/metadata.db`（と `metadata/`）
 3. `versions/<ID>/dataset.json`・`versions/<ID>/files.json`・`versions/<ID>/tree.json`・`versions/<ID>/profiles/`
 4. `versions/<ID>/version.json`

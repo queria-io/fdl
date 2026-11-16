@@ -13,8 +13,8 @@ description: Test cases for deleting shared objects, which every implementation 
     {
       "name": "keeps every data file named, not only those at the snapshot",
       "files": { "fdl.json": {}, "versions/<ID>/version.json": {}, "versions/<ID>/files.json": {} },
-      "objects": { "data/main/t/ducklake-a.parquet": "2026-11-01T00:00:00Z" },
-      "deleted": ["data/main/t/ducklake-c.parquet"]
+      "objects": { "tables/main/t/ducklake-a.parquet": "2026-11-01T00:00:00Z" },
+      "deleted": ["tables/main/t/ducklake-c.parquet"]
     }
   ]
 }
@@ -24,7 +24,7 @@ description: Test cases for deleting shared objects, which every implementation 
 | --- | --- |
 | `now`, `grace_seconds` | The time the process runs, and the grace period |
 | `files` | The repository's files other than shared objects, by key. Each value is the file's JSON |
-| `objects` | The objects under the data directory and `assets/`, and files elsewhere a process must leave alone, by key, with the time each was placed. Their content does not matter |
+| `objects` | The objects under the data directory, `assets/` and `objects/`, and files elsewhere a process must leave alone, by key, with the time each was placed. Their content does not matter |
 | `deleted` | The keys deleted |
 
 A change to what may be deleted comes with a case here, in the same change as this specification.

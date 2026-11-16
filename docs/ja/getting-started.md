@@ -97,7 +97,7 @@ towns/
     files.json
     profiles/main/towns.json
     version.json
-  data/main/towns/ducklake-….parquet
+  tables/main/towns/ducklake-….parquet
 ```
 
 ```bash

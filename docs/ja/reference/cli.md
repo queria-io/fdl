@@ -67,7 +67,7 @@ fdl commit <working.sqlite> -m "What changed" [--author alice] [--dataset datase
 
 バージョンはそれぞれ `dataset.json`（[バージョン](/ja/spec/versions#datasetjson)を参照）で説明します。`--dataset` で指定したファイルか、なければいまのディレクトリの `dataset.json` を読みます。JSON だけを読みます。コマンドはそれをメタデータと照らし合わせ、列の型、NULL の可否、行数を書き足します。メタデータのコメント（`COMMENT ON`）は読まず、形式が決めていないキーは書かれたまま残します。
 
-コマンドは、`dataset.json` のフォルダとその下にあるほかのファイルをすべてバージョンの tree に入れます。隠しファイルと隠しフォルダ、そのフォルダの中に `fdl clone` が作った作業メタデータ（コミットするもの以外も含め、`.fdl.json` で見つけます）と、`fdl` と SQLite がその隣に置くファイル（`<working.sqlite>.fdl.json`・`.pending/`・`.data/`・`-wal`）、そのフォルダの中にある `--assets` のフォルダは除きます。ほかのファイルが入らないよう、説明は専用のフォルダに置いてください。そのフォルダからのパスで `tree.json` を書き、push がリポジトリに無いものを書いたままの中身で `assets/<sha256>` にアップロードします（[tree.json](/ja/spec/versions#treejson)）。
+コマンドは、`dataset.json` のフォルダとその下にあるほかのファイルをすべてバージョンの tree に入れます。隠しファイルと隠しフォルダ、そのフォルダの中に `fdl clone` が作った作業メタデータ（コミットするもの以外も含め、`.fdl.json` で見つけます）と、`fdl` と SQLite がその隣に置くファイル（`<working.sqlite>.fdl.json`・`.pending/`・`.data/`・`-wal`）、そのフォルダの中にある `--assets` のフォルダは除きます。ほかのファイルが入らないよう、説明は専用のフォルダに置いてください。そのフォルダからのパスで `tree.json` を書き、push がリポジトリに無いものを書いたままの中身で `objects/<sha256>` にアップロードします（[tree.json](/ja/spec/versions#treejson)）。
 
 `asset: true` の印を付けた列は、ファイルの sha256 を持ちます（[アセット](/ja/spec/versions#アセット)）。コマンドはその列の値を読み、push がリポジトリに無いファイルを `--assets` のフォルダから `assets/<sha256>` にアップロードします。ファイルは中身で照合するので、フォルダの中のファイル名は問いません。
 

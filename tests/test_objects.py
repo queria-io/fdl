@@ -74,8 +74,8 @@ def test_every_file_beside_the_description_goes_in_the_tree(tmp_path: Path, repo
     paths = {item["path"]: item["sha256"] for item in entries}
     assert set(paths) == {"README.md", "docs/img/map.png", "notes.txt"}
     # Stored as written: links are resolved through the tree, not rewritten.
-    assert store.get(objects.asset_key(paths["README.md"])).decode() == readme
-    assert store.get(objects.asset_key(paths["docs/img/map.png"])) == b"\x89PNG"
+    assert store.get(objects.tree_key(paths["README.md"])).decode() == readme
+    assert store.get(objects.tree_key(paths["docs/img/map.png"])) == b"\x89PNG"
     assert "attachments" not in json.loads(store.get(f"versions/{version.id}/dataset.json"))
 
     # The same tree again is nothing to commit; a changed README is a new version.
@@ -204,7 +204,7 @@ def test_withdrawal_deletes_the_assets_only_the_withdrawn_versions_reach(tmp_pat
     write(working, store, "DELETE FROM lake.main.reports WHERE path = 'leak.pdf'")
     commit(working, "-m", "clean", "--author", "t")
     rows = {row["path"]: row["sha256"] for row in csv.DictReader(io.StringIO(run("assets", folder)))}
-    readme = objects.asset_key(objects.sha256_of(Path("README.md")))
+    readme = objects.tree_key(objects.sha256_of(Path("README.md")))
 
     plan = repo.plan_withdrawal(store, [leaked.id])
     assert objects.asset_key(rows["leak.pdf"]) in plan.deleted

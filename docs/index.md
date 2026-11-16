@@ -15,7 +15,7 @@ s3://my-bucket/towns/
   versions/019a3c4e-…/
     version.json                    parents, author, message, sha256
     metadata.db                     the frozen metadata
-  data/main/towns/ducklake-….parquet
+  tables/main/towns/ducklake-….parquet
 ```
 
 A reader needs nothing but DuckDB: it reads `refs/heads/main`, then attaches the metadata of that version read-only, over HTTP or S3. A writer needs a store that can read, write and write on condition. There is no server.

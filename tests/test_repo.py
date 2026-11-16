@@ -69,12 +69,12 @@ def read_rows(store: LocalStore, version_id: str) -> list[tuple]:
 
 def test_init_writes_the_config_and_head(remote) -> None:
     config = json.loads(remote.get(layout.CONFIG))
-    assert config == {"fdl": "0.1", "id": config["id"], "data_dir": "data/"}
+    assert config == {"fdl": "0.1", "id": config["id"], "data_dir": "tables/"}
     assert uuid.UUID(config["id"])
     assert remote.get(layout.HEAD) == b"ref: refs/heads/main\n"
     assert repo.head(remote) is None
     # Twice is harmless, and the id stays.
-    assert repo.init(remote) == repo.Config(fdl="0.1", data_dir="data/", id=config["id"])
+    assert repo.init(remote) == repo.Config(fdl="0.1", data_dir="tables/", id=config["id"])
 
 
 def test_a_repository_without_an_id_still_reads(tmp_path: Path) -> None:
@@ -194,7 +194,7 @@ def test_push_without_moving_the_ref_leaves_readers_where_they_were(
 def test_push_refuses_a_catalog_whose_data_files_are_gone(tmp_path: Path, remote) -> None:
     build(tmp_path / "work.sqlite", remote, "CREATE TABLE lake.main.towns AS SELECT 1 AS id")
     first = commit(tmp_path, remote)
-    remote.delete([key for key in remote.list("data/")])
+    remote.delete([key for key in remote.list("tables/")])
 
     with pytest.raises(repo.RepoError, match="not in the repository"):
         repo.push(remote, tmp_path / "local" / first.id, first)
@@ -446,7 +446,7 @@ def test_a_host_that_keeps_refs_json_itself_does_not_fail_the_push(tmp_path: Pat
 
 def test_withdraw_removes_the_data_from_live_versions(tmp_path: Path, remote) -> None:
     first = pushed(tmp_path, remote)
-    leaked = set(remote.list("data/"))
+    leaked = set(remote.list("tables/"))
     build(tmp_path / "work.sqlite", remote, "CREATE TABLE lake.main.kept AS SELECT 1 AS id")
     second = commit(tmp_path, remote, parent=first)
     repo.push(remote, tmp_path / "local" / second.id, second)
@@ -459,15 +459,15 @@ def test_withdraw_removes_the_data_from_live_versions(tmp_path: Path, remote) ->
     build(tmp_path / "work.sqlite", remote, "DROP TABLE lake.main.towns; CALL ducklake_expire_snapshots('lake', older_than => now())")
     clean = commit(tmp_path, remote, parent=second)
     repo.push(remote, tmp_path / "local" / clean.id, clean)
-    kept = set(remote.list("data/")) - leaked
+    kept = set(remote.list("tables/")) - leaked
     assert kept
 
     plan = repo.withdraw(remote, [first.id, second.id])
     assert plan.tags == ("refs/tags/v2",)
     assert set(plan.deleted) == leaked and set(plan.still_read) == kept
-    assert set(remote.list("data/")) == kept
+    assert set(remote.list("tables/")) == kept
     assert repo.tags(remote) == {}
-    named = {"data": sorted(key.removeprefix("data/") for key in leaked), "assets": []}
+    named = {"data": sorted(key.removeprefix("tables/") for key in leaked), "assets": [], "objects": []}
     for version_id in (first.id, second.id):
         mark = json.loads(remote.get(layout.version_expired(version_id)))
         assert mark["reason"] == "withdrawn" and mark["deleted"] == named
@@ -478,7 +478,7 @@ def test_withdraw_removes_the_data_from_live_versions(tmp_path: Path, remote) ->
 
 def test_withdrawing_a_version_past_retention_deletes_unread_files_at_once(tmp_path: Path, remote) -> None:
     first = pushed(tmp_path, remote)
-    leaked = set(remote.list("data/"))
+    leaked = set(remote.list("tables/"))
     build(
         tmp_path / "work.sqlite",
         remote,
@@ -486,20 +486,20 @@ def test_withdrawing_a_version_past_retention_deletes_unread_files_at_once(tmp_p
     )
     second = commit(tmp_path, remote, parent=first)
     repo.push(remote, tmp_path / "local" / second.id, second)
-    kept = set(remote.list("data/")) - leaked
+    kept = set(remote.list("tables/")) - leaked
     repo.expire(remote, first.id)
-    assert leaked <= set(remote.list("data/"))  # waiting for the grace period
+    assert leaked <= set(remote.list("tables/"))  # waiting for the grace period
 
     plan = repo.withdraw(remote, [first.id])
     assert set(plan.deleted) == leaked
-    assert set(remote.list("data/")) == kept
+    assert set(remote.list("tables/")) == kept
     assert json.loads(remote.get(layout.version_expired(first.id)))["reason"] == "withdrawn"
     assert repo.head(remote) == second
 
 
 def test_withdrawing_again_keeps_the_names_the_first_run_deleted(tmp_path: Path, remote) -> None:
     first = pushed(tmp_path, remote)
-    leaked = sorted(key.removeprefix("data/") for key in remote.list("data/"))
+    leaked = sorted(key.removeprefix("tables/") for key in remote.list("tables/"))
     pushed(tmp_path, remote, parent=first, sql="DROP TABLE lake.main.towns; CREATE TABLE lake.main.kept AS SELECT 1 AS id; CALL ducklake_expire_snapshots('lake', older_than => now())")
     repo.withdraw(remote, [first.id])
     repo.expire(remote, first.id, reason="withdrawn", deleted={"data": [], "assets": []})
@@ -508,7 +508,7 @@ def test_withdrawing_again_keeps_the_names_the_first_run_deleted(tmp_path: Path,
 
 def test_a_copy_applies_a_withdrawal_by_the_objects_it_names(tmp_path: Path, remote) -> None:
     first = pushed(tmp_path, remote)
-    leaked = sorted(key.removeprefix("data/") for key in remote.list("data/"))
+    leaked = sorted(key.removeprefix("tables/") for key in remote.list("tables/"))
     # A version made on top in the copy still reads the withdrawn file
     second = pushed(tmp_path, remote, parent=first, sql="INSERT INTO lake.main.towns VALUES (2)")
     stray = "assets/" + "a" * 64
@@ -532,7 +532,7 @@ def test_a_copy_applies_a_withdrawal_by_the_objects_it_names(tmp_path: Path, rem
     plan = repo.withdraw(remote, [], plan=repo.plan_withdrawal(remote, [], objects=named))
     assert set(plan.versions) == {first.id, second.id}
     assert remote.head(stray) is None
-    assert not {"data/" + name for name in leaked} & set(remote.list("data/"))
+    assert not {"tables/" + name for name in leaked} & set(remote.list("tables/"))
     mark = json.loads(remote.get(layout.version_expired(second.id)))
     assert mark["deleted"]["assets"] == ["a" * 64] and set(leaked) <= set(mark["deleted"]["data"])
     assert repo.head(remote) == clean
@@ -681,11 +681,11 @@ def test_collection_leaves_files_that_are_not_shared_objects(tmp_path: Path, rem
     import datetime as dt
 
     _pushed(tmp_path, remote)
-    remote.put("data/README.txt", b"not a data file\n")
+    remote.put("tables/README.txt", b"not a data file\n")
     remote.put("assets/notes.txt", b"not an asset\n")
     later = dt.datetime.now(dt.timezone.utc) + dt.timedelta(days=1)
     plan = repo.plan_collection(remote, grace=dt.timedelta(0), now=later)
-    assert "data/README.txt" not in plan.deleted and "assets/notes.txt" not in plan.deleted
+    assert "tables/README.txt" not in plan.deleted and "assets/notes.txt" not in plan.deleted
 
 
 def test_collection_keeps_files_only_an_older_snapshot_of_the_catalog_names(tmp_path: Path, remote) -> None:
@@ -703,7 +703,7 @@ def test_collection_keeps_files_only_an_older_snapshot_of_the_catalog_names(tmp_
 
     later = dt.datetime.now(dt.timezone.utc) + dt.timedelta(days=1)
     plan = repo.plan_collection(remote, grace=dt.timedelta(0), now=later)
-    assert not {"data/" + key for key in index["named"]} & set(plan.deleted)
+    assert not {"tables/" + key for key in index["named"]} & set(plan.deleted)
 
 
 def test_collection_reads_the_catalog_for_a_files_json_without_named(tmp_path: Path, remote) -> None:
@@ -720,7 +720,7 @@ def test_collection_reads_the_catalog_for_a_files_json_without_named(tmp_path: P
 
     later = dt.datetime.now(dt.timezone.utc) + dt.timedelta(days=1)
     plan = repo.plan_collection(remote, grace=dt.timedelta(0), now=later)
-    assert not {"data/" + key for key in index["named"]} & set(plan.deleted)
+    assert not {"tables/" + key for key in index["named"]} & set(plan.deleted)
 
 
 def test_a_push_sent_again_rewrites_refs_json(tmp_path: Path, remote) -> None:

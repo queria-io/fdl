@@ -28,7 +28,8 @@ description: リポジトリのファイル、そのパス、fdl.json の中身�
     expired.json                   保持期間を過ぎた印（過ぎたときだけ）
     <others>                       ホストが足すファイル
   <data_dir><schema>/<table>/ducklake-<uuid>.parquet   データファイル（共有、変えない）
-  assets/<sha256>                  テーブルの行やバージョンの tree.json が指すファイル（共有、変更しない）
+  assets/<sha256>                  テーブルの行が指すファイル（共有、変更しない）
+  objects/<sha256>                 バージョンの tree.json が並べるファイル（共有、変更しない）
 ```
 
 `HEAD` と `refs/` の下のファイルには、Git と同じく拡張子を付けません。中身は UTF-8 のテキストです。
@@ -45,7 +46,7 @@ description: リポジトリのファイル、そのパス、fdl.json の中身�
 {
   "fdl": "0.1",
   "id": "5f0c8a52-6d3e-4f8e-9b1a-2c7d4e9f0a13",
-  "data_dir": "data/",
+  "data_dir": "tables/",
   "signers": ["alice@example.org ssh-ed25519 AAAAC3…"],
   "metadata_formats": [
     { "ducklake": "1.1" },
@@ -58,7 +59,7 @@ description: リポジトリのファイル、そのパス、fdl.json の中身�
 | --- | --- | --- |
 | `fdl` | must | この仕様のバージョン。読み手は知らないメジャーバージョンを読んではいけない |
 | `id` | should | リポジトリを作ったときに書き、変えない UUID |
-| `data_dir` | may | データファイルの場所。ルートからの相対で `/` で終わる。既定は `data/` |
+| `data_dir` | may | データファイルの場所。ルートからの相対で `/` で終わる。既定は `tables/` |
 | `metadata_formats` | may | 新しいバージョンで出す DuckLake 形式と、いつまで出すか |
 | `signers` | may | バージョンに署名する公開鍵。SSH の `allowed_signers` ファイルの行の形 |
 
@@ -70,12 +71,12 @@ description: リポジトリのファイル、そのパス、fdl.json の中身�
 
 ### data_dir
 
-既定は `data/` です。データファイルが既に別のプレフィックスにあるリポジトリは、ファイルを動かさずに、そのプレフィックスをここに書きます。メタデータが参照するデータファイルは、すべて `data_dir` の下になければなりません。
+既定は `tables/` です。データファイルが既に別のプレフィックスにあるリポジトリは、ファイルを動かさずに、そのプレフィックスをここに書きます。メタデータが参照するデータファイルは、すべて `data_dir` の下になければなりません。
 
 `data_dir` はルートの下のフォルダで、1 つ以上の段を、それぞれ `/` で終えて書きます。
 
 - 各段は、小文字の ASCII 英字、数字、`_`、`-`、`.` からなり、`.` だけの段は使えません
-- 最初の段は `versions`、`refs`、`assets` のどれでもありません
+- 最初の段は `versions`、`refs`、`assets`、`objects` のどれでもありません
 
 読み手と書き手は、書かれた値をそのまま使います。`data_dir` がこの規則に合わないか、文字列でないリポジトリは断ります。足りない `/` を補うといった補正はしません。実装ごとに補正の仕方が違うと、読み書きするファイルが食い違うためです。ホストは、自分のファイルのためにほかのトップレベルのフォルダを予約し、その下を指す `data_dir` を断ってもかまいません。[`cases/data-dir.json`](https://github.com/queria-io/fdl/blob/main/cases/data-dir.json) に、値とそれぞれの読み方を並べています。`fdl.json` を読む実装は、すべてのケースを実行します。
 
