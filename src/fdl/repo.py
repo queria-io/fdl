@@ -340,7 +340,8 @@ def record(
     """Make a version out of a metadata file that is already frozen.
 
     For a writer that freezes the metadata itself (with checks of its own) and
-    only needs the version around it. The metadata is copied, not moved.
+    only needs the version around it. The metadata is copied, not moved, and
+    the copy keeps only its last snapshot (see `catalog.keep_last_snapshot`).
 
     The version's ``diff`` compares the metadata at the parent's snapshot with
     the frozen one, and says whether what the writer wrote in `dataset.json`
@@ -373,12 +374,14 @@ def record(
             described = File(
                 path=layout.DATASET, bytes=written.stat().st_size, sha256=_sha256(written)
             )
-        indexed = _write_files_index(target, copied, last)
         difference = diffs.between(
             copied, parent.ducklake.snapshot_id if parent else None, last
         )
         if difference is not None:
             difference = diffs.with_dataset(difference, parent_dataset, completed)
+        # After the diff, which reads the parent's snapshot: the version keeps only its own.
+        catalog.keep_last_snapshot(copied)
+        indexed = _write_files_index(target, copied, last)
         listed = None
         if tree:
             written = target / layout.TREE
