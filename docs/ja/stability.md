@@ -18,7 +18,7 @@ FDL 0.1 で書いたリポジトリは、この先のリリースの `fdl` で�
 - 固めたメタデータ（`metadata.path` の名前。`metadata.db`、fdl-cli 0.26 以前が書いたバージョンでは `ducklake.duckdb`）
 - `dataset.json` の `name`・`title`・`tables` と、各表の `fields`
 - `expired.json`
-- データファイルと `assets/<sha256>`
+- データファイル・`assets/<sha256>`・`objects/<sha256>`
 
 バージョンの任意のファイル `files.json`・`tree.json`・`profiles/` は、メタデータとデータから作るもので、読み手はこれらが無くても読めます。この先のリリースでキーが増えることがあります。読み手は、どのファイルでも知らないキーを無視します。
 

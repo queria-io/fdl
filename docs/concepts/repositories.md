@@ -28,8 +28,9 @@ Readers only read. A static HTTP server in front of the repository is enough for
   refs/heads/<name>        branches
   refs/tags/<name>         tags
   versions/<ID>/           one folder per version
-  data/                    Parquet files, shared by all versions
-  assets/<sha256>          files a version points at, such as PDFs, images and its README
+  tables/                  Parquet files, shared by all versions
+  assets/<sha256>          files the rows of a table point at, such as PDFs and images
+  objects/<sha256>         files a version holds beside its tables, such as its README
 ```
 
 The repository holds no metadata outside a version folder, and never a working metadata file. Either would hand readers a state that was never published.

@@ -821,8 +821,14 @@ def expire(
     )
 
 
+#: What `deleted` of `expired.json` names: data files, assets and the files of trees.
+DELETED_KINDS = ("data", "assets", "objects")
+#: Where each kind of hashed object is stored.
+_HASHED_DIRS = {"assets": layout.ASSETS_DIR, "objects": layout.OBJECTS_DIR}
+
+
 def _union_deleted(*lists: object) -> dict[str, list[str]]:
-    union: dict[str, set[str]] = {"data": set(), "assets": set()}
+    union: dict[str, set[str]] = {kind: set() for kind in DELETED_KINDS}
     for value in lists:
         if isinstance(value, dict):
             for kind, names in union.items():
@@ -831,15 +837,15 @@ def _union_deleted(*lists: object) -> dict[str, list[str]]:
 
 
 def deleted_names(keys: Iterable[str], data_dir: str) -> dict[str, list[str]]:
-    """Shared objects as `expired.json` names them: data files from `data_dir`, assets by sha256."""
-    data: list[str] = []
-    assets: list[str] = []
+    """Shared objects as `expired.json` names them: data files from `data_dir`, assets and tree files by sha256."""
+    named: dict[str, list[str]] = {kind: [] for kind in DELETED_KINDS}
     for key in keys:
-        if key.startswith(layout.ASSETS_DIR):
-            assets.append(key[len(layout.ASSETS_DIR) :])
+        kind = next((kind for kind, prefix in _HASHED_DIRS.items() if key.startswith(prefix)), None)
+        if kind is not None:
+            named[kind].append(key[len(_HASHED_DIRS[kind]) :])
         elif key.startswith(data_dir):
-            data.append(key[len(data_dir) :])
-    return {"data": sorted(data), "assets": sorted(assets)}
+            named["data"].append(key[len(data_dir) :])
+    return {kind: sorted(names) for kind, names in named.items()}
 
 
 @dataclass(frozen=True)
@@ -910,7 +916,8 @@ def plan_withdrawal(
             continue
         tags.append(name)
 
-    # Store keys: data files under the data directory, assets under assets/.
+    # Store keys: data files under the data directory, assets under assets/,
+    # tree files under objects/.
     # Named objects still there go whether or not a version reaches them.
     candidates: set[str] = {key for key in named if store.head(key) is not None}
     kept: set[str] = set()
@@ -948,7 +955,7 @@ def plan_withdrawal(
         # period anyway, so all of them go now.
         candidates.update(
             key
-            for key in (*store.list(config.data_dir), *store.list(layout.ASSETS_DIR))
+            for key in _shared_keys(store, config.data_dir)
             if layout.is_shared_object(key, config.data_dir)
         )
     return Withdrawal(
@@ -962,13 +969,16 @@ def plan_withdrawal(
 
 def _named_objects(objects: dict[str, list[str]], data_dir: str) -> set[str]:
     """Store keys of the objects `deleted` names, leaving out any not in the form of a shared object."""
-    names = [*objects.get("data", []), *objects.get("assets", [])]
-    if any(".." in name.split("/") for name in names):
+    prefixes = {"data": data_dir, **_HASHED_DIRS}
+    keys = {prefixes[kind] + name for kind in DELETED_KINDS for name in objects.get(kind, [])}
+    if any(".." in key.split("/") for key in keys):
         raise RepoError("an object name may not have a .. segment")
-    keys = {data_dir + name for name in objects.get("data", [])} | {
-        layout.ASSETS_DIR + name for name in objects.get("assets", [])
-    }
     return {key for key in keys if layout.is_shared_object(key, data_dir)}
+
+
+def _shared_keys(store: Store, data_dir: str) -> list[str]:
+    """Every key under the folders that hold shared objects."""
+    return [key for prefix in (data_dir, *_HASHED_DIRS.values()) for key in store.list(prefix)]
 
 
 def _reaching(
@@ -1038,7 +1048,11 @@ def plan_collection(
         raise RepoError("this store does not say when objects were written; collect at the storage itself")
     config = read_config(store)
     before = (now or dt.datetime.now(dt.timezone.utc)) - grace
-    placed = {**store.placed(config.data_dir), **store.placed(layout.ASSETS_DIR)}
+    placed = {
+        key: when
+        for prefix in (config.data_dir, *_HASHED_DIRS.values())
+        for key, when in store.placed(prefix).items()
+    }
     old = {key for key, when in placed.items() if when < before and layout.is_shared_object(key, config.data_dir)}
     live = [version_id for version_id in _version_ids(store) if not is_expired(store, version_id)]
     reached = _reached_by_all(store, config, live, list(setup))
@@ -1086,7 +1100,7 @@ def _asset_columns(store: Store, version: Version) -> list[tuple[str, str, str]]
 
 
 def _reached_assets(store: Store, version: Version, local: Path | None, setup: list[str]) -> set[str]:
-    """The asset keys the version reaches: its `tree.json` and its asset columns."""
+    """The keys of the files the version reaches: its `tree.json` and its asset columns."""
     reached: set[str] = set()
     if version.tree is not None:
         try:
@@ -1095,7 +1109,7 @@ def _reached_assets(store: Store, version: Version, local: Path | None, setup: l
             if not is_missing(exc):
                 raise
         else:
-            reached.update(objects.asset_key(item["sha256"]) for item in listed["entries"])
+            reached.update(objects.tree_key(item["sha256"]) for item in listed["entries"])
     columns = _asset_columns(store, version)
     if columns and local is not None:
         values = objects.asset_values(local, columns, data_path=data_url(store), setup=setup)
@@ -1127,11 +1141,11 @@ def withdraw(
         refs.delete(store, name)
     if plan.tags:
         update_refs_index(store)
-    # Assets first: the data files are what says which assets the versions'
-    # rows reach, so a run that stops half way can still work them out.
-    assets = [key for key in plan.deleted if key.startswith(layout.ASSETS_DIR)]
-    store.delete(assets)
-    store.delete([key for key in plan.deleted if not key.startswith(layout.ASSETS_DIR)])
+    # Assets and tree files first: the data files are what says which assets
+    # the versions' rows reach, so a run that stops half way can still work them out.
+    hashed = [key for key in plan.deleted if key.startswith(tuple(_HASHED_DIRS.values()))]
+    store.delete(hashed)
+    store.delete([key for key in plan.deleted if key not in set(hashed)])
     deleted = deleted_names(plan.deleted, read_config(store).data_dir)
     for version_id in plan.versions:
         expire(store, version_id, reason="withdrawn", by=by, message=message, deleted=deleted)
@@ -1409,22 +1423,22 @@ def _upload_data_files(store: Store, config: Config, frozen: Path, local_data: P
 
 
 def _needed_objects(local: Path, version: Version, assets: Iterable[str]) -> dict[str, str]:
-    """The assets a version reaches: store key to media type, where it is known."""
+    """The assets and tree files a version reaches: store key to media type, where it is known."""
     needed: dict[str, str] = {}
     if version.tree is not None:
         listed = json.loads((local / version.tree.path).read_text(encoding="utf-8"))
         for item in listed["entries"]:
-            needed[objects.asset_key(item["sha256"])] = objects.media_type(item["path"])
+            needed[objects.tree_key(item["sha256"])] = objects.media_type(item["path"])
     for sha256 in assets:
         needed.setdefault(objects.asset_key(sha256), "")
     return needed
 
 
 def _upload_objects(store: Store, needed: dict[str, str], local: Mapping[str, Path]) -> None:
-    """Put the assets the repository lacks, or refuse the push."""
+    """Put the assets and tree files the repository lacks, or refuse the push."""
     if not needed:
         return
-    present = set(store.list(layout.ASSETS_DIR))
+    present = {key for prefix in _HASHED_DIRS.values() for key in store.list(prefix)}
     lacking = [key for key in needed if key not in present]
     unknown = [key for key in lacking if key.rsplit("/", 1)[1] not in local]
     if unknown:

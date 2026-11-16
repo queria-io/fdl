@@ -31,7 +31,7 @@ A host may hand out upload URLs so that files go straight to its storage rather 
 `POST <root>/?batch` with the files a writer is about to upload:
 
 ```json
-{ "operation": "upload", "objects": [{ "key": "data/main/towns/a.parquet", "size": 1048576 }] }
+{ "operation": "upload", "objects": [{ "key": "tables/main/towns/a.parquet", "size": 1048576 }] }
 ```
 
 The answer has one entry per object, in any order:
@@ -40,14 +40,14 @@ The answer has one entry per object, in any order:
 {
   "objects": [
     {
-      "key": "data/main/towns/a.parquet",
+      "key": "tables/main/towns/a.parquet",
       "size": 1048576,
       "actions": {
         "upload": { "href": "https://storage.example.org/…", "header": { "If-None-Match": "*" }, "expires_in": 3600 }
       }
     },
-    { "key": "data/main/towns/b.parquet", "size": 2048 },
-    { "key": "data/main/towns/c.parquet", "size": 9, "error": { "code": 413, "message": "Too large for one request" } }
+    { "key": "tables/main/towns/b.parquet", "size": 2048 },
+    { "key": "tables/main/towns/c.parquet", "size": 9, "error": { "code": 413, "message": "Too large for one request" } }
   ]
 }
 ```

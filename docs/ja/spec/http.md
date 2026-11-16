@@ -31,7 +31,7 @@ description: 書き手が置き場の鍵を持たずに push できるよう、�
 書き手は、アップロードするファイルを `POST <root>/?batch` で送る。
 
 ```json
-{ "operation": "upload", "objects": [{ "key": "data/main/towns/a.parquet", "size": 1048576 }] }
+{ "operation": "upload", "objects": [{ "key": "tables/main/towns/a.parquet", "size": 1048576 }] }
 ```
 
 答えにはオブジェクトごとに 1 つずつ項目が入る。順番は問わない。
@@ -40,14 +40,14 @@ description: 書き手が置き場の鍵を持たずに push できるよう、�
 {
   "objects": [
     {
-      "key": "data/main/towns/a.parquet",
+      "key": "tables/main/towns/a.parquet",
       "size": 1048576,
       "actions": {
         "upload": { "href": "https://storage.example.org/…", "header": { "If-None-Match": "*" }, "expires_in": 3600 }
       }
     },
-    { "key": "data/main/towns/b.parquet", "size": 2048 },
-    { "key": "data/main/towns/c.parquet", "size": 9, "error": { "code": 413, "message": "Too large for one request" } }
+    { "key": "tables/main/towns/b.parquet", "size": 2048 },
+    { "key": "tables/main/towns/c.parquet", "size": 9, "error": { "code": 413, "message": "Too large for one request" } }
   ]
 }
 ```

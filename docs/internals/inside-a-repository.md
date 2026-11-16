@@ -33,7 +33,7 @@ After `fdl clone` and a `CREATE TABLE`, DuckLake has written Parquet into the re
 ```
 fdl.json
 HEAD
-data/main/towns/ducklake-0199f1….parquet
+tables/main/towns/ducklake-0199f1….parquet
 ```
 
 No ref and no version names the file, so no reader can reach it. If the writer gives up, the file is left behind and maintenance deletes it after the grace period.
@@ -59,7 +59,7 @@ refs/heads/main                                   019a2f10-…
 versions/019a2f10-…/metadata.db
 versions/019a2f10-…/dataset.json
 versions/019a2f10-…/version.json
-data/main/towns/ducklake-0199f1….parquet
+tables/main/towns/ducklake-0199f1….parquet
 ```
 
 The order is what keeps readers safe. A reader starts from a ref, and the ref is written last. If the push stops after step 6, 7 or 8, the repository holds a version folder no ref points at. Readers never see it, and it changes nothing.
@@ -76,8 +76,8 @@ versions/019a2f10-…/…
 versions/019a3c4e-…/metadata.db
 versions/019a3c4e-…/dataset.json
 versions/019a3c4e-…/version.json
-data/main/towns/ducklake-0199f1….parquet          named by both versions
-data/main/towns/ducklake-019a3b….parquet          named by the second only
+tables/main/towns/ducklake-0199f1….parquet          named by both versions
+tables/main/towns/ducklake-019a3b….parquet          named by the second only
 ```
 
 ```json versions/019a3c4e-…/version.json

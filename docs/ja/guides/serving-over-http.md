@@ -15,7 +15,7 @@ description: 普通の HTTP サーバーや CDN からリポジトリを ATTACH 
 
 ```sql
 ATTACH 'ducklake:https://data.example.org/towns/versions/019a3c4e-…/metadata.db' AS towns (
-  DATA_PATH 'https://data.example.org/towns/data/', OVERRIDE_DATA_PATH true, READ_ONLY
+  DATA_PATH 'https://data.example.org/towns/tables/', OVERRIDE_DATA_PATH true, READ_ONLY
 );
 ```
 
@@ -26,11 +26,12 @@ ATTACH 'ducklake:https://data.example.org/towns/versions/019a3c4e-…/metadata.d
 | `HEAD`、`refs/**` | `no-store` | `text/plain; charset=utf-8` |
 | `refs.json` | `no-store` | `application/json` |
 | `versions/**` | `public, max-age=31536000, immutable` | ファイルに合わせる |
-| `data/**` | `public, max-age=31536000, immutable` | `application/octet-stream` |
+| `tables/**` | `public, max-age=31536000, immutable` | `application/octet-stream` |
 | `assets/**` | `public, max-age=31536000, immutable` | アップロードしたときの型 |
+| `objects/**` | `public, max-age=31536000, immutable` | アップロードしたときの型 |
 | `fdl.json` | 短い `max-age` | `application/json` |
 
-バージョンのフォルダとデータファイルは一度書いたら変わらないので、CDN が許す限り長くキャッシュできます。変わるのは `HEAD` と ref だけです。ref をキャッシュすると、読み手は知らないうちに古いバージョンを読みます。`expired.json` はあとからバージョンのフォルダに増えることがあるので、保持期間を終わらせたホストは、そのとき `versions/<ID>/` を CDN から消してください。取り下げでは、消したデータファイルと `assets/<sha256>` も CDN から消してください。
+バージョンのフォルダとデータファイルは一度書いたら変わらないので、CDN が許す限り長くキャッシュできます。変わるのは `HEAD` と ref だけです。ref をキャッシュすると、読み手は知らないうちに古いバージョンを読みます。`expired.json` はあとからバージョンのフォルダに増えることがあるので、保持期間を終わらせたホストは、そのとき `versions/<ID>/` を CDN から消してください。取り下げでは、消したデータファイル・`assets/<sha256>`・`objects/<sha256>` も CDN から消してください。
 
 サーバーは範囲リクエストに応える必要があります（`Accept-Ranges: bytes`、`206 Partial Content`）。応えないと DuckDB はファイル全体を取得し、大きな Parquet ファイルでは遅くなります。
 

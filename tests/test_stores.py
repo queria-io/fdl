@@ -43,7 +43,7 @@ def test_a_repository_on_s3(s3: S3Store) -> None:
     repo.init(s3)
     assert refs.resolve(s3) == ("refs/heads/main", None)
     assert s3.url == "s3://lake/datasets/towns/"
-    assert repo.data_url(s3) == "s3://lake/datasets/towns/data/"
+    assert repo.data_url(s3) == "s3://lake/datasets/towns/tables/"
 
 
 def test_open_store(tmp_path) -> None:

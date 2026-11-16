@@ -26,7 +26,7 @@ When the host answers 401 to a token from the helper, fdl runs the helper once m
 ## fdl init
 
 ```bash
-fdl init <remote> [--data-dir data/]
+fdl init <remote> [--data-dir tables/]
 ```
 
 Writes `fdl.json`, with a new `id`, and `HEAD`. Running it on an existing repository changes nothing and prints its settings.
@@ -67,7 +67,7 @@ Freezes the working metadata into a new version whose parent is the version it w
 
 Every version is described by a `dataset.json` (see [Versions](/spec/versions#datasetjson)), read from `--dataset` or else from the current directory. It is read as JSON only. The command checks it against the metadata and fills in the column types, nulls and row counts. Comments in the metadata (`COMMENT ON`) are not read, and keys the format does not define are kept as written.
 
-The command puts every other file in the folder of `dataset.json` and below it in the version's tree, leaving out hidden files and folders, and the working metadata with the files `fdl` keeps beside it (`<working.sqlite>.fdl.json`, `.pending/`, `.data/`) when they are in that folder. Keep the description in a folder of its own, so that nothing else goes in: it writes `tree.json` with their paths from that folder and the push uploads those the repository lacks to `assets/<sha256>`, as written (see [tree.json](/spec/versions#treejson)).
+The command puts every other file in the folder of `dataset.json` and below it in the version's tree, leaving out hidden files and folders, and the working metadata with the files `fdl` keeps beside it (`<working.sqlite>.fdl.json`, `.pending/`, `.data/`) when they are in that folder. Keep the description in a folder of its own, so that nothing else goes in: it writes `tree.json` with their paths from that folder and the push uploads those the repository lacks to `objects/<sha256>`, as written (see [tree.json](/spec/versions#treejson)).
 
 Columns marked `asset: true` hold the sha256 of files (see [Assets](/spec/versions#assets)). The command reads the values those columns hold, and the push uploads the files the repository lacks from the `--assets` folder to `assets/<sha256>`, by their content: file names in the folder do not matter.
 

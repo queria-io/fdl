@@ -177,7 +177,7 @@ When a version is taken out of retention, `files.json` is deleted with its metad
 
 ## tree.json
 
-`tree.json` lists the files a version holds beside its tables, such as a README and the images it shows, by path. It plays the part of Git's tree: each path names the sha256 of a file, and the file is stored as an asset at `assets/<sha256>`. The tables are not in it; the metadata is their tree.
+`tree.json` lists the files a version holds beside its tables, such as a README and the images it shows, by path. It plays the part of Git's tree: each path names the sha256 of a file, and the file is stored at `objects/<sha256>`. The tables are not in it; the metadata is their tree.
 
 ```json tree.json
 {
@@ -189,6 +189,8 @@ When a version is taken out of retention, `files.json` is deleted with its metad
 ```
 
 - `entries` lists each file's path, sha256 (lower-case hex) and size, by path. Paths are relative, separated by `/`, have no empty, `.` or `..` segment, and are unique
+- Each file is stored at `objects/<sha256>` at the root, kept apart from the assets the rows hold. A reader finds it at `<root>objects/<sha256>` and checks its sha256 before it shows it. Every file `tree.json` lists must be in the repository before the version is written
+- fdl-cli 0.31 and earlier stored these files at `assets/<sha256>`. A repository with such versions copies each file their `tree.json` lists to `objects/<sha256>`; readers do not look for them under `assets/`
 - Files are stored as written. A relative link in a Markdown file is resolved against the file's own path, percent-decoded, and looked up in `entries`, as GitHub resolves a link in a README through the commit's tree. A link to a path not in `entries` is broken
 - Readers commonly show `README.md` first. Which file to show, and where, is the reader's choice
 - `description` in `dataset.json` stays a short plain text. A reader that does not read the tree still has it, and lists show it

@@ -16,7 +16,7 @@ FDL is a storage layout for keeping versions of [DuckLake](https://ducklake.sele
 - the layout of a repository, and the name and content of each file ([Layout](/spec/layout))
 - the fields of a version record and the frozen metadata ([Versions](/spec/versions))
 - the content of refs and the rules for moving them ([Refs](/spec/refs))
-- when shared objects (data files and assets) may be deleted, and how a version is taken out of retention or withdrawn ([Data files](/spec/data-files))
+- when shared objects (data files, assets and tree files) may be deleted, and how a version is taken out of retention or withdrawn ([Data files](/spec/data-files))
 - how a reader finds and opens a version, and checks who made it ([Reading](/spec/reading))
 - the order of writes, and when a push is refused ([Writing](/spec/writing))
 - the requests a host answers to take pushes over HTTP ([Pushing over HTTP](/spec/http))

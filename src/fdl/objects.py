@@ -1,9 +1,9 @@
-"""Assets: files stored by their sha256 beside the data.
+"""Files stored by their sha256 beside the data.
 
-The rows of a table point at them through a column marked ``asset``, and a
-version's `tree.json` names them by path (its README, say). They sit at
-``assets/<sha256>`` at the root, are written once and shared by versions, as
-Git LFS stores the files its pointers name.
+The rows of a table point at assets through a column marked ``asset``; they
+sit at ``assets/<sha256>``. A version's `tree.json` names its other files by
+path (its README, say); they sit at ``objects/<sha256>``. Both are written once
+and shared by versions, as Git LFS stores the files its pointers name.
 """
 
 from __future__ import annotations
@@ -234,3 +234,8 @@ def asset_values(
 
 def asset_key(sha256: str) -> str:
     return layout.ASSETS_DIR + sha256
+
+
+def tree_key(sha256: str) -> str:
+    """Where a file of `tree.json` is stored."""
+    return layout.OBJECTS_DIR + sha256

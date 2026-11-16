@@ -20,7 +20,7 @@ HEAD = "HEAD"
 #: The list of refs, for readers that cannot list the store.
 REFS_INDEX = "refs.json"
 DEFAULT_BRANCH = "refs/heads/main"
-DEFAULT_DATA_DIR = "data/"
+DEFAULT_DATA_DIR = "tables/"
 
 VERSION_RECORD = "version.json"
 #: The frozen DuckLake metadata. Versions written by 0.26 and earlier name it
@@ -41,6 +41,8 @@ TREE = "tree.json"
 PROFILES_DIR = "profiles/"
 #: Files the rows of a table point at, by sha256 (shared).
 ASSETS_DIR = "assets/"
+#: The files a version's `tree.json` lists, by sha256 (shared).
+OBJECTS_DIR = "objects/"
 
 #: What a symbolic ref starts with. HEAD is the only one.
 SYMBOLIC = "ref: "
@@ -58,7 +60,7 @@ _VERSION_ID = re.compile(r"[0-9a-f]{8}-[0-9a-f]{4}-7[0-9a-f]{3}-[89ab][0-9a-f]{3
 
 #: The names of shared objects (see `is_shared_object`).
 _DATA_FILE = re.compile(r"ducklake-[^/]+\.parquet")
-_ASSET = re.compile(r"assets/[0-9a-f]{64}")
+_HASHED = re.compile(r"(?:assets|objects)/[0-9a-f]{64}")
 
 
 class LayoutError(ValueError):
@@ -106,7 +108,7 @@ def check_file_name(value: object) -> str:
 #: A segment of `data_dir`: lower-case ASCII letters, digits, `_`, `-` and `.`.
 _DATA_DIR_SEGMENT = re.compile(r"[a-z0-9_.-]+")
 #: Top-level folders of the format, which `data_dir` must not be under.
-_RESERVED_TOP = ("versions", "refs", "assets")
+_RESERVED_TOP = ("versions", "refs", "assets", "objects")
 
 
 def is_data_dir(value: object) -> bool:
@@ -121,12 +123,12 @@ def is_data_dir(value: object) -> bool:
 
 
 def is_shared_object(key: str, data_dir: str) -> bool:
-    """Whether ``key`` is named as a shared object: a data file or an asset.
+    """Whether ``key`` is named as a shared object: a data file, an asset or a tree's file.
 
     Deleting is only for these, so a stray file under the data directory is
     left alone.
     """
-    if _ASSET.fullmatch(key):
+    if _HASHED.fullmatch(key):
         return True
     return key.startswith(data_dir) and bool(_DATA_FILE.fullmatch(key.rsplit("/", 1)[-1]))
 

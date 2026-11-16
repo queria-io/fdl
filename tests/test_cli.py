@@ -232,7 +232,7 @@ def test_withdraw_applies_the_objects_another_repository_withdrew(tmp_path: Path
     write(working, store, "CREATE TABLE lake.main.towns AS SELECT 1 AS id")
     commit(working, "-m", "leak", "--author", "tester")
     leak = repo.head(store)
-    names = [key.removeprefix("data/") for key in store.list("data/")]
+    names = [key.removeprefix("tables/") for key in store.list("tables/")]
     mark = tmp_path / "expired.json"
     mark.write_text(json.dumps({"reason": "withdrawn", "deleted": {"data": names, "assets": []}}))
 

@@ -95,7 +95,7 @@ The working metadata is cloned from ours and gets the result in a new snapshot. 
 
 ## Order of writes
 
-1. Data files and assets
+1. Data files, assets and tree files
 2. `versions/<ID>/metadata.db` (and any `metadata/`)
 3. `versions/<ID>/dataset.json`, `versions/<ID>/files.json`, `versions/<ID>/tree.json` and `versions/<ID>/profiles/`
 4. `versions/<ID>/version.json`

@@ -28,8 +28,9 @@ description: リポジトリとは何か、置き場に何が求められるか�
   refs/heads/<name>        ブランチ
   refs/tags/<name>         タグ
   versions/<ID>/           バージョンごとのフォルダ
-  data/                    Parquet ファイル。全バージョンで共有
-  assets/<sha256>          バージョンが指すファイル（PDF・画像・README など）
+  tables/                  Parquet ファイル。全バージョンで共有
+  assets/<sha256>          テーブルの行が指すファイル（PDF・画像など）
+  objects/<sha256>         バージョンがテーブルのほかに持つファイル（README など）
 ```
 
 リポジトリには、バージョンのフォルダの外にメタデータを置きません。作業メタデータも置きません。どちらも、公開していない状態を読み手に渡してしまいます。

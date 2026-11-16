@@ -33,7 +33,7 @@ ref: refs/heads/main
 ```
 fdl.json
 HEAD
-data/main/towns/ducklake-0199f1….parquet
+tables/main/towns/ducklake-0199f1….parquet
 ```
 
 どの ref もバージョンもこのファイルを参照していないので、読み手は届きません。書き手が途中でやめると、ファイルは残り、猶予期間のあと保守が消します。
@@ -59,7 +59,7 @@ refs/heads/main                                   019a2f10-…
 versions/019a2f10-…/metadata.db
 versions/019a2f10-…/dataset.json
 versions/019a2f10-…/version.json
-data/main/towns/ducklake-0199f1….parquet
+tables/main/towns/ducklake-0199f1….parquet
 ```
 
 読み手の安全はこの順番で守られます。読み手は ref から読み始め、ref は最後に書かれます。push が 6、7、8 の段階で止まっても、リポジトリに残るのは、どの ref も指していないバージョンのフォルダです。読み手には見えず、何も変わりません。
@@ -76,8 +76,8 @@ versions/019a2f10-…/…
 versions/019a3c4e-…/metadata.db
 versions/019a3c4e-…/dataset.json
 versions/019a3c4e-…/version.json
-data/main/towns/ducklake-0199f1….parquet          両方のバージョンが参照
-data/main/towns/ducklake-019a3b….parquet          2 つめだけが参照
+tables/main/towns/ducklake-0199f1….parquet          両方のバージョンが参照
+tables/main/towns/ducklake-019a3b….parquet          2 つめだけが参照
 ```
 
 ```json versions/019a3c4e-…/version.json
