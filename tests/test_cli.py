@@ -22,9 +22,11 @@ runner = CliRunner()
 @pytest.fixture(autouse=True)
 def described(tmp_path: Path, monkeypatch) -> Path:
     """Every commit reads `dataset.json` from where it runs."""
-    path = tmp_path / "dataset.json"
+    # Its folder holds only what goes in the version: not the repository or the working metadata.
+    path = tmp_path / "about" / "dataset.json"
+    path.parent.mkdir()
     path.write_text('{"name": "towns", "title": "Towns"}')
-    monkeypatch.chdir(tmp_path)
+    monkeypatch.chdir(path.parent)
     return path
 
 
@@ -277,7 +279,7 @@ def test_status_diff_and_show(tmp_path: Path, described: Path) -> None:
         "~ rows main.towns: 1 -> 2",
         "~ column main.towns.name -> town  (breaking)",
         "~ data main.towns",
-        "~ description dataset",
+        "~ dataset.json",
     ]
     first = list(repo.log(store))[-1]
     assert run("diff", remote, "--against", first.id).splitlines() == lines
@@ -569,9 +571,9 @@ def test_clone_names_a_folder_given_as_dot_by_where_it_is(tmp_path: Path, monkey
 def _published_with_a_readme(tmp_path: Path) -> tuple[Path, LocalStore]:
     remote, working = tmp_path / "remote", tmp_path / "work" / "lake.sqlite"
     store = LocalStore(remote)
-    (tmp_path / "README.md").write_text("# Towns\n")
-    (tmp_path / "docs").mkdir()
-    (tmp_path / "docs" / "codes.md").write_text("Codes\n")
+    (tmp_path / "about" / "README.md").write_text("# Towns\n")
+    (tmp_path / "about" / "docs").mkdir()
+    (tmp_path / "about" / "docs" / "codes.md").write_text("Codes\n")
     run("init", remote)
     run("clone", remote, working)
     write(working, store, "CREATE TABLE lake.main.towns AS SELECT 1 AS id")

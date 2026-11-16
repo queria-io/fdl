@@ -18,12 +18,12 @@ A version of the public repository is made from a version of the private one:
 
 1. Clone the public repository
 2. Copy the chosen tables from the private version into the working metadata. The Parquet files are copied into the public repository's data folder
-3. Commit, and name the private version in `inputs`
+3. Commit, and name the private version in the `annotations` of `version.json`, under a name of your own
 
 ```json
-"inputs": [
-  { "source_id": "fdl:019a3c4e-7b21-7f3a-9c55-2f0d8e1a4b6c", "sha256": "9f2c…" }
-]
+"annotations": {
+  "towns-publisher": { "made_from": { "version": "019a3c4e-7b21-7f3a-9c55-2f0d8e1a4b6c", "sha256": "9f2c…" } }
+}
 ```
 
 `sha256` is the private version's metadata checksum. Readers of the public repository see that the version was made from another one, without being able to open it.

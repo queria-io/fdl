@@ -75,7 +75,6 @@ class Version:
     ducklake: DuckLake
     #: What changed since the first parent, as `fdl diff --json` prints it. Optional.
     diff: dict | None = None
-    inputs: tuple[dict, ...] = ()
     annotations: dict = field(default_factory=dict)
     #: The version's `files.json`, the index of each table's files. Optional.
     files: File | None = None
@@ -138,7 +137,6 @@ class Version:
                 else {}
             ),
             **({"diff": self.diff} if self.diff is not None else {}),
-            "inputs": list(self.inputs),
             "annotations": self.annotations,
         }
         return (json.dumps(record, ensure_ascii=False, indent=2) + "\n").encode()
@@ -177,7 +175,6 @@ def parse(data: bytes, *, expected_id: str | None = None) -> Version:
                 snapshots=tuple(ducklake["snapshots"]),
             ),
             diff=record.get("diff"),
-            inputs=tuple(record.get("inputs", ())),
             annotations=dict(record.get("annotations", record.get("extensions", {}))),
             files=_file(record.get("files")),
             tree=_file(record.get("tree")),

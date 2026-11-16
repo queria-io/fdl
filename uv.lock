@@ -360,11 +360,10 @@ wheels = [
 
 [[package]]
 name = "fdl-cli"
-version = "0.29.0"
+version = "0.31.0"
 source = { editable = "." }
 dependencies = [
     { name = "duckdb" },
-    { name = "pyyaml" },
     { name = "tomli", marker = "python_full_version < '3.11'" },
     { name = "typer" },
 ]
@@ -384,7 +383,6 @@ dev = [
 requires-dist = [
     { name = "boto3", marker = "extra == 's3'", specifier = ">=1.36" },
     { name = "duckdb", specifier = ">=1.5.2,<3.0" },
-    { name = "pyyaml", specifier = ">=6.0" },
     { name = "tomli", marker = "python_full_version < '3.11'", specifier = ">=1.1" },
     { name = "typer", specifier = ">=0.15" },
 ]

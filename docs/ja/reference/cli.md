@@ -43,7 +43,7 @@ HTTP のリポジトリでは、新しいデータファイルは `<working.sqli
 
 `--storage` を付けると、作業メタデータはリポジトリのストレージで直接データファイルを読み書きします。`--storage` にはそのストレージでのリポジトリの根を渡します。新しいファイルはその `data_dir` の下に直接書かれるので、push でアップロードするものはありません。鍵は `AWS_*` の環境変数（R2 などの S3 互換ストレージは `AWS_ENDPOINT_URL`）か、自分で作った DuckDB の secret から取ります。作業メタデータに書くビルドにも同じ鍵が要ります。
 
-今のフォルダに `dataset.json` も `dataset.yml` も無いときは、`fdl commit` が読むファイルもそこに書き出します。バージョンの `dataset.json` からコミットがカタログから埋める値（行数、列の型、NULL の可否）を除いたものと、`tree.json` が挙げるファイル（`README.md` や `docs/` など）です。これらを編集してコミットすると説明を変えられます。フォルダに既に説明があるときはそのままにし、何も書きません。
+今のフォルダに `dataset.json` が無いときは、`fdl commit` が読むファイルもそこに書き出します。バージョンの `dataset.json` からコミットがカタログから埋める値（行数、列の型、NULL の可否）を除いたものと、`tree.json` が挙げるファイル（`README.md` など）です。これらを編集してコミットすると説明を変えられます。フォルダに既に説明があるときはそのままにし、何も書きません。
 
 バージョンの保持期間が過ぎているとき、メタデータの sha256 が `version.json` の記録と違うとき、メタデータがデータフォルダの外のデータファイルを指しているとき、書き出すファイルが今のフォルダに既にあるときは断られます。
 
@@ -65,9 +65,9 @@ fdl commit <working.sqlite> -m "What changed" [--author alice] [--dataset datase
 
 作業メタデータを、クローンした（または最後に push した）バージョンを親とする新しいバージョンに固め、`fdl push` で送るまで `<working.sqlite>.pending/` に置きます。リポジトリは何も変わりません。新しいバージョン ID と `seq` を表示します。push する前にもう一度コミットすると、まだ push していないバージョンを置き換えます。
 
-バージョンはそれぞれ `dataset.json`（[バージョン](/ja/spec/versions#datasetjson)を参照）で説明します。`--dataset` で指定したファイルか、なければいまのディレクトリの `dataset.json` か `dataset.yml` から読みます。そのフォルダより下にある `*.table.yml`（または `*.table.json`）のテーブルの説明も合わせて読みます。隠しフォルダの中は読みません。コマンドはそれをメタデータと照らし合わせ、列の型、行数、メタデータのコメントを書き足します。
+バージョンはそれぞれ `dataset.json`（[バージョン](/ja/spec/versions#datasetjson)を参照）で説明します。`--dataset` で指定したファイルか、なければいまのディレクトリの `dataset.json` を読みます。JSON だけを読みます。コマンドはそれをメタデータと照らし合わせ、列の型、NULL の可否、行数を書き足します。メタデータのコメント（`COMMENT ON`）は読まず、形式が決めていないキーは書かれたまま残します。
 
-コマンドは、説明の隣の `README.md` と、そこにある `docs/` より下のファイル（隠しファイルを除く）をバージョンの tree に入れます。そのフォルダからのパスで `tree.json` を書き、push がリポジトリに無いものを書いたままの中身で `assets/<sha256>` にアップロードします（[tree.json](/ja/spec/versions#treejson)）。
+コマンドは、`dataset.json` のフォルダとその下にあるほかのファイルをすべてバージョンの tree に入れます。隠しファイルと隠しフォルダ、そのフォルダの中に `fdl clone` が作った作業メタデータ（コミットするもの以外も含め、`.fdl.json` で見つけます）と、`fdl` と SQLite がその隣に置くファイル（`<working.sqlite>.fdl.json`・`.pending/`・`.data/`・`-wal`）、そのフォルダの中にある `--assets` のフォルダは除きます。ほかのファイルが入らないよう、説明は専用のフォルダに置いてください。そのフォルダからのパスで `tree.json` を書き、push がリポジトリに無いものを書いたままの中身で `assets/<sha256>` にアップロードします（[tree.json](/ja/spec/versions#treejson)）。
 
 `asset: true` の印を付けた列は、ファイルの sha256 を持ちます（[アセット](/ja/spec/versions#アセット)）。コマンドはその列の値を読み、push がリポジトリに無いファイルを `--assets` のフォルダから `assets/<sha256>` にアップロードします。ファイルは中身で照合するので、フォルダの中のファイル名は問いません。
 
@@ -75,7 +75,7 @@ fdl commit <working.sqlite> -m "What changed" [--author alice] [--dataset datase
 
 次のときは断られます。
 
-- `dataset.json` が無いとき、メタデータに無い表や列を説明しているとき。形式が決めていないキーは、警告を出してそのまま残します
+- `dataset.json` が無いとき、`name` が無いとき、メタデータに無い表や列を説明しているとき
 - 作業メタデータが行をメタデータの中に持っているとき
 - アセットの列が `varchar` でないとき、sha256 でない値を持つとき
 - データファイルが、データディレクトリの外を指す絶対パスで記録されているとき
@@ -141,10 +141,10 @@ fdl diff <remote> [<version>] [--against <version>] [--json]
 ~ column main.towns.name -> town  (breaking)
 ~ column main.towns.id: int32 -> int64
 ~ data main.towns
-~ description main.towns.population
+~ dataset.json
 ```
 
-親と比べるときは、バージョンの `diff` から取ります（[diff](/ja/spec/versions#diff)）。それ以外のときや `diff` のないバージョンでは、行数を `dataset.json` から、データファイルを `files.json` から取り、列は名前で比べます。そのため列名の変更は見分けられません。`~ data` は、行が同じでもテーブルのデータファイルが変わったことを示します。`--json` を付けると、同じ内容を `tables`（`added`・`dropped`）・`rows`・`columns`・`data`・`descriptions` を持つオブジェクトで表示します。
+親と比べるときは、バージョンの `diff` から取ります（[diff](/ja/spec/versions#diff)）。それ以外のときや `diff` のないバージョンでは、行数を `dataset.json` から、データファイルを `files.json` から取り、列は名前で比べます。そのため列名の変更は見分けられません。`~ data` は、行が同じでもテーブルのデータファイルが変わったことを示します。`~ dataset.json` は、コミットがメタデータから書き足す値を除いて、書き手が `dataset.json` に書いた内容が親と変わったことを示します。`--json` を付けると、同じ内容を `tables`（`added`・`dropped`）・`rows`・`columns`・`data`・`dataset` を持つオブジェクトで表示します。fdl-cli 0.31 以前が書いたバージョンでは、代わりに `descriptions` から `~ description` の行を表示します。
 
 ## fdl show
 

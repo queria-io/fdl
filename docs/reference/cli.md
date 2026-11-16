@@ -43,7 +43,7 @@ For a repository over HTTP, new data files are written to `<working.sqlite>.data
 
 With `--storage`, the working metadata reads and writes the data files in the repository's own storage instead: `--storage` is the repository's root there, and new files go straight under its `data_dir`, so the push has none to upload. The keys come from the `AWS_*` variables (`AWS_ENDPOINT_URL` for R2 and other S3-compatible stores), or from a DuckDB secret of your own. The build that writes to the working metadata needs them too.
 
-When the current folder holds no `dataset.json` or `dataset.yml`, it also writes there what `fdl commit` reads: the version's `dataset.json`, without what the commit fills in from the catalog (row counts, column types, nulls), and the files its `tree.json` lists, such as `README.md` and `docs/`. Edit them and commit to change the description. When the folder already holds a description, it is left as it is and nothing is written.
+When the current folder holds no `dataset.json`, it also writes there what `fdl commit` reads: the version's `dataset.json`, without what the commit fills in from the catalog (row counts, column types, nulls), and the files its `tree.json` lists, such as `README.md`. Edit them and commit to change the description. When the folder already holds a description, it is left as it is and nothing is written.
 
 Refused when the version is past retention, when its metadata's sha256 is not the one `version.json` records, when the metadata names a data file outside the data folder, or when a file it would write is already in the current folder.
 
@@ -65,9 +65,9 @@ fdl commit <working.sqlite> -m "What changed" [--author alice] [--dataset datase
 
 Freezes the working metadata into a new version whose parent is the version it was cloned at (or last pushed), and keeps it in `<working.sqlite>.pending/` until `fdl push` sends it. Nothing in the repository changes. It prints the new version ID and its `seq`. Committing again before pushing replaces the version not pushed yet.
 
-Every version is described by a `dataset.json` (see [Versions](/spec/versions#datasetjson)), read from `--dataset` or else from `dataset.json` or `dataset.yml` in the current directory. Tables described in `*.table.yml` (or `*.table.json`) files below that folder are added to it; hidden folders are skipped. The command checks it against the metadata and fills in the column types, row counts and metadata comments.
+Every version is described by a `dataset.json` (see [Versions](/spec/versions#datasetjson)), read from `--dataset` or else from the current directory. It is read as JSON only. The command checks it against the metadata and fills in the column types, nulls and row counts. Comments in the metadata (`COMMENT ON`) are not read, and keys the format does not define are kept as written.
 
-The command puts `README.md` beside the description and every file below `docs/` there (hidden ones left out) in the version's tree: it writes `tree.json` with their paths from that folder and the push uploads those the repository lacks to `assets/<sha256>`, as written (see [tree.json](/spec/versions#treejson)).
+The command puts every other file in the folder of `dataset.json` and below it in the version's tree, leaving out hidden files and folders, and each working metadata `fdl clone` made in that folder (the one committed and any other, found by its `.fdl.json`) with the files `fdl` and SQLite keep beside it (`<working.sqlite>.fdl.json`, `.pending/`, `.data/`, `-wal`), and the `--assets` folder when it is there. Keep the description in a folder of its own, so that nothing else goes in: it writes `tree.json` with their paths from that folder and the push uploads those the repository lacks to `assets/<sha256>`, as written (see [tree.json](/spec/versions#treejson)).
 
 Columns marked `asset: true` hold the sha256 of files (see [Assets](/spec/versions#assets)). The command reads the values those columns hold, and the push uploads the files the repository lacks from the `--assets` folder to `assets/<sha256>`, by their content: file names in the folder do not matter.
 
@@ -75,7 +75,7 @@ When the version would hold what its parent holds (see [When nothing changed](/s
 
 Refused when:
 
-- there is no `dataset.json`, or it describes a table or column the metadata lacks. Keys the format does not define are kept as written, with a warning
+- there is no `dataset.json`, it has no `name`, or it describes a table or column the metadata lacks
 - the working metadata holds inlined rows
 - an asset column is not `varchar`, or holds a value that is not a sha256
 
@@ -141,10 +141,10 @@ What changed in a version (default: the one `HEAD` holds) since its parent, or s
 ~ column main.towns.name -> town  (breaking)
 ~ column main.towns.id: int32 -> int64
 ~ data main.towns
-~ description main.towns.population
+~ dataset.json
 ```
 
-Against its parent, the changes come from the version's `diff` (see [diff](/spec/versions#diff)). Otherwise, or for a version written without one, rows come from `dataset.json`, data files from `files.json`, and columns are compared by name, which does not see a rename. `~ data` means the table's data files differ, even when the rows are the same. `--json` prints the same as an object with `tables` (`added`, `dropped`), `rows`, `columns`, `data` and `descriptions`.
+Against its parent, the changes come from the version's `diff` (see [diff](/spec/versions#diff)). Otherwise, or for a version written without one, rows come from `dataset.json`, data files from `files.json`, and columns are compared by name, which does not see a rename. `~ data` means the table's data files differ, even when the rows are the same. `~ dataset.json` means what the writer wrote in `dataset.json` changed, apart from what the commit fills in from the metadata. `--json` prints the same as an object with `tables` (`added`, `dropped`), `rows`, `columns`, `data` and `dataset`. Versions written by fdl-cli 0.31 and earlier show `~ description` lines from their `descriptions` instead.
 
 ## fdl show
 

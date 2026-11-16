@@ -36,20 +36,21 @@ towns/
 You never write to the repository directly. You write to a working metadata file, a DuckLake metadata file in a SQLite file on your own disk, and turn it into a version when you are done.
 
 ```bash
-fdl clone ./towns/ work/lake.sqlite
+mkdir work && cd work
+fdl clone ../towns/ lake.sqlite
 ```
 
 Before the first version, `clone` makes an empty metadata. Later it copies the metadata of the version `main` holds. It prints the statement to attach the working metadata with:
 
 ```sql
-ATTACH 'ducklake:work/lake.sqlite' AS lake (
+ATTACH 'ducklake:lake.sqlite' AS lake (
   DATA_PATH '/abs/path/towns/data/', OVERRIDE_DATA_PATH true,
   META_TYPE 'sqlite', DATA_INLINING_ROW_LIMIT 0,
   META_JOURNAL_MODE 'WAL', BUSY_TIMEOUT 5000
 );
 ```
 
-Beside the working metadata, `work/lake.sqlite.fdl.json` remembers the repository, the branch and the version the clone was made from.
+Beside the working metadata, `lake.sqlite.fdl.json` remembers the repository, the branch and the version the clone was made from.
 
 ## Write
 
@@ -57,14 +58,14 @@ Use any DuckDB client. The Parquet files go straight into the repository's `data
 
 ```sql
 CREATE TABLE lake.main.towns AS
-SELECT * FROM 'towns.csv';
+SELECT * FROM '../towns.csv';
 ```
 
 `DATA_INLINING_ROW_LIMIT 0` makes DuckLake write every row to Parquet. Left at its default, DuckLake keeps small tables inside the metadata, and a version has to carry its rows in data files that a reader can fetch.
 
 ## Describe
 
-Every version carries a `dataset.json` that says what it holds. Write one next to where you run `fdl commit`:
+Every version carries a `dataset.json` that says what it holds. Write one in the folder where you run `fdl commit`:
 
 ```json dataset.json
 {
@@ -74,13 +75,13 @@ Every version carries a `dataset.json` that says what it holds. Write one next t
 }
 ```
 
-Only `name` and `title` are required. `fdl commit` checks the file against the metadata and fills in each table's row count and each column's type.
+Only `name` is required. `fdl commit` checks the file against the metadata and fills in each table's row count and each column's type. Every other file in the folder, such as a `README.md`, goes into the version beside it, apart from hidden files and the working metadata with the files `fdl` keeps beside it.
 
 ## Commit and push
 
 ```bash
-fdl commit work/lake.sqlite -m "First towns" --author alice
-fdl push work/lake.sqlite
+fdl commit lake.sqlite -m "First towns" --author alice
+fdl push lake.sqlite
 ```
 
 `commit` freezes the working metadata into a version on your disk. `push` measures each table into a small summary (a profile) that readers can show without reading the data, uploads the version with them and moves `main` to it, and prints `refs/heads/main -> 019a3c4e-… (version 1)`. The repository now holds:
@@ -100,7 +101,7 @@ towns/
 ```
 
 ```bash
-fdl log ./towns/
+fdl log ../towns/
 ```
 
 ```
@@ -111,14 +112,14 @@ fdl log ./towns/
 ## Read
 
 ```bash
-fdl url ./towns/
+fdl url ../towns/
 ```
 
 prints the metadata of the version `main` holds. Attach it read-only, and tell DuckDB where the data files are:
 
 ```sql
-ATTACH 'ducklake:towns/versions/019a3c4e-…/metadata.db' AS towns (
-  DATA_PATH 'towns/data/', OVERRIDE_DATA_PATH true, READ_ONLY
+ATTACH 'ducklake:../towns/versions/019a3c4e-…/metadata.db' AS towns (
+  DATA_PATH '../towns/data/', OVERRIDE_DATA_PATH true, READ_ONLY
 );
 SELECT count(*) FROM towns.main.towns;
 ```
@@ -128,19 +129,19 @@ A version's metadata never changes, so a reader may cache it forever. Only `HEAD
 ## Make a second version
 
 ```bash
-fdl clone ./towns/ work/lake.sqlite
+fdl clone ../towns/ lake.sqlite
 ```
 
 ```sql
-INSERT INTO lake.main.towns SELECT * FROM 'towns-2026.csv';
+INSERT INTO lake.main.towns SELECT * FROM '../towns-2026.csv';
 ```
 
 ```bash
-fdl commit work/lake.sqlite -m "Add 2026" --author alice
-fdl push work/lake.sqlite
+fdl commit lake.sqlite -m "Add 2026" --author alice
+fdl push lake.sqlite
 ```
 
-The current folder already holds `dataset.json`, so the clone leaves it as it is. In an empty folder, the clone also writes the version's `dataset.json`, `README.md` and `docs/` there, so whoever clones the repository can change the description as well as the data.
+The current folder already holds `dataset.json`, so the clone leaves it as it is. In an empty folder, the clone also writes there the version's `dataset.json` and the other files it holds, so whoever clones the repository can change the description as well as the data.
 
 The new version lists the first as its parent. Both metadata files name the first Parquet file; only the second names the new one.
 

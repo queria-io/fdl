@@ -24,8 +24,9 @@ runner = CliRunner()
 @pytest.fixture(autouse=True)
 def described(tmp_path: Path, monkeypatch) -> None:
     """Every commit reads `dataset.json` from where it runs."""
-    (tmp_path / "dataset.json").write_text('{"name": "towns", "title": "Towns"}')
-    monkeypatch.chdir(tmp_path)
+    (tmp_path / "about").mkdir()
+    (tmp_path / "about" / "dataset.json").write_text('{"name": "towns", "title": "Towns"}')
+    monkeypatch.chdir(tmp_path / "about")
 
 
 @pytest.fixture

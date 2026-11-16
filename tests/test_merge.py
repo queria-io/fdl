@@ -24,9 +24,10 @@ DESCRIBED = {
 
 @pytest.fixture(autouse=True)
 def described(tmp_path: Path, monkeypatch) -> Path:
-    path = tmp_path / "dataset.json"
+    path = tmp_path / "about" / "dataset.json"
+    path.parent.mkdir()
     path.write_text(json.dumps(DESCRIBED))
-    monkeypatch.chdir(tmp_path)
+    monkeypatch.chdir(path.parent)
     return path
 
 

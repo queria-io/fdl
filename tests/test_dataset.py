@@ -7,7 +7,7 @@ from pathlib import Path
 import duckdb
 import pytest
 
-from fdl.dataset import DatasetError, describe, gather
+from fdl.dataset import DatasetError, describe, find, read
 
 
 @pytest.fixture
@@ -23,17 +23,17 @@ def frozen(tmp_path: Path) -> Path:
     return path
 
 
-def test_the_catalog_fills_in_what_it_knows(frozen: Path) -> None:
+def test_the_catalog_fills_in_what_it_knows_but_not_its_comments(frozen: Path) -> None:
     declared = {
         "name": "towns",
         "title": "Towns",
         "tables": [{"schema": "main", "name": "towns", "fields": [{"name": "name", "description": "Its name"}]}],
     }
     (table,) = describe(declared, frozen)["tables"]
-    assert table["description"] == "Towns"
+    assert "description" not in table
     assert table["rows"] == 2
     assert table["fields"] == [
-        {"description": "Town code", "name": "code", "type": "int32", "nullable": True},
+        {"name": "code", "type": "int32", "nullable": True},
         {"description": "Its name", "name": "name", "type": "varchar", "nullable": True},
     ]
 
@@ -48,12 +48,16 @@ def test_what_the_catalog_lacks_is_refused(frozen: Path) -> None:
         )
 
 
-def test_keys_outside_the_format_are_kept_with_a_warning(frozen: Path, capsys) -> None:
-    described = describe({"name": "t", "title": "T", "title_kana": "ティー"}, frozen)
+def test_keys_outside_the_format_are_kept_as_written(frozen: Path, capsys) -> None:
+    described = describe(
+        {"name": "t", "title_kana": "ティー", "tables": [{"schema": "main", "name": "towns", "themes": ["x"]}]},
+        frozen,
+    )
     assert described["title_kana"] == "ティー"
-    assert "title_kana" in capsys.readouterr().err
-    with pytest.raises(DatasetError, match="needs a title"):
-        describe({"name": "t"}, frozen)
+    assert described["tables"][0]["themes"] == ["x"]
+    assert capsys.readouterr().err == ""
+    with pytest.raises(DatasetError, match="needs a name"):
+        describe({"title": "T"}, frozen)
     described = describe({"name": "t", "title": "T", "annotations": {"queria": {"themes": ["x"]}}}, frozen)
     assert described["annotations"] == {"queria": {"themes": ["x"]}}
 
@@ -82,29 +86,12 @@ def test_extensions_is_read_as_annotations(frozen: Path) -> None:
     assert "extensions" not in described and "extensions" not in towns
 
 
-def test_a_description_can_be_yaml(tmp_path: Path, frozen: Path) -> None:
-    from fdl.dataset import find, read
-
-    (tmp_path / "dataset.yml").write_text("name: towns\ntitle: Towns\nissued: 2026-10-30\nlicenses: [CC-BY-4.0]\n")
-    path = find(tmp_path)
-    assert path.name == "dataset.yml"
-    described = describe(read(path), frozen)
-    assert described["licenses"] == ["CC-BY-4.0"]
-    from fdl.dataset import to_json
-
-    assert b'"issued": "2026-10-30"' in to_json(described)
-
-
-def test_tables_can_be_described_in_their_own_files(tmp_path: Path, frozen: Path) -> None:
-    (tmp_path / "dataset.yml").write_text("name: towns\ntitle: Towns\n")
-    (tmp_path / "models").mkdir()
-    (tmp_path / "models" / "towns.table.yml").write_text(
-        "schema: main\nname: towns\ntitle: The towns\n"
-    )
-    (tmp_path / ".fdl").mkdir()
-    (tmp_path / ".fdl" / "stale.table.yml").write_text("schema: main\nname: gone\n")
-    (table,) = describe(gather(tmp_path / "dataset.yml"), frozen)["tables"]
-    assert table["title"] == "The towns"
+def test_only_dataset_json_is_read(tmp_path: Path) -> None:
+    (tmp_path / "dataset.yml").write_text("name: towns\n")
+    with pytest.raises(DatasetError, match="no dataset.json"):
+        find(tmp_path)
+    (tmp_path / "dataset.json").write_text('{"name": "towns", "issued": "2026-10-30"}')
+    assert read(find(tmp_path)) == {"name": "towns", "issued": "2026-10-30"}
 
 
 @pytest.mark.parametrize(
@@ -148,81 +135,21 @@ def test_views_are_listed_with_their_sql(frozen: Path) -> None:
     assert "WHERE" in named["sql"] and "rows" not in named
     assert named["fields"] == [{"name": "code", "title": "Code"}]
     assert tables["plain"]["kind"] == "view"
-    assert tables["plain"]["description"] == "Just one"
+    assert "description" not in tables["plain"]
 
 
-def _views(frozen: Path, *statements: str) -> None:
+def test_depends_on_and_catalogs_are_kept_as_written(frozen: Path) -> None:
     con = duckdb.connect()
     con.execute("INSTALL ducklake; LOAD ducklake;")
     con.execute(f"ATTACH 'ducklake:{frozen}' AS lake")
-    for statement in statements:
-        con.execute(statement)
+    con.execute("CREATE VIEW lake.main.named AS SELECT code FROM lake.main.towns")
     con.close()
-
-
-def test_depends_on_is_read_from_the_sql(frozen: Path) -> None:
-    _views(
-        frozen,
-        "CREATE VIEW lake.main.named AS SELECT code FROM lake.main.towns WHERE name IS NOT NULL",
-        "CREATE VIEW lake.main.top AS WITH n AS (SELECT * FROM named) SELECT * FROM n JOIN towns USING (code)",
-    )
-    tables = {t["name"]: t for t in describe({"name": "t", "title": "T"}, frozen)["tables"]}
-    assert "depends_on" not in tables["towns"]
-    assert tables["named"]["depends_on"] == ["main.towns"]
-    assert tables["top"]["depends_on"] == ["main.named", "main.towns"]
-
-
-def test_other_datasets_are_named_by_their_repository(frozen: Path) -> None:
     declared = {
         "name": "t",
-        "title": "T",
-        "catalogs": {"census": "https://example.org/census/"},
-        "tables": [
-            {"schema": "main", "name": "towns", "sql": "SELECT * FROM census.small_area.population JOIN census.areas USING (code) JOIN unknown.main.x USING (code)"}
-        ],
+        "catalogs": {"census": "https://example.org/census/#not-checked"},
+        "tables": [{"schema": "main", "name": "towns", "sql": "SELECT * FROM census.main.areas"}],
     }
-    (table,) = describe(declared, frozen)["tables"]
-    assert table["depends_on"] == [
-        "https://example.org/census/#main.areas",
-        "https://example.org/census/#small_area.population",
-    ]
-
-
-def test_the_writer_wins_and_unreadable_sql_is_left_alone(frozen: Path) -> None:
-    written = {"schema": "main", "name": "towns", "sql": "SELECT 1", "depends_on": ["main.other"]}
-    (table,) = describe({"name": "t", "title": "T", "tables": [written]}, frozen)["tables"]
-    assert table["depends_on"] == ["main.other"]
-    broken = {"schema": "main", "name": "towns", "sql": "{{ ref('x') }}"}
-    (table,) = describe({"name": "t", "title": "T", "tables": [broken]}, frozen)["tables"]
-    assert "depends_on" not in table
-
-
-def test_catalogs_map_aliases_to_repositories(frozen: Path) -> None:
-    with pytest.raises(DatasetError, match="catalogs"):
-        describe({"name": "t", "title": "T", "catalogs": {"census": "https://example.org/census/#main.x"}}, frozen)
-
-
-def test_names_are_read_as_duckdb_binds_them(frozen: Path) -> None:
-    _views(
-        frozen,
-        "CREATE SCHEMA lake.s",
-        "CREATE TABLE lake.s.towns AS SELECT 1 AS code",
-        "USE lake.s",
-        "CREATE VIEW lake.s.near AS SELECT * FROM towns "
-        "UNION ALL SELECT * FROM (WITH towns AS (SELECT 2 AS code) SELECT * FROM towns)",
-    )
-    declared = {
-        "name": "t",
-        "title": "T",
-        "catalogs": {"census": "https://example.org/census/"},
-        "tables": [
-            {
-                "schema": "main",
-                "name": "towns",
-                "sql": "SELECT * FROM Census.main.areas JOIN S.Towns USING (code)",
-            }
-        ],
-    }
-    tables = {(t["schema"], t["name"]): t for t in describe(declared, frozen)["tables"]}
-    assert tables[("s", "near")]["depends_on"] == ["s.towns"]
-    assert tables[("main", "towns")]["depends_on"] == ["https://example.org/census/#main.areas", "s.towns"]
+    described = describe(declared, frozen)
+    tables = {t["name"]: t for t in described["tables"]}
+    assert described["catalogs"] == declared["catalogs"]
+    assert "depends_on" not in tables["towns"] and "depends_on" not in tables["named"]

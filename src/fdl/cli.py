@@ -34,8 +34,12 @@ Remote = typer.Argument(help="The repository: s3://bucket/prefix/, https://host/
 Working = typer.Argument(help="The working metadata (.sqlite)")
 
 
+#: What `fdl clone` names the state it keeps beside the working metadata after.
+STATE_SUFFIX = ".fdl.json"
+
+
 def _state_path(working: Path) -> Path:
-    return working.with_name(working.name + ".fdl.json")
+    return working.with_name(working.name + STATE_SUFFIX)
 
 
 def _read_state(working: Path) -> dict:
@@ -125,6 +129,16 @@ def clone(
         # Read before the clone: a data_dir moved meanwhile then fails the commit.
         config = repo.read_config(store)
         files = _described_files(store, ref)
+        # Written after the clone, a file of the tree would overwrite the working metadata.
+        clashing = sorted(
+            path.as_posix()
+            for path in files
+            if objects.is_beside(path.resolve().as_posix(), working.resolve().as_posix())
+        )
+        if clashing:
+            raise repo.RepoError(
+                f"the version holds {', '.join(clashing)}, where the working metadata goes: name it otherwise"
+            )
         version = repo.clone(store, working, ref=ref, local_data=local, storage=storage)
         for path, body in files.items():
             path.parent.mkdir(parents=True, exist_ok=True)
@@ -157,7 +171,7 @@ def _described_files(store, ref: str) -> dict[Path, bytes]:
     the way is refused rather than overwritten.
     """
     version = repo.head(store, ref)
-    if version is None or any(Path(name).exists() for name in dataset.DEFAULT_FILES):
+    if version is None or Path(layout.DATASET).exists():
         return {}
     described = diffs.described(store, version)
     if described is None:
@@ -210,7 +224,7 @@ def commit(
     describe: Path | None = typer.Option(
         None,
         "--dataset",
-        help="The description of what the version holds (default: dataset.json or dataset.yml here), with any *.table.yml below it",
+        help="The dataset.json that describes what the version holds (default: the one here). Every other file in its folder goes in the version's tree",
     ),
     allow_empty: bool = typer.Option(
         False, "--allow-empty", help="Make a version even if nothing changed since the last one"
@@ -233,9 +247,11 @@ def commit(
     store = _store(state["remote"])
     try:
         description = describe or dataset.find()
-        declared = dataset.gather(description)
+        declared = dataset.read(description)
         root = Path(description).resolve().parent
-        listed = objects.tree(root)
+        listed = objects.tree(
+            root, leave_out=[description, working, *_workings(root), *([assets_dir] if assets_dir else [])]
+        )
         version = _commit(
             store,
             working,
@@ -255,6 +271,17 @@ def commit(
         raise _fail(exc) from exc
     typer.echo(f"Committed {version.id} (version {version.seq}). Push it to {state['ref']} with:")
     typer.echo(f"  fdl push {working}")
+
+
+def _workings(root: Path) -> list[Path]:
+    """Every working metadata below ``root``, found by the state `fdl clone` keeps beside it.
+
+    Another clone in the description's folder (of another branch, say) holds
+    the writer's metadata and data, not the version's files.
+    """
+    return [
+        path.with_name(path.name.removesuffix(STATE_SUFFIX)) for path in root.rglob(f"*{STATE_SUFFIX}")
+    ]
 
 
 def _pending_dir(working: Path) -> Path:
@@ -760,7 +787,7 @@ def diff(
     against: str | None = typer.Option(None, help="The version or ref to compare with (default: the target's parent)"),
     as_json: bool = typer.Option(False, "--json", help="Print the differences as JSON"),
 ) -> None:
-    """What changed in a version: tables, rows, columns, data files and descriptions.
+    """What changed in a version: tables, rows, columns, data files and dataset.json.
 
     Compared with the version's parent, or with --against.
     """

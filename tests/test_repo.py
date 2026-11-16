@@ -644,11 +644,11 @@ def test_a_version_records_what_changed_since_its_parent(tmp_path: Path, remote)
         remote,
         "INSERT INTO lake.main.towns VALUES (2); CREATE TABLE lake.main.roads AS SELECT 1 AS id",
     )
-    parent_dataset = json.loads(remote.get(layout.version_dir(first.id) + layout.DATASET))
     second = repo.commit(
         tmp_path / "work.sqlite", tmp_path / "local", parent=first, data_path=data_path(remote),
         author=AUTHOR, message="m", dataset={**described("Town ID"), "tables": described("Town ID")["tables"]
-        + [{"schema": "main", "name": "roads"}]}, parent_dataset=parent_dataset,
+        + [{"schema": "main", "name": "roads"}]},
+        parent_dataset=json.loads(remote.get(layout.version_dir(first.id) + layout.DATASET)),
     )
     recorded = json.loads((tmp_path / "local" / second.id / layout.VERSION_RECORD).read_text())
     assert recorded["diff"] == {
@@ -656,7 +656,7 @@ def test_a_version_records_what_changed_since_its_parent(tmp_path: Path, remote)
         "rows": [{"table": "main.towns", "from": 1, "to": 2}],
         "columns": [],
         "data": ["main.towns"],
-        "descriptions": ["main.towns.id"],
+        "dataset": True,
     }
     repo.push(remote, tmp_path / "local" / second.id, second)
     # fdl diff reads it from the record.
@@ -730,3 +730,26 @@ def test_a_push_sent_again_rewrites_refs_json(tmp_path: Path, remote) -> None:
     remote.delete([layout.REFS_INDEX])
     repo.push(remote, tmp_path / "local" / version.id, version)
     assert version.id in remote.get(layout.REFS_INDEX).decode()
+
+
+def test_dataset_in_diff_is_what_the_writer_wrote() -> None:
+    old = {
+        "name": "t",
+        "tables": [
+            {"schema": "main", "name": "towns", "rows": 1, "fields": [{"name": "id", "type": "int32", "nullable": True}]},
+            {"schema": "main", "name": "v", "kind": "view", "sql": "SELECT 1"},
+        ],
+    }
+    # More rows, another type, a new table and a view's new query: none is the writer's.
+    grown = {
+        "name": "t",
+        "tables": [
+            {"schema": "main", "name": "towns", "rows": 9, "fields": [{"name": "id", "type": "int64", "nullable": False}, {"name": "x", "type": "varchar"}]},
+            {"schema": "main", "name": "roads", "rows": 3},
+            {"schema": "main", "name": "v", "kind": "view", "sql": "SELECT 2"},
+        ],
+    }
+    assert diff.with_dataset({}, old, grown) == {"dataset": False}
+    retitled = {**grown, "tables": [{**grown["tables"][0], "title": "Towns"}, *grown["tables"][1:]]}
+    assert diff.with_dataset({}, old, retitled) == {"dataset": True}
+    assert diff.with_dataset({}, None, grown) == {}
