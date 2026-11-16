@@ -138,6 +138,7 @@ def commit(
     tree: list[dict] | None = None,
     allow_empty: bool = True,
     working_data: str | None = None,
+    parent_dataset: dict | None = None,
     merged: Version | None = None,
 ) -> Version:
     """Freeze the working metadata into a version under ``out_dir/<ID>/``.
@@ -158,6 +159,9 @@ def commit(
 
     ``working_data`` is where the working metadata wrote its new data files,
     when not where it records (see `clone`): comparing reads them there.
+
+    ``parent_dataset`` is the parent's `dataset.json`, which the version's
+    ``diff`` compares with (see `record`).
 
     ``merged`` is the version a merge brought in: the second parent.
     """
@@ -199,6 +203,7 @@ def commit(
             annotations=annotations,
             dataset=dataset,
             tree=tree,
+            parent_dataset=parent_dataset,
             merged=merged,
         )
     finally:
@@ -329,6 +334,7 @@ def record(
     annotations: dict | None = None,
     dataset: dict | None = None,
     tree: list[dict] | None = None,
+    parent_dataset: dict | None = None,
     merged: Version | None = None,
 ) -> Version:
     """Make a version out of a metadata file that is already frozen.
@@ -337,8 +343,8 @@ def record(
     only needs the version around it. The metadata is copied, not moved.
 
     The version's ``diff`` compares the metadata at the parent's snapshot with
-    the frozen one, and says whether its `dataset.json` is another file than
-    the parent's when both have one.
+    the frozen one, and says whether what the writer wrote in `dataset.json`
+    changed when both it and ``parent_dataset`` (the parent's) are given.
 
     ``merged`` is the second parent of a merge version; ``seq`` follows the first.
     """
@@ -359,6 +365,7 @@ def record(
             copied, parent.ducklake.snapshot_id if parent else None
         )
         described = None
+        completed = None
         if dataset is not None:
             written = target / layout.DATASET
             completed = dataset_json.describe(dataset, copied)
@@ -370,8 +377,8 @@ def record(
         difference = diffs.between(
             copied, parent.ducklake.snapshot_id if parent else None, last
         )
-        if difference is not None and parent is not None and parent.dataset and described:
-            difference = {**difference, "dataset": parent.dataset.sha256 != described.sha256}
+        if difference is not None:
+            difference = diffs.with_dataset(difference, parent_dataset, completed)
         listed = None
         if tree:
             written = target / layout.TREE

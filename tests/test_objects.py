@@ -219,9 +219,47 @@ def test_withdrawal_deletes_the_assets_only_the_withdrawn_versions_reach(tmp_pat
 
 
 def test_the_tree_leaves_out_the_working_metadata_beside_it(tmp_path: Path) -> None:
-    for name in ("dataset.json", "README.md", "lake.sqlite", "lake.sqlite.fdl.json", "lake.sqlite.pending/x/a", ".hidden"):
+    for name in (
+        "dataset.json", "dataset.jsonld", "README.md", "lake.sqlite", "lake.sqlite.fdl.json",
+        "lake.sqlite-wal", "lake.sqlite.pending/x/a", "lakes.md", ".hidden",
+    ):
         (tmp_path / name).parent.mkdir(parents=True, exist_ok=True)
         (tmp_path / name).write_text("x")
     listed = objects.tree(tmp_path, leave_out=[tmp_path / "dataset.json", tmp_path / "lake.sqlite"])
-    assert [item["path"] for item in listed] == ["README.md"]
+    assert [item["path"] for item in listed] == ["README.md", "dataset.jsonld", "lakes.md"]
     assert set(listed[0]) == {"path", "sha256", "bytes"}
+
+
+def test_another_clone_beside_the_description_stays_out_of_the_tree(tmp_path: Path, repository) -> None:
+    store, working = repository
+    remote = tmp_path / "remote"
+    Path("dataset.json").write_text('{"name": "towns"}')
+    run("clone", remote, "dev.sqlite")
+    write(working, store, "CREATE TABLE lake.main.towns AS SELECT 1 AS id")
+    commit(working, "-m", "first", "--author", "t")
+    assert repo.head(store, "refs/heads/main").tree is None
+
+
+def test_a_clone_refuses_a_tree_file_where_the_working_metadata_goes(tmp_path: Path, repository, monkeypatch) -> None:
+    store, working = repository
+    Path("dataset.json").write_text('{"name": "towns"}')
+    Path("lake.sqlite").write_text("not a clone")
+    write(working, store, "CREATE TABLE lake.main.towns AS SELECT 1 AS id")
+    commit(working, "-m", "first", "--author", "t")
+    (tmp_path / "empty").mkdir()
+    monkeypatch.chdir(tmp_path / "empty")
+    assert "where the working metadata goes" in fails("clone", tmp_path / "remote", "lake.sqlite")
+    assert not Path("lake.sqlite").exists()
+
+
+def test_the_assets_folder_stays_out_of_the_tree(tmp_path: Path, repository) -> None:
+    store, working = repository
+    Path("files").mkdir()
+    Path("files/a.pdf").write_bytes(b"%PDF-a")
+    Path("README.md").write_text("# Reports\n")
+    Path("dataset.json").write_text('{"name": "reports"}')
+    write(working, store, "CREATE TABLE lake.main.reports AS SELECT 1 AS id")
+    commit(working, "-m", "m", "--author", "t", "--assets", "files")
+    version = repo.head(store, "refs/heads/main")
+    entries = json.loads(store.get(f"versions/{version.id}/tree.json"))["entries"]
+    assert [item["path"] for item in entries] == ["README.md"]

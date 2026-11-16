@@ -34,8 +34,12 @@ Remote = typer.Argument(help="The repository: s3://bucket/prefix/, https://host/
 Working = typer.Argument(help="The working metadata (.sqlite)")
 
 
+#: What `fdl clone` names the state it keeps beside the working metadata after.
+STATE_SUFFIX = ".fdl.json"
+
+
 def _state_path(working: Path) -> Path:
-    return working.with_name(working.name + ".fdl.json")
+    return working.with_name(working.name + STATE_SUFFIX)
 
 
 def _read_state(working: Path) -> dict:
@@ -125,6 +129,16 @@ def clone(
         # Read before the clone: a data_dir moved meanwhile then fails the commit.
         config = repo.read_config(store)
         files = _described_files(store, ref)
+        # Written after the clone, a file of the tree would overwrite the working metadata.
+        clashing = sorted(
+            path.as_posix()
+            for path in files
+            if objects.is_beside(path.resolve().as_posix(), working.resolve().as_posix())
+        )
+        if clashing:
+            raise repo.RepoError(
+                f"the version holds {', '.join(clashing)}, where the working metadata goes: name it otherwise"
+            )
         version = repo.clone(store, working, ref=ref, local_data=local, storage=storage)
         for path, body in files.items():
             path.parent.mkdir(parents=True, exist_ok=True)
@@ -235,7 +249,9 @@ def commit(
         description = describe or dataset.find()
         declared = dataset.read(description)
         root = Path(description).resolve().parent
-        listed = objects.tree(root, leave_out=[description, working])
+        listed = objects.tree(
+            root, leave_out=[description, working, *_workings(root), *([assets_dir] if assets_dir else [])]
+        )
         version = _commit(
             store,
             working,
@@ -255,6 +271,17 @@ def commit(
         raise _fail(exc) from exc
     typer.echo(f"Committed {version.id} (version {version.seq}). Push it to {state['ref']} with:")
     typer.echo(f"  fdl push {working}")
+
+
+def _workings(root: Path) -> list[Path]:
+    """Every working metadata below ``root``, found by the state `fdl clone` keeps beside it.
+
+    Another clone in the description's folder (of another branch, say) holds
+    the writer's metadata and data, not the version's files.
+    """
+    return [
+        path.with_name(path.name.removesuffix(STATE_SUFFIX)) for path in root.rglob(f"*{STATE_SUFFIX}")
+    ]
 
 
 def _pending_dir(working: Path) -> Path:
@@ -285,6 +312,7 @@ def _commit(
     out = Path(tempfile.mkdtemp(prefix=".fdl-commit-", dir=working.resolve().parent))
     try:
         parent = repo.read_version(store, state["base"]) if state["base"] else None
+        parent_dataset = diffs.described(store, parent) if parent else None
         written = _written(store, state)
 
         def make(allow_empty: bool):
@@ -299,6 +327,7 @@ def _commit(
                 tree=listed,
                 allow_empty=allow_empty,
                 working_data=written,
+                parent_dataset=parent_dataset,
                 merged=merged,
             )
 
@@ -758,7 +787,7 @@ def diff(
     against: str | None = typer.Option(None, help="The version or ref to compare with (default: the target's parent)"),
     as_json: bool = typer.Option(False, "--json", help="Print the differences as JSON"),
 ) -> None:
-    """What changed in a version: tables, rows, columns, data files and descriptions.
+    """What changed in a version: tables, rows, columns, data files and dataset.json.
 
     Compared with the version's parent, or with --against.
     """
