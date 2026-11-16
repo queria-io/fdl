@@ -381,6 +381,9 @@ def record(
             difference = diffs.with_dataset(difference, parent_dataset, completed)
         # After the diff, which reads the parent's snapshot: the version keeps only its own.
         catalog.keep_last_snapshot(copied)
+        # Attaching it through DuckLake must not have moved it to another format.
+        if catalog.recorded_format(copied) != recorded:
+            raise RepoError(f"keeping the last snapshot changed the DuckLake format of {frozen}")
         indexed = _write_files_index(target, copied, last)
         listed = None
         if tree:

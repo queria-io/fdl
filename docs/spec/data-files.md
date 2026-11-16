@@ -35,7 +35,7 @@ Only when both hold:
 
 Only a file whose path has the form in the table above is a shared object: a data file named `ducklake-<name>.parquet` under the data directory, or `assets/` or `objects/` followed by 64 lower-case hex digits. A process that deletes shared objects must leave every other file alone.
 
-A version's metadata names data files at every snapshot it keeps, not only at `ducklake.snapshot_id` (versions written by fdl-cli 0.31 and earlier keep earlier snapshots), so the files in `tables` of `files.json` are not all it reaches. A process that cannot open the metadata uses `named` of `files.json`. When a live version has no `files.json`, or one without `named`, the process opens its metadata or deletes no data files.
+A version written by fdl-cli 0.31 or earlier keeps earlier snapshots in its metadata, and the metadata names data files at each of them, not only at `ducklake.snapshot_id`. For such a version, the files in `tables` of `files.json` are not all it reaches. A process that cannot open the metadata uses `named` of `files.json`. When a live version has no `files.json`, or one without `named`, the process opens its metadata or deletes no data files.
 
 DuckLake's own cleanup (`ducklake_cleanup_old_files`, `ducklake_expire_snapshots`) sees only one metadata file, so it must not be used to delete from a repository. Deleting is for a process that sees the whole repository.
 

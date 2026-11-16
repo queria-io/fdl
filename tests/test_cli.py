@@ -374,6 +374,48 @@ def test_restore_leaves_a_table_unchanged_since_as_it_is(tmp_path: Path) -> None
     assert changed == ["main.b"]
 
 
+def test_restore_brings_back_a_column_that_allowed_nulls(tmp_path: Path) -> None:
+    remote, working = tmp_path / "remote", tmp_path / "lake.sqlite"
+    store = LocalStore(remote)
+    run("init", remote)
+    run("clone", remote, working)
+    write(working, store, "CREATE TABLE lake.main.a (id INTEGER); INSERT INTO lake.main.a VALUES (1)")
+    commit(working, "-m", "first", "--author", "t")
+    first = repo.head(store)
+    write(working, store, "ALTER TABLE lake.main.a ALTER COLUMN id SET NOT NULL")
+    commit(working, "-m", "second", "--author", "t")
+
+    changed = catalog.restore(
+        working, remote / layout.version_metadata(first), data_path=repo.data_url(store), repository_data=repo.data_url(store)
+    )
+    assert changed == ["main.a"]
+
+
+def test_restore_leaves_a_table_whose_files_the_working_metadata_pinned(tmp_path: Path) -> None:
+    remote, working = tmp_path / "remote", tmp_path / "lake.sqlite"
+    store = LocalStore(remote)
+    run("init", remote)
+    run("clone", remote, working)
+    write(working, store, "CREATE TABLE lake.main.a AS SELECT 1 AS id; CREATE TABLE lake.main.b AS SELECT 1 AS id")
+    commit(working, "-m", "first", "--author", "t")
+    first = repo.head(store)
+    write(working, store, "INSERT INTO lake.main.b VALUES (2)")
+    commit(working, "-m", "second", "--author", "t")
+    # As a clone of a repository over HTTP makes it: published files by their URL, new ones in a local folder.
+    local = tmp_path / "local"
+    local.mkdir()
+    frozen = tmp_path / "second.duckdb"
+    frozen.write_bytes((remote / layout.version_metadata(repo.head(store))).read_bytes())
+    catalog.pin_files(frozen, repo.data_url(store))
+    pinned = tmp_path / "pinned.sqlite"
+    catalog.convert(frozen, pinned, data_path=local.as_posix() + "/")
+
+    changed = catalog.restore(
+        pinned, remote / layout.version_metadata(first), data_path=local.as_posix() + "/", repository_data=repo.data_url(store)
+    )
+    assert changed == ["main.b"]
+
+
 def test_restore_keeps_what_the_columns_declared_and_drops_new_schemas(tmp_path: Path) -> None:
     remote, working = tmp_path / "remote", tmp_path / "lake.sqlite"
     store = LocalStore(remote)

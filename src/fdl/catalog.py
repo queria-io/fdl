@@ -18,6 +18,7 @@ SQLite has no column types, so the rows would be read back wrong.
 
 from __future__ import annotations
 
+import tempfile
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Iterable, Literal
@@ -850,30 +851,32 @@ def keep_last_snapshot(catalog_path: Path) -> None:
         snapshots = [row[0] for row in con.execute(
             "SELECT snapshot_id FROM ducklake_snapshot ORDER BY snapshot_id"
         ).fetchall()]
-        data_path = con.execute(
-            f"SELECT value FROM ducklake_metadata WHERE key = '{DATA_PATH_KEY}' AND scope IS NULL"
-        ).fetchone()
     except Exception as exc:  # noqa: BLE001 - duckdb raises several types
         raise CatalogError(f"{catalog_path} is not a DuckLake catalog: {exc}") from exc
     finally:
         con.close()
-    if not snapshots or not data_path:
-        raise CatalogError(f"{catalog_path} holds no snapshot or no data path")
+    if not snapshots:
+        raise CatalogError(f"{catalog_path} holds no snapshot")
     last = snapshots[-1]
     try:
         if len(snapshots) > 1:
             con = duckdb.connect()
-            try:
-                for statement in attach_sql(catalog_path, alias="lake", data_path=data_path[0]):
-                    if statement:
-                        con.execute(statement)
-                # A plain CALL: inside a SELECT it runs read-only and the
-                # catalog changes are rolled back.
-                con.execute(
-                    f"CALL ducklake_expire_snapshots('lake', versions => {[int(s) for s in snapshots[:-1]]})"
-                )
-            finally:
-                con.close()
+            # An empty folder, not the repository's: nothing here may touch a
+            # data file that other versions still read.
+            with tempfile.TemporaryDirectory(prefix="fdl-expire-") as nowhere:
+                try:
+                    for statement in attach_sql(
+                        catalog_path, alias="lake", data_path=Path(nowhere).as_posix() + "/"
+                    ):
+                        if statement:
+                            con.execute(statement)
+                    # A plain CALL: inside a SELECT it runs read-only and the
+                    # catalog changes are rolled back.
+                    con.execute(
+                        f"CALL ducklake_expire_snapshots('lake', versions => {[int(s) for s in snapshots[:-1]]})"
+                    )
+                finally:
+                    con.close()
         con = _open(catalog_path)
         try:
             con.execute("DELETE FROM ducklake_files_scheduled_for_deletion")
@@ -1081,53 +1084,12 @@ def restore(
                 con.execute(statement)
         # A view's SQL names its tables as the writer did, from inside the catalog.
         con.execute("USE lake")
+        # The same reading of a catalog's tables, views and files as a merge.
+        from .merge import _Merging
 
-        def meta(alias: str) -> str:
-            return f"__ducklake_metadata_{alias}.main"
-
-        def tables(alias: str) -> dict[tuple[str, str], int]:
-            rows = con.execute(
-                f"""
-                SELECT s.schema_name, t.table_name, t.table_id
-                FROM {meta(alias)}.ducklake_table t JOIN {meta(alias)}.ducklake_schema s USING (schema_id)
-                WHERE t.end_snapshot IS NULL AND s.end_snapshot IS NULL
-                """
-            ).fetchall()
-            return {(schema, name): table_id for schema, name, table_id in rows}
-
-        def views(alias: str) -> dict[tuple[str, str], str]:
-            rows = con.execute(
-                f"""
-                SELECT s.schema_name, v.view_name, v.sql
-                FROM {meta(alias)}.ducklake_view v JOIN {meta(alias)}.ducklake_schema s USING (schema_id)
-                WHERE v.end_snapshot IS NULL AND s.end_snapshot IS NULL
-                """
-            ).fetchall()
-            return {(schema, name): sql for schema, name, sql in rows}
-
-        def schemas(alias: str) -> set[str]:
-            rows = con.execute(
-                f"SELECT schema_name FROM {meta(alias)}.ducklake_schema WHERE end_snapshot IS NULL"
-            ).fetchall()
-            return {schema for (schema,) in rows}
-
-        def files(alias: str, table_id: int) -> set[tuple]:
-            """The table's data and delete files, by path under the data folder."""
-            rows = con.execute(
-                f"""
-                SELECT d.path, d.path_is_relative, x.path, x.path_is_relative
-                FROM {meta(alias)}.ducklake_data_file d
-                LEFT JOIN {meta(alias)}.ducklake_delete_file x
-                  ON x.data_file_id = d.data_file_id AND x.end_snapshot IS NULL
-                WHERE d.table_id = $t AND d.end_snapshot IS NULL
-                """,
-                {"t": table_id},
-            ).fetchall()
-
-            def relative(path: str | None, is_relative: bool | None) -> str | None:
-                return path if path is None or is_relative else path.removeprefix(repository_data)
-
-            return {(relative(d, dr), relative(x, xr)) for d, dr, x, xr in rows}
+        held = _Merging(con, {}, repository_data)
+        meta = held._meta
+        name = held.name
 
         def columns(table_id: int) -> list[tuple[str, str | None, bool]]:
             """Top-level columns in ``source``: name, comment, whether nulls are allowed."""
@@ -1157,24 +1119,19 @@ def restore(
         def literal(text: str) -> str:
             return "'" + text.replace("'", "''") + "'"
 
-        def name(alias: str, key: tuple[str, str]) -> str:
-            return f"{alias}.{quoted(key[0])}.{quoted(key[1])}"
-
-        def shape(alias: str, key: tuple[str, str]) -> list[tuple]:
-            return con.execute(
-                f"SELECT column_name, column_type FROM (DESCRIBE SELECT * FROM {name(alias, key)})"
-            ).fetchall()
-
         def same(key: tuple[str, str]) -> bool:
+            # The column rows, not only names and types: NOT NULL and defaults
+            # live there too. The same table ID keeps the same column IDs.
+            table_id = old_tables[key]
             return (
-                new_tables.get(key) == old_tables[key]
-                and shape("old", key) == shape("lake", key)
-                and files("old", old_tables[key]) == files("lake", new_tables[key])
+                new_tables.get(key) == table_id
+                and held.columns("old", table_id) == held.columns("lake", table_id)
+                and held.files("old", table_id) == held.files("lake", table_id)
             )
 
-        old_tables, new_tables = tables("old"), tables("lake")
-        old_views, new_views = views("old"), views("lake")
-        old_schemas = schemas("old")
+        old_tables, new_tables = held.tables_of("old"), held.tables_of("lake")
+        old_views, new_views = held.views_of("old"), held.views_of("lake")
+        old_schemas = held.schemas_of("old")
         changed: list[str] = []
         con.execute("BEGIN")
         for key in new_views.keys() - old_views.keys():
@@ -1183,7 +1140,7 @@ def restore(
         for key in new_tables.keys() - old_tables.keys():
             con.execute(f"DROP TABLE {name('lake', key)}")
             changed.append(".".join(key))
-        for schema in schemas("lake") - old_schemas:
+        for schema in held.schemas_of("lake") - old_schemas:
             con.execute(f"DROP SCHEMA lake.{quoted(schema)} CASCADE")
             changed.append(schema)
         for schema in old_schemas:
@@ -1192,7 +1149,7 @@ def restore(
             if same(key):
                 continue
             declared = columns(table_id)
-            types = dict(shape("old", key))
+            types = dict(held.shape("old", key))
             # Declared as the columns were, NOT NULL included, then filled.
             body = ", ".join(
                 f"{quoted(column)} {types[column]}" + ("" if nulls else " NOT NULL")
