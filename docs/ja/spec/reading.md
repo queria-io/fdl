@@ -18,6 +18,20 @@ ATTACH 'ducklake:https://example.org/lake/versions/019a3c4e-…/metadata.db' AS 
 );
 ```
 
+## 前のバージョン
+
+読み手は、前のバージョンも同じ手順で、そのバージョンの ID で読みます。ID はタグ、`parents`、バージョンの一覧から取得します。どのバージョンのメタデータも自分のスナップショットの時点のデータセットを持つので、前のバージョンに戻るには、別のメタデータの中でタイムトラベルするのではなく、そのバージョンのメタデータを開きます。
+
+```sql
+ATTACH 'ducklake:https://example.org/lake/versions/019a2f10-…/metadata.db' AS lake_v11 (
+  DATA_PATH 'https://example.org/lake/tables/', OVERRIDE_DATA_PATH true, READ_ONLY
+);
+```
+
+- 読み手は、後のバージョンのメタデータで `AT (VERSION => n)` や `ducklake_snapshots()` を使って前のバージョンを読んではいけない。メタデータは自分のスナップショットだけを持つ（[固めたメタデータ](/ja/spec/versions#固めたメタデータ)）。fdl-cli 0.31 以前が書いたバージョンは前のスナップショットも持つが、読み手はそれに頼ってはいけない
+- 2 つのバージョンを比べるときは、両方のメタデータを別の名前で ATTACH する
+- 保持期間を過ぎたバージョンや取り下げたバージョンには、開くメタデータが無い（手順 3）
+
 ## 署名
 
 バージョンは `versions/<ID>/version.json.sig` を持つことがあります。`version.json` のバイト列への SSH 署名で、`ssh-keygen -Y sign -n fdl` で作ります。署名は記録を、記録は `metadata.sha256` でメタデータを保証します。

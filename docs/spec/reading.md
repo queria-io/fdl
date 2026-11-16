@@ -1,6 +1,6 @@
 ---
 title: Reading
-description: How a reader resolves a ref, checks a version and attaches its metadata, and what may be cached.
+description: How a reader resolves a ref, checks a version and attaches its metadata, reads an earlier version, and what may be cached.
 ---
 
 ## Steps
@@ -17,6 +17,20 @@ ATTACH 'ducklake:https://example.org/lake/versions/019a3c4e-…/metadata.db' AS 
   DATA_PATH 'https://example.org/lake/tables/', OVERRIDE_DATA_PATH true, READ_ONLY
 );
 ```
+
+## An earlier version
+
+A reader reads an earlier version by the same steps, with that version's ID: from a tag, from `parents`, or from a list of versions. Each version's metadata holds the dataset at its own snapshot, so going back to a version is opening its metadata, not travelling back in time inside another one.
+
+```sql
+ATTACH 'ducklake:https://example.org/lake/versions/019a2f10-…/metadata.db' AS lake_v11 (
+  DATA_PATH 'https://example.org/lake/tables/', OVERRIDE_DATA_PATH true, READ_ONLY
+);
+```
+
+- A reader must not read an earlier version by `AT (VERSION => n)` or `ducklake_snapshots()` in the metadata of a later version. A metadata file holds only its own snapshot ([The frozen metadata](/spec/versions#the-frozen-metadata)). Versions written by fdl-cli 0.31 and earlier also hold earlier snapshots, but a reader must not rely on them
+- To compare two versions, a reader attaches both metadata files under different names
+- A version past retention or withdrawn has no metadata to open (step 3)
 
 ## Signatures
 

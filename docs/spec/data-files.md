@@ -35,7 +35,7 @@ Only when both hold:
 
 Only a file whose path has the form in the table above is a shared object: a data file named `ducklake-<name>.parquet` under the data directory, or `assets/` or `objects/` followed by 64 lower-case hex digits. A process that deletes shared objects must leave every other file alone.
 
-A version's metadata names data files at every snapshot it keeps, not only at `ducklake.snapshot_id`, so the files in `tables` of `files.json` are not all it reaches. A process that cannot open the metadata uses `named` of `files.json`. When a live version has no `files.json`, or one without `named`, the process opens its metadata or deletes no data files.
+A version's metadata names data files at every snapshot it keeps, not only at `ducklake.snapshot_id` (versions written by fdl-cli 0.31 and earlier keep earlier snapshots), so the files in `tables` of `files.json` are not all it reaches. A process that cannot open the metadata uses `named` of `files.json`. When a live version has no `files.json`, or one without `named`, the process opens its metadata or deletes no data files.
 
 DuckLake's own cleanup (`ducklake_cleanup_old_files`, `ducklake_expire_snapshots`) sees only one metadata file, so it must not be used to delete from a repository. Deleting is for a process that sees the whole repository.
 
@@ -90,7 +90,7 @@ Implementations of this choice agree on the cases in [Retention cases](/spec/ret
 
 Withdrawal removes data that must not be published, such as personal data published by mistake. Unlike retention, it removes data from every version that holds it, live ones included, and does not wait for the grace period.
 
-1. Make a new version without the data and move every branch that holds an affected version to it. This is a forward move: the new version's parent is the current one. Its metadata must not keep a snapshot that holds the data (`ducklake_expire_snapshots` in the working metadata), since a metadata file reaches every file it names
+1. Make a new version without the data and move every branch that holds an affected version to it. This is a forward move: the new version's parent is the current one. Its metadata keeps only its own snapshot ([The frozen metadata](/spec/versions#the-frozen-metadata)), so it does not reach the data
 2. Delete the tags that point at affected versions
 3. Delete the shared objects that hold the data, at once, such as a data file with personal data or a screenshot showing it: those an affected version reaches and no version kept reaches. Every version that reaches such an object is an affected version. An affected version already past retention has no metadata to say which objects it reached, so when there is one, every shared object no live version reaches is deleted at once too
 4. For every affected version, put `expired.json` with `"reason": "withdrawn"` and `deleted`, and delete its metadata files

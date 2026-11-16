@@ -79,7 +79,7 @@ A version is the files under `versions/<version ID>/`. They must not change once
 | `message` | must | What changed |
 | `metadata` | must | The metadata's file name (`metadata.db`), size, sha256, and storage format (`storage`) |
 | `dataset` | must | The `dataset.json` beside the metadata: its file name, size and sha256. Versions written before it was required lack it |
-| `ducklake` | must | The DuckLake format, the snapshot frozen, and the range of snapshots this version adds after its parent (first and last) |
+| `ducklake` | must | The DuckLake format, the snapshot frozen, and the range of snapshots the working metadata made for this version after its parent (first and last). Only the snapshot frozen is in the metadata |
 | `files` | may | The `files.json` beside the metadata, if written: its file name, size and sha256 ([files.json](#filesjson)) |
 | `tree` | may | The `tree.json` beside the metadata, if the version holds other files: its file name, size and sha256 ([tree.json](#treejson)) |
 | `diff` | may | What changed since the first parent, or in the first version ([diff](#diff)) |
@@ -91,7 +91,7 @@ The `path` of `metadata`, `dataset`, `files` and `tree` is a file name in the ve
 
 A version has one parent, or two for a merge: the version of the branch it was made on, then the version merged into it (see [Merging](/spec/writing#merging)). The first version has none. A reader must accept a list of any length, follow the first entry for the history of a branch, and follow every entry to find whether one version descends from another.
 
-The description and SQL of each snapshot stay in the metadata, in DuckLake's `commit_message` and `commit_extra_info`. They are not copied into `version.json`.
+The description and SQL of the snapshot frozen stay in the metadata, in DuckLake's `commit_message` and `commit_extra_info`. They are not copied into `version.json`.
 
 ### diff
 
@@ -105,7 +105,7 @@ The description and SQL of each snapshot stay in the metadata, in DuckLake's `co
 | `data` | The tables both hold whose data files differ, even with the same rows |
 | `dataset` | `true` when what the writer wrote in `dataset.json` differs from the first parent's, `false` otherwise. The two are compared without what the writer's tool fills in from the metadata (each table's `rows` and `kind`, each field's `type` and `nullable`, a view's `sql`) and without fields and tables left with nothing but their names, so a table or column added to the data alone does not set it |
 
-A writer compares the metadata at the parent's snapshot with the frozen one. It leaves `diff` out when the metadata no longer holds the parent's snapshot, and leaves `dataset` out when either version has no `dataset.json`. What changed inside `dataset.json` is not listed: a reader that wants it compares the two files. Versions written by fdl-cli 0.31 and earlier carry `descriptions` in place of `dataset`: what has another `title` or `description`, as `dataset`, a table, or `schema.table.column`. A reader compares the two versions' `dataset.json` and `files.json` for a version without `diff`, or against a version other than its first parent.
+A writer compares the working metadata at the parent's snapshot with its last snapshot, before freezing. The working metadata is cloned from the parent's metadata, so it holds the parent's snapshot. The writer leaves `diff` out when it does not, and leaves `dataset` out when either version has no `dataset.json`. What changed inside `dataset.json` is not listed: a reader that wants it compares the two files. Versions written by fdl-cli 0.31 and earlier carry `descriptions` in place of `dataset`: what has another `title` or `description`, as `dataset`, a table, or `schema.table.column`. A reader compares the two versions' `dataset.json` and `files.json` for a version without `diff`, or against a version other than its first parent.
 
 Each entry of `columns` is one column difference in a table both hold. `column` is the column's name in the new version.
 
@@ -249,11 +249,11 @@ The metadata is the file `metadata.path` names in the version's folder, `metadat
 
 - A reader opens the file `metadata.path` names. Versions written by fdl-cli 0.26 and earlier name it `ducklake.duckdb` and record it as `catalog`, which a reader reads as `metadata`
 
-- It holds bookkeeping rows up to `ducklake.snapshot_id` and none after
+- It holds one snapshot, `ducklake.snapshot_id`, and only the bookkeeping rows that snapshot reads. Earlier snapshots, the rows that ended before it and the files scheduled for deletion are left out. A table rebuilt by a tool such as dbt is written to all new files, so earlier snapshots in one metadata share little with the last one and would only make the file larger. Versions written by fdl-cli 0.31 and earlier also hold earlier snapshots
 - It holds no inlined rows. All data is in data files
 - Every data file it names is under `data_dir`, recorded relative to the metadata's data path. A writer must check this; a host may check it too
 - Its `data_path` is the absolute URL of the data folder where the writer published: the root plus `data_dir`. Readers override it (see [Reading](/spec/reading))
-- Until DuckLake can tag snapshots, a writer must not run `ducklake_expire_snapshots` on its working metadata in a way that removes the snapshot a version was frozen at
+- A reader reads an earlier version by opening that version's metadata ([Reading](/spec/reading#an-earlier-version)), not by `AT (VERSION => n)` in another version's metadata
 
 ## dataset.json
 

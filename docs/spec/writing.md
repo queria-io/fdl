@@ -21,11 +21,12 @@ A writer writes to a working metadata file: a DuckLake metadata file in SQLite, 
 
 A writer may keep a committed version on its own disk and push it later, as Git keeps commits until `git push`. Until the push, nothing in the repository changes, apart from data files the working metadata wrote there. No version names those yet, so they are deleted after the grace period if the version is never pushed.
 
-Checking out copies DuckLake's bookkeeping tables from the frozen metadata into SQLite as they are. Freezing does the reverse, keeping the rows up to the last snapshot. Neither rewrites a data file.
+Checking out copies DuckLake's bookkeeping tables from the frozen metadata into SQLite as they are. Freezing does the reverse, keeping only the last snapshot and the rows it reads. Neither rewrites a data file.
 
 When freezing, a writer must:
 
 - refuse a working metadata file that holds inlined rows
+- keep only the last snapshot: leave out earlier snapshots, the rows that ended before it and the files scheduled for deletion (see [The frozen metadata](/spec/versions#the-frozen-metadata))
 - set the frozen metadata's `data_path` to the absolute URL of `<root><data_dir>`
 - refuse if any data file is recorded with an absolute path, or outside `data_dir`
 
@@ -42,7 +43,7 @@ A table rebuilt from the same input is written to new data files, so comparing f
 
 A writer that brings back what an earlier version held makes a new version, as `git revert` makes a new commit. It does not move a branch back: a branch moves only forward by default (see [Refs](/spec/refs)), and readers may already hold the versions in between.
 
-The new version's parent is the version the working metadata was cloned at, so pushing it is refused if the branch has moved since, as for any commit. Its tables and views are those of the earlier version at its snapshot, with the same columns and rows, and its `dataset.json` and `tree.json` are the earlier version's. The working metadata gets there in a new snapshot: tables the earlier version did not hold are dropped, and tables changed since are written again from their rows at the earlier snapshot. The earlier snapshot must still be in the metadata.
+The new version's parent is the version the working metadata was cloned at, so pushing it is refused if the branch has moved since, as for any commit. Its tables and views are those of the earlier version at its snapshot, with the same columns and rows, and its `dataset.json` and `tree.json` are the earlier version's. The working metadata gets there in a new snapshot: tables the earlier version did not hold are dropped, and tables changed since are written again from their rows at the earlier snapshot. The writer reads the earlier version's tables from that version's own metadata, as it reads theirs when merging.
 
 ## Branches
 
