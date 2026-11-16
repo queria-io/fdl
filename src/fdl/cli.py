@@ -157,7 +157,7 @@ def _described_files(store, ref: str) -> dict[Path, bytes]:
     the way is refused rather than overwritten.
     """
     version = repo.head(store, ref)
-    if version is None or any(Path(name).exists() for name in dataset.DEFAULT_FILES):
+    if version is None or Path(layout.DATASET).exists():
         return {}
     described = diffs.described(store, version)
     if described is None:
@@ -210,7 +210,7 @@ def commit(
     describe: Path | None = typer.Option(
         None,
         "--dataset",
-        help="The description of what the version holds (default: dataset.json or dataset.yml here), with any *.table.yml below it",
+        help="The dataset.json that describes what the version holds (default: the one here). Every other file in its folder goes in the version's tree",
     ),
     allow_empty: bool = typer.Option(
         False, "--allow-empty", help="Make a version even if nothing changed since the last one"
@@ -233,9 +233,9 @@ def commit(
     store = _store(state["remote"])
     try:
         description = describe or dataset.find()
-        declared = dataset.gather(description)
+        declared = dataset.read(description)
         root = Path(description).resolve().parent
-        listed = objects.tree(root)
+        listed = objects.tree(root, leave_out=[description, working])
         version = _commit(
             store,
             working,
@@ -285,7 +285,6 @@ def _commit(
     out = Path(tempfile.mkdtemp(prefix=".fdl-commit-", dir=working.resolve().parent))
     try:
         parent = repo.read_version(store, state["base"]) if state["base"] else None
-        parent_dataset = diffs.described(store, parent) if parent else None
         written = _written(store, state)
 
         def make(allow_empty: bool):
@@ -300,7 +299,6 @@ def _commit(
                 tree=listed,
                 allow_empty=allow_empty,
                 working_data=written,
-                parent_dataset=parent_dataset,
                 merged=merged,
             )
 

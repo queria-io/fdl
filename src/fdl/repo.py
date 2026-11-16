@@ -133,13 +133,11 @@ def commit(
     data_path: str,
     author: dict,
     message: str,
-    inputs: tuple[dict, ...] = (),
     annotations: dict | None = None,
     dataset: dict | None = None,
     tree: list[dict] | None = None,
     allow_empty: bool = True,
     working_data: str | None = None,
-    parent_dataset: dict | None = None,
     merged: Version | None = None,
 ) -> Version:
     """Freeze the working metadata into a version under ``out_dir/<ID>/``.
@@ -160,9 +158,6 @@ def commit(
 
     ``working_data`` is where the working metadata wrote its new data files,
     when not where it records (see `clone`): comparing reads them there.
-
-    ``parent_dataset`` is the parent's `dataset.json`, which the version's
-    ``diff`` compares descriptions with (see `record`).
 
     ``merged`` is the version a merge brought in: the second parent.
     """
@@ -201,11 +196,9 @@ def commit(
             parent=parent,
             author=author,
             message=message,
-            inputs=inputs,
             annotations=annotations,
             dataset=dataset,
             tree=tree,
-            parent_dataset=parent_dataset,
             merged=merged,
         )
     finally:
@@ -333,11 +326,9 @@ def record(
     parent: Version | None,
     author: dict,
     message: str,
-    inputs: tuple[dict, ...] = (),
     annotations: dict | None = None,
     dataset: dict | None = None,
     tree: list[dict] | None = None,
-    parent_dataset: dict | None = None,
     merged: Version | None = None,
 ) -> Version:
     """Make a version out of a metadata file that is already frozen.
@@ -346,8 +337,8 @@ def record(
     only needs the version around it. The metadata is copied, not moved.
 
     The version's ``diff`` compares the metadata at the parent's snapshot with
-    the frozen one. Its descriptions are compared only when both ``dataset``
-    and ``parent_dataset`` (the parent's `dataset.json`) are given.
+    the frozen one, and says whether its `dataset.json` is another file than
+    the parent's when both have one.
 
     ``merged`` is the second parent of a merge version; ``seq`` follows the first.
     """
@@ -368,7 +359,6 @@ def record(
             copied, parent.ducklake.snapshot_id if parent else None
         )
         described = None
-        completed = None
         if dataset is not None:
             written = target / layout.DATASET
             completed = dataset_json.describe(dataset, copied)
@@ -378,12 +368,10 @@ def record(
             )
         indexed = _write_files_index(target, copied, last)
         difference = diffs.between(
-            copied,
-            parent.ducklake.snapshot_id if parent else None,
-            last,
-            old_dataset=parent_dataset,
-            new_dataset=completed,
+            copied, parent.ducklake.snapshot_id if parent else None, last
         )
+        if difference is not None and parent is not None and parent.dataset and described:
+            difference = {**difference, "dataset": parent.dataset.sha256 != described.sha256}
         listed = None
         if tree:
             written = target / layout.TREE
@@ -405,7 +393,6 @@ def record(
             ducklake=DuckLake(format=recorded, snapshot_id=last, snapshots=(first, last)),
             files=indexed,
             diff=difference,
-            inputs=tuple(inputs),
             annotations=dict(annotations or {}),
             dataset=described,
             tree=listed,

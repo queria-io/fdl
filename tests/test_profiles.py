@@ -37,11 +37,12 @@ def write(working: Path, store: LocalStore, sql: str) -> None:
 
 @pytest.fixture
 def repository(tmp_path: Path, monkeypatch):
-    monkeypatch.chdir(tmp_path)
+    (tmp_path / "about").mkdir()
+    monkeypatch.chdir(tmp_path / "about")
     remote, working = tmp_path / "remote", tmp_path / "lake.sqlite"
     run("init", remote)
     run("clone", remote, working)
-    (tmp_path / "dataset.yml").write_text("name: towns\ntitle: Towns\n")
+    (tmp_path / "about" / "dataset.json").write_text('{"name": "towns"}')
     return LocalStore(remote), working
 
 

@@ -18,9 +18,6 @@ from . import catalog, layout
 
 SHA256 = re.compile(r"[0-9a-f]{64}")
 MARKDOWN = "text/markdown"
-#: What `fdl commit` puts in the tree, beside the description: a README and everything below docs/.
-README = "README.md"
-DOCS_DIR = "docs"
 
 
 class ObjectError(ValueError):
@@ -83,21 +80,29 @@ def check_path(path: Any) -> str:
     return path
 
 
-def tree(root: Path) -> list[dict[str, Any]]:
-    """The files `fdl commit` publishes beside the data: ``README.md`` and every file below ``docs/``.
+def tree(root: Path, *, leave_out: Iterable[Path] = ()) -> list[dict[str, Any]]:
+    """The files `fdl commit` publishes beside the data: every file below ``root``.
 
-    Each is an entry of `tree.json` (path, sha256, bytes), with its path from
-    ``root``, the folder of the description. Hidden files and folders are
-    left out. Links between them stay as written: a reader resolves them
-    through the tree, as Git does.
+    ``root`` is the folder of the description. Each file is an entry of
+    `tree.json` (path, sha256, bytes), with its path from ``root``. Hidden
+    files and folders are left out, and so is each path of ``leave_out`` (the
+    description itself, say) with anything whose path starts with it, such as
+    the files fdl keeps beside the working metadata. Links between files stay
+    as written: a reader resolves them through the tree, as Git does.
     """
-    root = Path(root)
-    found = [entry(root, README)] if (root / README).is_file() else []
-    if (root / DOCS_DIR).is_dir():
-        found += [
-            {**item, "path": f"{DOCS_DIR}/{item['path']}"} for item in manifest(root / DOCS_DIR)
-        ]
-    return [{key: item[key] for key in ("path", "sha256", "bytes")} for item in found]
+    root = Path(root).resolve()
+    skipped = [
+        Path(path).resolve().relative_to(root).as_posix()
+        for path in leave_out
+        if Path(path).resolve().is_relative_to(root)
+    ]
+    # Left out before hashing: the working metadata and its data can be large.
+    paths = [
+        path
+        for path in _files(root)
+        if not any(path.startswith(skip) for skip in skipped)
+    ]
+    return [{key: value for key, value in entry(root, path).items() if key != "media_type"} for path in paths]
 
 
 def check_tree(entries: Any) -> None:
@@ -121,12 +126,16 @@ def manifest(folder: Path) -> list[dict[str, Any]]:
     folder = Path(folder)
     if not folder.is_dir():
         raise ObjectError(f"{folder} is not a folder")
-    files = sorted(
-        path
+    return [entry(folder, path) for path in _files(folder)]
+
+
+def _files(folder: Path) -> list[str]:
+    """Every file below ``folder`` but hidden ones, by path from it."""
+    return sorted(
+        path.relative_to(folder).as_posix()
         for path in folder.rglob("*")
         if path.is_file() and not any(part.startswith(".") for part in path.relative_to(folder).parts)
     )
-    return [entry(folder, path.relative_to(folder).as_posix()) for path in files]
 
 
 class ByContent(Mapping[str, Path]):

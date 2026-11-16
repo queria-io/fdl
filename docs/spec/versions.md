@@ -62,16 +62,8 @@ A version is the files under `versions/<version ID>/`. They must not change once
       { "table": "main.population", "kind": "add_column", "column": "note", "breaking": false }
     ],
     "data": ["main.population"],
-    "descriptions": ["main.population.note"]
+    "dataset": true
   },
-  "inputs": [
-    {
-      "source_id": "example:population-2025",
-      "sha256": "1b7e…",
-      "retrieved_at": "2026-10-29T03:12:00Z",
-      "url": "https://example.org/population-2025.csv"
-    }
-  ],
   "annotations": {}
 }
 ```
@@ -91,10 +83,9 @@ A version is the files under `versions/<version ID>/`. They must not change once
 | `files` | may | The `files.json` beside the metadata, if written: its file name, size and sha256 ([files.json](#filesjson)) |
 | `tree` | may | The `tree.json` beside the metadata, if the version holds other files: its file name, size and sha256 ([tree.json](#treejson)) |
 | `diff` | may | What changed since the first parent, or in the first version ([diff](#diff)) |
-| `inputs` | may | Source files used: where each came from, when, and its sha256. FDL does not store them; a writer that keeps them makes them assets of a table. How `source_id` is assigned is up to the writer |
-| `annotations` | may | What the format does not interpret, keyed by the name of whoever reads it (a host, a tool) |
+| `annotations` | may | What the format does not interpret, keyed by the name of whoever reads it (a host, a tool), such as the source files a version was made from |
 
-A reader must ignore fields it does not know.
+A reader must ignore fields it does not know. Versions written by fdl-cli 0.31 and earlier carry `inputs`, the source files used; a reader may show it and need not.
 
 The `path` of `metadata`, `dataset`, `files` and `tree` is a file name in the version's folder: it holds no `/` or `\` and is not `.` or `..`. A reader must refuse a record with any other.
 
@@ -112,9 +103,9 @@ The description and SQL of each snapshot stay in the metadata, in DuckLake's `co
 | `rows` | `table`, `from`, `to`: the tables both hold whose row count differs |
 | `columns` | The column differences, below |
 | `data` | The tables both hold whose data files differ, even with the same rows |
-| `descriptions` | What has another `title` or `description` in `dataset.json`: `dataset`, a table, or `schema.table.column` |
+| `dataset` | `true` when `dataset.json` has another sha256 than the first parent's, `false` when it has the same |
 
-A writer compares the metadata at the parent's snapshot with the frozen one. It leaves `diff` out when the metadata no longer holds the parent's snapshot, and lists `descriptions` only when it had both `dataset.json`. A reader compares the two versions' `dataset.json` and `files.json` for a version without `diff`, or against a version other than its first parent.
+A writer compares the metadata at the parent's snapshot with the frozen one. It leaves `diff` out when the metadata no longer holds the parent's snapshot, and leaves `dataset` out when either version has no `dataset.json`. What changed inside `dataset.json` is not listed: a reader that wants it compares the two files. Versions written by fdl-cli 0.31 and earlier carry `descriptions` in place of `dataset`: what has another `title` or `description`, as `dataset`, a table, or `schema.table.column`. A reader compares the two versions' `dataset.json` and `files.json` for a version without `diff`, or against a version other than its first parent.
 
 Each entry of `columns` is one column difference in a table both hold. `column` is the column's name in the new version.
 
@@ -201,7 +192,8 @@ When a version is taken out of retention, `files.json` is deleted with its metad
 - Files are stored as written. A relative link in a Markdown file is resolved against the file's own path, percent-decoded, and looked up in `entries`, as GitHub resolves a link in a README through the commit's tree. A link to a path not in `entries` is broken
 - Readers commonly show `README.md` first. Which file to show, and where, is the reader's choice
 - `description` in `dataset.json` stays a short plain text. A reader that does not read the tree still has it, and lists show it
-- A writer keeps the files where it edits them, such as beside its YAML in a Git repository, and its tool writes `tree.json`. The writer does not write it by hand
+- A writer keeps the files where it edits them, such as in a Git repository, and its tool writes `tree.json`. The writer does not write it by hand
+- Which files a version holds is the writer's choice
 - `tree.json` is part of the version and does not change with it. It is deleted with the metadata files when the version is taken out of retention
 
 ## profiles/
@@ -265,7 +257,7 @@ The metadata is the file `metadata.path` names in the version's folder, `metadat
 
 What a version holds, in words: the dataset, its tables and their columns. It is part of the version, written once with it, so a reader can tell what a version holds and under what terms without opening the metadata, and an old version keeps the description it was published with.
 
-The writer describes; the writer's tool checks the description against the frozen metadata and completes it from there.
+The writer describes; the writer's tool checks the description against the frozen metadata and completes it from there. The format uses only the dataset's `name`, the tables and their columns with what the metadata fills in, each view's `sql`, `primary_key` (for [merging by rows](/spec/writing#rows-merged-by-primary-key)) and `asset` ([Assets](#assets)). The other keys below are named so that writers and readers mean the same thing by them; the format does not interpret what they hold.
 
 ```json
 {
@@ -303,15 +295,15 @@ The writer describes; the writer's tool checks the description against the froze
 }
 ```
 
-- `name` and `title` are required. Everything else may be left out
-- A writer may keep its description as YAML (`dataset.yml`), and may keep each table in its own file (`<name>.table.yml`, one entry of `tables`). The version always holds the whole description as one JSON
+- `name` is required. Everything else may be left out
+- How a writer keeps its description before a version is made (in other files, in another format) is up to the writer. The version always holds the whole description as one JSON
 - Each of `licenses` is an SPDX identifier, or an object with `id` and what the writer wants to add (`spdx`, `url`, `title`)
 - `tables` lists every table of the metadata's last snapshot. The writer's tool adds the tables the writer did not describe, with what the metadata knows of them, and refuses a described table or column the metadata lacks
-- `depends_on` lists the tables a table is made from. A table of this dataset is `schema.name`; a table of another dataset is the URL of its repository, `#` and `schema.name` (`https://example.org/census/#main.towns`). When a table has `sql` and no `depends_on`, the writer's tool reads it from the SQL: the tables it reads, with each catalog other than its own named through `catalogs`. What the SQL does not let it resolve is left out
+- `depends_on` lists the tables a table is made from. A table of this dataset is `schema.name`; a table of another dataset is the URL of its repository, `#` and `schema.name` (`https://example.org/census/#main.towns`)
 - `catalogs` maps the name another dataset is attached under in the SQL to the URL of its repository (`{"census": "https://example.org/census/"}`). A reader can attach each under that name to read the views that use it
 - A view of the metadata is listed after the tables with `"kind": "view"` and its `sql` from the metadata. The metadata records no columns for a view, so its `fields` are the writer's, without `type`, `nullable` or `rows`. `kind` is left out for a table
-- From the metadata: each table's `rows`, and each field's `type` (DuckLake's type name) and `nullable`. Comments in the metadata (`COMMENT ON`) are used where the writer gave no `description`
-- A reader ignores keys this specification does not define. A writer's tool may refuse them, to catch a misspelt key. What the format does not interpret goes under `annotations`, keyed by the name of whoever reads it, at the top, in a table or in a field. Writers keep it as written
+- From the metadata: each table's `rows`, and each field's `type` (DuckLake's type name) and `nullable`. Comments in the metadata (`COMMENT ON`) are not read: the description is the writer's, in `dataset.json`
+- A reader ignores keys this specification does not define, and a writer's tool keeps them as written without refusing them. A host may check them against rules of its own when a version is pushed ([When a push is refused](/spec/writing#when-a-push-is-refused)). What the format does not interpret goes under `annotations`, keyed by the name of whoever reads it, at the top, in a table or in a field. Writers keep it as written
 - Versions written before `annotations` had its name carry it as `extensions`. A reader reads `extensions` as `annotations`
 - What a license or a source says is the writer's claim. A host may check it before it publishes
 

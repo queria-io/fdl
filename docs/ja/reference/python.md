@@ -51,13 +51,13 @@ repo.clone(store, working, *, ref="HEAD", local_data=None, version=None) -> Vers
 `ref` が指すバージョン、または `version` を渡したときはそのバージョンから、`working` に作業メタデータを作ります。そのバージョンを返し、最初のバージョンの前は `None` を返します。HTTP の置き場では、新しいデータファイルを書くフォルダ `local_data` が要ります。メタデータの sha256 が `version.json` の記録と違うときと、メタデータがデータフォルダの外のデータファイルを指しているときは断ります。
 
 ```python
-repo.commit(working, out_dir, *, parent, data_path, author, message, inputs=(), annotations=None, dataset=None) -> Version
+repo.commit(working, out_dir, *, parent, data_path, author, message, annotations=None, dataset=None) -> Version
 ```
 
 作業メタデータを `out_dir/<ID>/` に固めます。`dataset`（読み込んだ `dataset.json`）をメタデータと照らし合わせ、メタデータから書き足します。`data_path` は `repo.data_url(store)` です。アップロードはしません。
 
 ```python
-repo.record(frozen, out_dir, *, parent, author, message, inputs=(), annotations=None, dataset=None) -> Version
+repo.record(frozen, out_dir, *, parent, author, message, annotations=None, dataset=None) -> Version
 ```
 
 固め終えたメタデータからバージョンを作ります。自分でメタデータを固める書き手向けです。

@@ -46,21 +46,24 @@ def write(working: Path, store: LocalStore, sql: str) -> None:
 
 @pytest.fixture
 def repository(tmp_path: Path, monkeypatch):
-    monkeypatch.chdir(tmp_path)
+    # The description's folder holds only what goes in the version.
+    (tmp_path / "about").mkdir()
+    monkeypatch.chdir(tmp_path / "about")
     remote, working = tmp_path / "remote", tmp_path / "lake.sqlite"
     run("init", remote)
     run("clone", remote, working)
     return LocalStore(remote), working
 
 
-def test_the_readme_and_docs_go_in_the_tree(tmp_path: Path, repository) -> None:
+def test_every_file_beside_the_description_goes_in_the_tree(tmp_path: Path, repository) -> None:
     store, working = repository
-    (tmp_path / "docs" / "img").mkdir(parents=True)
+    Path("docs/img").mkdir(parents=True)
     readme = "# Towns\n\n![map](docs/img/map.png)\n"
-    (tmp_path / "README.md").write_text(readme)
-    (tmp_path / "docs" / "img" / "map.png").write_bytes(b"\x89PNG")
-    (tmp_path / "docs" / ".hidden").write_text("x")
-    (tmp_path / "dataset.yml").write_text("name: towns\ntitle: Towns\n")
+    Path("README.md").write_text(readme)
+    Path("docs/img/map.png").write_bytes(b"\x89PNG")
+    Path("docs/.hidden").write_text("x")
+    Path("notes.txt").write_text("Any file goes in\n")
+    Path("dataset.json").write_text('{"name": "towns"}')
     write(working, store, "CREATE TABLE lake.main.towns AS SELECT 1 AS id")
 
     commit(working, "-m", "first", "--author", "t")
@@ -69,7 +72,7 @@ def test_the_readme_and_docs_go_in_the_tree(tmp_path: Path, repository) -> None:
     assert version.tree is not None
     entries = json.loads(store.get(f"versions/{version.id}/tree.json"))["entries"]
     paths = {item["path"]: item["sha256"] for item in entries}
-    assert set(paths) == {"README.md", "docs/img/map.png"}
+    assert set(paths) == {"README.md", "docs/img/map.png", "notes.txt"}
     # Stored as written: links are resolved through the tree, not rewritten.
     assert store.get(objects.asset_key(paths["README.md"])).decode() == readme
     assert store.get(objects.asset_key(paths["docs/img/map.png"])) == b"\x89PNG"
@@ -77,14 +80,14 @@ def test_the_readme_and_docs_go_in_the_tree(tmp_path: Path, repository) -> None:
 
     # The same tree again is nothing to commit; a changed README is a new version.
     assert "Nothing to commit" in commit(working, "-m", "same", "--author", "t")
-    (tmp_path / "README.md").write_text(readme + "More.\n")
+    Path("README.md").write_text(readme + "More.\n")
     commit(working, "-m", "readme", "--author", "t")
     assert repo.head(store, "refs/heads/main").tree.sha256 != version.tree.sha256
 
 
-def test_a_version_without_a_readme_has_no_tree(tmp_path: Path, repository) -> None:
+def test_a_version_with_only_its_description_has_no_tree(tmp_path: Path, repository) -> None:
     store, working = repository
-    (tmp_path / "dataset.yml").write_text("name: towns\ntitle: Towns\n")
+    Path("dataset.json").write_text('{"name": "towns"}')
     write(working, store, "CREATE TABLE lake.main.towns AS SELECT 1 AS id")
     commit(working, "-m", "first", "--author", "t")
     version = repo.head(store, "refs/heads/main")
@@ -115,9 +118,8 @@ def test_assets_are_uploaded_from_the_folder_and_checked(tmp_path: Path, reposit
     listed = list(csv.DictReader(io.StringIO(run("assets", folder))))
     assert [row["path"] for row in listed] == ["a.pdf", "b.pdf"]
     (tmp_path / "files.csv").write_text(run("assets", folder))
-    (tmp_path / "dataset.yml").write_text(
-        "name: reports\ntitle: Reports\ntables:\n"
-        "  - schema: main\n    name: reports\n    fields:\n      - name: sha256\n        asset: true\n"
+    Path("dataset.json").write_text(
+        json.dumps({"name": "reports", "tables": [{"schema": "main", "name": "reports", "fields": [{"name": "sha256", "asset": True}]}]})
     )
     write(
         working,
@@ -141,9 +143,8 @@ def test_assets_are_uploaded_from_the_folder_and_checked(tmp_path: Path, reposit
 
 def test_an_asset_column_holds_only_sha256(tmp_path: Path, repository) -> None:
     store, working = repository
-    (tmp_path / "dataset.yml").write_text(
-        "name: reports\ntitle: Reports\ntables:\n"
-        "  - schema: main\n    name: reports\n    fields:\n      - name: sha256\n        asset: true\n"
+    Path("dataset.json").write_text(
+        json.dumps({"name": "reports", "tables": [{"schema": "main", "name": "reports", "fields": [{"name": "sha256", "asset": True}]}]})
     )
     write(working, store, "CREATE TABLE lake.main.reports AS SELECT 'report.pdf' AS sha256")
     assert "64 lower-case hex" in fails("commit", working, "-m", "m", "--author", "t")
@@ -151,9 +152,8 @@ def test_an_asset_column_holds_only_sha256(tmp_path: Path, repository) -> None:
 
 def test_an_asset_column_is_varchar(tmp_path: Path, repository) -> None:
     store, working = repository
-    (tmp_path / "dataset.yml").write_text(
-        "name: reports\ntitle: Reports\ntables:\n"
-        "  - schema: main\n    name: reports\n    fields:\n      - name: n\n        asset: true\n"
+    Path("dataset.json").write_text(
+        json.dumps({"name": "reports", "tables": [{"schema": "main", "name": "reports", "fields": [{"name": "n", "asset": True}]}]})
     )
     write(working, store, "CREATE TABLE lake.main.reports AS SELECT 1 AS n")
     assert "has to be varchar" in fails("commit", working, "-m", "m", "--author", "t")
@@ -190,10 +190,9 @@ def test_withdrawal_deletes_the_assets_only_the_withdrawn_versions_reach(tmp_pat
     (folder / "kept.pdf").write_bytes(b"%PDF-kept")
     (folder / "leak.pdf").write_bytes(b"%PDF-leak")
     (tmp_path / "files.csv").write_text(run("assets", folder))
-    (tmp_path / "README.md").write_text("# Reports\n")
-    (tmp_path / "dataset.yml").write_text(
-        "name: reports\ntitle: Reports\ntables:\n"
-        "  - schema: main\n    name: reports\n    fields:\n      - name: sha256\n        asset: true\n"
+    Path("README.md").write_text("# Reports\n")
+    Path("dataset.json").write_text(
+        json.dumps({"name": "reports", "tables": [{"schema": "main", "name": "reports", "fields": [{"name": "sha256", "asset": True}]}]})
     )
     write(
         working,
@@ -205,7 +204,7 @@ def test_withdrawal_deletes_the_assets_only_the_withdrawn_versions_reach(tmp_pat
     write(working, store, "DELETE FROM lake.main.reports WHERE path = 'leak.pdf'")
     commit(working, "-m", "clean", "--author", "t")
     rows = {row["path"]: row["sha256"] for row in csv.DictReader(io.StringIO(run("assets", folder)))}
-    readme = objects.asset_key(objects.sha256_of(tmp_path / "README.md"))
+    readme = objects.asset_key(objects.sha256_of(Path("README.md")))
 
     plan = repo.plan_withdrawal(store, [leaked.id])
     assert objects.asset_key(rows["leak.pdf"]) in plan.deleted
@@ -217,3 +216,12 @@ def test_withdrawal_deletes_the_assets_only_the_withdrawn_versions_reach(tmp_pat
     assert store.head(readme) is not None
     mark = json.loads(store.get(layout.version_expired(leaked.id)))
     assert mark["deleted"]["assets"] == [rows["leak.pdf"]]
+
+
+def test_the_tree_leaves_out_the_working_metadata_beside_it(tmp_path: Path) -> None:
+    for name in ("dataset.json", "README.md", "lake.sqlite", "lake.sqlite.fdl.json", "lake.sqlite.pending/x/a", ".hidden"):
+        (tmp_path / name).parent.mkdir(parents=True, exist_ok=True)
+        (tmp_path / name).write_text("x")
+    listed = objects.tree(tmp_path, leave_out=[tmp_path / "dataset.json", tmp_path / "lake.sqlite"])
+    assert [item["path"] for item in listed] == ["README.md"]
+    assert set(listed[0]) == {"path", "sha256", "bytes"}

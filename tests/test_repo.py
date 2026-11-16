@@ -644,11 +644,10 @@ def test_a_version_records_what_changed_since_its_parent(tmp_path: Path, remote)
         remote,
         "INSERT INTO lake.main.towns VALUES (2); CREATE TABLE lake.main.roads AS SELECT 1 AS id",
     )
-    parent_dataset = json.loads(remote.get(layout.version_dir(first.id) + layout.DATASET))
     second = repo.commit(
         tmp_path / "work.sqlite", tmp_path / "local", parent=first, data_path=data_path(remote),
         author=AUTHOR, message="m", dataset={**described("Town ID"), "tables": described("Town ID")["tables"]
-        + [{"schema": "main", "name": "roads"}]}, parent_dataset=parent_dataset,
+        + [{"schema": "main", "name": "roads"}]},
     )
     recorded = json.loads((tmp_path / "local" / second.id / layout.VERSION_RECORD).read_text())
     assert recorded["diff"] == {
@@ -656,7 +655,7 @@ def test_a_version_records_what_changed_since_its_parent(tmp_path: Path, remote)
         "rows": [{"table": "main.towns", "from": 1, "to": 2}],
         "columns": [],
         "data": ["main.towns"],
-        "descriptions": ["main.towns.id"],
+        "dataset": True,
     }
     repo.push(remote, tmp_path / "local" / second.id, second)
     # fdl diff reads it from the record.

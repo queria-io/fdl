@@ -114,4 +114,6 @@ A push from stale working metadata is refused on two checks:
 
 A writer also refuses to commit or push when `fdl.json` names another `data_dir` than the one it checked out with ([Changing data_dir](/spec/layout#changing-data_dir)).
 
+A host may also refuse a push on rules of its own, such as a key its readers need in `dataset.json`, a license it does not publish, or a description it cannot show. The format does not define those rules; the host says why it refused. The writer changes what the host asked for, commits again and pushes.
+
 In every case the writer checks out again, redoes the work and pushes again. After the first check, it may instead merge the branch into its work. Nothing in the repository needs to be cleaned up: the refused version is not named by any ref.

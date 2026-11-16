@@ -36,20 +36,21 @@ towns/
 リポジトリには直接書き込みません。自分のディスクにある SQLite ファイルの DuckLake メタデータ（作業メタデータ）に書き、書き終えたらそれをバージョンにします。
 
 ```bash
-fdl clone ./towns/ work/lake.sqlite
+mkdir work && cd work
+fdl clone ../towns/ lake.sqlite
 ```
 
 最初のバージョンができる前は、`clone` は空のメタデータを作ります。その後は、`main` が指すバージョンのメタデータを写します。作業メタデータを ATTACH する文を表示します。
 
 ```sql
-ATTACH 'ducklake:work/lake.sqlite' AS lake (
+ATTACH 'ducklake:lake.sqlite' AS lake (
   DATA_PATH '/abs/path/towns/data/', OVERRIDE_DATA_PATH true,
   META_TYPE 'sqlite', DATA_INLINING_ROW_LIMIT 0,
   META_JOURNAL_MODE 'WAL', BUSY_TIMEOUT 5000
 );
 ```
 
-作業メタデータの隣の `work/lake.sqlite.fdl.json` に、リポジトリ、ブランチ、クローン元のバージョンが記録されます。
+作業メタデータの隣の `lake.sqlite.fdl.json` に、リポジトリ、ブランチ、クローン元のバージョンが記録されます。
 
 ## 書く
 
@@ -57,14 +58,14 @@ DuckDB のクライアントなら何でも使えます。Parquet ファイル�
 
 ```sql
 CREATE TABLE lake.main.towns AS
-SELECT * FROM 'towns.csv';
+SELECT * FROM '../towns.csv';
 ```
 
 `DATA_INLINING_ROW_LIMIT 0` を付けると、DuckLake はすべての行を Parquet に書きます。既定のままだと小さな表をメタデータの中に持ちますが、バージョンは行を、読み手が取得できるデータファイルとして持つ必要があります。
 
 ## 説明を書く
 
-バージョンにはそれぞれ、中身を説明する `dataset.json` を付けます。`fdl commit` を実行する場所に置いてください。
+バージョンにはそれぞれ、中身を説明する `dataset.json` を付けます。`fdl commit` を実行するフォルダに置いてください。
 
 ```json dataset.json
 {
@@ -74,13 +75,13 @@ SELECT * FROM 'towns.csv';
 }
 ```
 
-必須なのは `name` と `title` だけです。`fdl commit` がこのファイルをメタデータと照らし合わせ、表ごとの行数と列ごとの型を書き足します。
+必須なのは `name` だけです。`fdl commit` がこのファイルをメタデータと照らし合わせ、表ごとの行数と列ごとの型を書き足します。フォルダにあるほかのファイル（`README.md` など）も、隠しファイルと、作業メタデータと `fdl` がその隣に置くファイルを除いて、すべてバージョンに入ります。
 
 ## コミットして push する
 
 ```bash
-fdl commit work/lake.sqlite -m "First towns" --author alice
-fdl push work/lake.sqlite
+fdl commit lake.sqlite -m "First towns" --author alice
+fdl push lake.sqlite
 ```
 
 `commit` は作業メタデータを固めて手元でバージョンにします。`push` はテーブルごとに、データを読まずに表示できる小さな要約（profile）を測り、バージョンと一緒にアップロードして `main` をそこへ動かし、`refs/heads/main -> 019a3c4e-… (version 1)` と表示します。リポジトリは次のようになります。
@@ -100,7 +101,7 @@ towns/
 ```
 
 ```bash
-fdl log ./towns/
+fdl log ../towns/
 ```
 
 ```
@@ -111,14 +112,14 @@ fdl log ./towns/
 ## 読む
 
 ```bash
-fdl url ./towns/
+fdl url ../towns/
 ```
 
 `main` が指すバージョンのメタデータを表示します。読み取り専用で ATTACH し、データファイルの場所を DuckDB に渡してください。
 
 ```sql
-ATTACH 'ducklake:towns/versions/019a3c4e-…/metadata.db' AS towns (
-  DATA_PATH 'towns/data/', OVERRIDE_DATA_PATH true, READ_ONLY
+ATTACH 'ducklake:../towns/versions/019a3c4e-…/metadata.db' AS towns (
+  DATA_PATH '../towns/data/', OVERRIDE_DATA_PATH true, READ_ONLY
 );
 SELECT count(*) FROM towns.main.towns;
 ```
@@ -128,19 +129,19 @@ SELECT count(*) FROM towns.main.towns;
 ## 2 つめのバージョンを作る
 
 ```bash
-fdl clone ./towns/ work/lake.sqlite
+fdl clone ../towns/ lake.sqlite
 ```
 
 ```sql
-INSERT INTO lake.main.towns SELECT * FROM 'towns-2026.csv';
+INSERT INTO lake.main.towns SELECT * FROM '../towns-2026.csv';
 ```
 
 ```bash
-fdl commit work/lake.sqlite -m "Add 2026" --author alice
-fdl push work/lake.sqlite
+fdl commit lake.sqlite -m "Add 2026" --author alice
+fdl push lake.sqlite
 ```
 
-今のフォルダには `dataset.json` があるので、クローンはそれをそのままにします。空のフォルダでは、バージョンの `dataset.json`・`README.md`・`docs/` もそこに書き出すので、リポジトリをクローンした人はデータだけでなく説明も変えられます。
+今のフォルダには `dataset.json` があるので、クローンはそれをそのままにします。空のフォルダでは、バージョンの `dataset.json` とバージョンが持つほかのファイルもそこに書き出すので、リポジトリをクローンした人はデータだけでなく説明も変えられます。
 
 新しいバージョンは、最初のバージョンを親として記録します。最初の Parquet ファイルは両方のメタデータが参照し、新しいファイルは 2 つめのメタデータだけが参照します。
 
