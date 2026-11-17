@@ -20,16 +20,14 @@ description: リポジトリのファイル、そのパス、fdl.json の中身�
     version.json                   バージョンの記録。最後に書く
     version.json.sig               記録の署名（任意）
     metadata.db                    固めたメタデータ
-    dataset.json                   バージョンの中身の説明
     files.json                     メタデータから作った、表ごとのデータファイルの索引（任意）
-    tree.json                      README など、バージョンのほかのファイルのパスの一覧（任意）
     profiles/<schema>/<table>.json データから測ったテーブルごとの要約（任意）
     metadata/<format>.db           別の DuckLake 形式のメタデータ（任意）
     expired.json                   保持期間を過ぎた印（過ぎたときだけ）
     <others>                       ホストが足すファイル
   <data_dir><schema>/<table>/ducklake-<uuid>.parquet   データファイル（共有、変えない）
   assets/<sha256>                  テーブルの行が指すファイル（共有、変更しない）
-  objects/<sha256>                 バージョンの tree.json が並べるファイル（共有、変更しない）
+  objects/<sha256>                 以前のバージョンの tree.json が並べるファイル（共有、変更しない）
 ```
 
 `HEAD` と `refs/` の下のファイルには、Git と同じく拡張子を付けません。中身は UTF-8 のテキストです。
@@ -37,6 +35,8 @@ description: リポジトリのファイル、そのパス、fdl.json の中身�
 ルートには、`versions/` の外に DuckLake のメタデータを置いてはいけません。作業メタデータも決して置いてはいけません。どちらも、公開していない状態を読み手に渡してしまいます。
 
 ルートにほかの名前のファイルがあってもかまいません。読み手はそれを無視しなければなりません。
+
+FDL が必要とする値を [tag](/ja/spec/versions#tag) に置く前に書かれたバージョンには、`dataset.json` と `tree.json` もあり、`objects/` の下のファイルはそのバージョンのものです（[以前のバージョンのファイル](/ja/spec/versions#以前のバージョンのファイル)）。新しいバージョンにはどちらも無く、いま始めるリポジトリには `objects/` がありません。
 
 リポジトリのルートを、別のリポジトリのルートの下に置いてはいけません。外側のリポジトリで共有オブジェクトを削除するとき、内側のファイルをどのバージョンからも参照されていないオブジェクトとみなして削除してしまいます。
 
