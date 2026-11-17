@@ -1,6 +1,6 @@
 ---
 title: バージョン
-description: バージョン ID、version.json の項目、固めたメタデータ、dataset.json、ほかの DuckLake 形式のメタデータ。
+description: バージョン ID、version.json の項目、固めたメタデータ、tag、ほかの DuckLake 形式のメタデータ。
 ---
 
 バージョンは `versions/<version ID>/` の下のファイルです。一度書いたら変えてはいけません。例外は次のとおりです。
@@ -35,11 +35,6 @@ description: バージョン ID、version.json の項目、固めたメタデー
     "bytes": 4194304,
     "sha256": "9f2c…"
   },
-  "dataset": {
-    "path": "dataset.json",
-    "bytes": 2048,
-    "sha256": "4c1d…"
-  },
   "ducklake": {
     "format": "1.0",
     "snapshot_id": 345,
@@ -50,19 +45,13 @@ description: バージョン ID、version.json の項目、固めたメタデー
     "bytes": 1536,
     "sha256": "7a0e…"
   },
-  "tree": {
-    "path": "tree.json",
-    "bytes": 214,
-    "sha256": "3c5d…"
-  },
   "diff": {
     "tables": { "added": [], "dropped": [] },
     "rows": [{ "table": "main.population", "from": 1741, "to": 1802 }],
     "columns": [
       { "table": "main.population", "kind": "add_column", "column": "note", "breaking": false }
     ],
-    "data": ["main.population"],
-    "dataset": true
+    "data": ["main.population"]
   },
   "annotations": {}
 }
@@ -78,16 +67,14 @@ description: バージョン ID、version.json の項目、固めたメタデー
 | `author` | must | 作った人。`name` は必須、`email` などは任意 |
 | `message` | must | 何を変えたか |
 | `metadata` | must | メタデータのファイル名（`metadata.db`）、大きさ、sha256、保存形式（`storage`） |
-| `dataset` | must | メタデータの隣の `dataset.json` のファイル名、大きさ、sha256。必須になる前に書かれたバージョンには無い |
 | `ducklake` | must | DuckLake の形式、固めたスナップショット、このバージョンのために作業メタデータが親の後に作ったスナップショットの範囲（最初と最後）。メタデータに入るのは固めたスナップショットだけ |
 | `files` | may | メタデータの隣の `files.json` を書いたときの、そのファイル名、大きさ、sha256（[files.json](#filesjson)） |
-| `tree` | may | バージョンがほかのファイルを持つときの、メタデータの隣の `tree.json` のファイル名、大きさ、sha256（[tree.json](#treejson)） |
 | `diff` | may | 最初の親からの変更。最初のバージョンでは、そのバージョンの内容（[diff](#diff)） |
 | `annotations` | may | 形式が解釈しない情報。読む側（ホストやツール）の名前をキーにする。バージョンを作った元のファイルなど |
 
-読み手は、知らない項目を無視しなければなりません。fdl-cli 0.31 以前が書いたバージョンは、使った元のファイルを `inputs` に持ちます。読み手は表示してもよく、表示しなくてもかまいません。
+読み手は、知らない項目を無視しなければなりません。fdl-cli 0.31 以前が書いたバージョンは、使った元のファイルを `inputs` に持ちます。読み手は表示してもよく、表示しなくてもかまいません。以前のバージョンは `dataset` と `tree` を持ちます（[以前のバージョンのファイル](#以前のバージョンのファイル)）。
 
-`metadata`・`dataset`・`files`・`tree` の `path` は、バージョンのフォルダの中のファイル名です。`/` や `\` を含まず、`.` や `..` でもありません。読み手は、それ以外の値を持つ記録を拒否しなければなりません。
+`metadata`・`files`、および以前のバージョンの `dataset`・`tree` の `path` は、バージョンのフォルダの中のファイル名です。`/` や `\` を含まず、`.` や `..` でもありません。読み手は、それ以外の値を持つ記録を拒否しなければなりません。
 
 バージョンの親は 1 つで、マージなら 2 つです。作ったブランチのバージョン、マージで取り込んだバージョンの順に並べます（[マージ](/ja/spec/writing#マージ)）。最初のバージョンには親がありません。読み手は、どんな長さのリストも受け付け、ブランチの履歴をたどるときは最初の要素を、あるバージョンが別のバージョンの子孫かを判定するときはすべての要素をたどらなければなりません。
 
@@ -103,9 +90,9 @@ description: バージョン ID、version.json の項目、固めたメタデー
 | `rows` | `table`・`from`・`to`: 両方にあり、行数が違う表 |
 | `columns` | 列の違い（下の表） |
 | `data` | 両方にあり、データファイルが違う表。行が同じでも記録します |
-| `dataset` | 書き手が `dataset.json` に書いた内容が最初の親と違えば `true`、同じなら `false`。書き手のツールがメタデータから書き足すもの（表の `rows` と `kind`、列の `type` と `nullable`、ビューの `sql`）と、それを除くと名前しか残らない列と表を除いて比べる。データに表や列を足しただけでは `true` にならない |
+| `tags` | 両方にあり、[tag](#tag) が違う表 |
 
-書き手は、固める前の作業メタデータで、親のスナップショットと最後のスナップショットを比べます。作業メタデータは親のメタデータからクローンするので、親のスナップショットを持っています。持っていないときは `diff` を書きません。どちらかのバージョンに `dataset.json` が無いときは `dataset` を書きません。`dataset.json` の中で何が変わったかは記録しないので、知りたい読み手は 2 つのファイルを比べます。fdl-cli 0.31 以前が書いたバージョンは、`dataset` の代わりに `descriptions` を持ちます。`title` か `description` が違うものを、`dataset`、表、または `schema.table.column` で並べたものです。`diff` のないバージョンや、最初の親以外のバージョンと比べるときは、読み手が 2 つのバージョンの `dataset.json` と `files.json` を比べます。
+書き手は、固める前の作業メタデータで、親のスナップショットと最後のスナップショットを比べます。作業メタデータは親のメタデータからクローンするので、親のスナップショットを持っています。持っていないときは `diff` を書きません。以前のバージョンは `diff` に `dataset` か `descriptions` を持ち、`dataset.json` が変わったかを表します。読み手はこれを無視します。`diff` のないバージョンや、最初の親以外のバージョンと比べるときは、読み手が 2 つのバージョンの `files.json` を比べます。
 
 `columns` の各項目は、両方にある表の、列 1 つの違いです。`column` は新しいバージョンでの列名です。
 
@@ -152,7 +139,8 @@ description: バージョン ID、version.json の項目、固めたメタデー
           "id": 3, "name": "tags", "type": "list", "nullable": true,
           "children": [{ "id": 4, "name": "element", "type": "varchar", "nullable": true }]
         }
-      ]
+      ],
+      "primary_key": ["code"]
     }
   },
   "named": [
@@ -168,6 +156,7 @@ description: バージョン ID、version.json の項目、固めたメタデー
 - `rows` と `bytes` は、メタデータが記録している行数と大きさです。`footer_bytes` は Parquet のフッターの大きさで、記録があるときだけ書きます
 - `deletes` は、そのデータファイルから行を消したときの削除ファイルです
 - `columns` は、そのスナップショットでの表の列をメタデータの順に並べたものです。`id` は DuckLake の列 ID で、DuckLake はこれをどの Parquet データファイルにも列の `field_id` として書きます。列の名前を変えても `id` は変わりません。`type` は DuckLake の型名で、`nullable` は `NOT NULL` の列で `false` になります。`default` は、列を追加する前に書いたデータファイルの行がその列に持つ値を文字列にしたもので、NULL でないときだけ書きます。`struct` はフィールドを、`list` は `element` を、`map` は `key` と `value` を `children` に持ちます。fdl-cli 0.24 より前の書き手は `columns` を書きません
+- `primary_key` と `assets` は、その表の [tag](#tag) の `fdl.primary_key` と `fdl.assets`。tag があるときだけ書く
 - `renamed_columns` は、その表の列の名前を変えたことがあるときに `true` にします。名前を変える前に書いたデータファイルは、古い名前のままです
 - `named` には、メタデータがどのスナップショットででも名指しするデータファイルと削除ファイルを、`data_dir` からの相対パスですべて入れます。これがそのバージョンから到達するデータファイルです（[データファイル](/ja/spec/data-files)）。メタデータが古いスナップショットを残しているときは、`tables` より多くなります
 
@@ -175,32 +164,9 @@ DuckLake を使わずに Parquet ファイルを読む読み手は、`deletes` �
 
 保持期間から外すとき、`files.json` はメタデータと一緒に消します。
 
-## tree.json
-
-`tree.json` は、バージョンがテーブルのほかに持つファイル（README とそこに表示する画像など）をパスで並べた一覧です。Git の tree に当たります。パスごとにファイルの sha256 を持ち、ファイル自体は `objects/<sha256>` に置きます。テーブルはここに入れません。テーブルの tree はメタデータです。
-
-```json tree.json
-{
-  "entries": [
-    { "path": "README.md", "sha256": "5e88…", "bytes": 3120 },
-    { "path": "docs/images/towns.png", "sha256": "c9d2…", "bytes": 48211 }
-  ]
-}
-```
-
-- `entries` に、ファイルのパス・sha256（小文字の 16 進）・大きさを、パスの順に並べる。パスは相対パスで `/` で区切り、空・`.`・`..` のセグメントを含まず、重複しない
-- 各ファイルはルートの `objects/<sha256>` に置き、行が指すアセットとは分ける。読み手は `<root>objects/<sha256>` でファイルを取得し、表示する前に sha256 を確認する。`tree.json` が並べるファイルは、バージョンを書く前にすべてリポジトリになければならない
-- fdl-cli 0.31 以前はこれらのファイルを `assets/<sha256>` に置いていた。そのバージョンを持つリポジトリは、`tree.json` が並べる各ファイルを `objects/<sha256>` に写す。読み手は `assets/` の下を探さない
-- ファイルは書いたままの中身で置く。Markdown のファイルの中の相対リンクは、そのファイル自身のパスを基準に解決し、パーセントエンコーディングをデコードしてから `entries` で引く。GitHub が README のリンクをコミットの tree で解決するのと同じである。`entries` に無いパスへのリンクはリンク切れとして扱う
-- 多くの読み手は `README.md` を最初に表示する。どのファイルをどこに表示するかは読み手が決める
-- `dataset.json` の `description` は短いテキストのまま残す。tree を読まない読み手もこれを持ち、一覧にはこれを表示する
-- 書き手は、ファイルを編集する場所（Git のリポジトリの中など）に置き、書き手のツールが `tree.json` を書く。書き手が手で書くものではない
-- バージョンにどのファイルを入れるかは書き手が決める
-- `tree.json` はバージョンの一部で、そのバージョンの中では変わらない。保持期間から外すときはメタデータと一緒に消す
-
 ## profiles/
 
-profile は、`ducklake.snapshot_id` の時点の 1 つのテーブルの要約です。行数、列ごとの中身、先頭の行、図形の列を持つテーブルでは図形の範囲と見本を持ちます。読み手はこの小さなファイル 1 つで、メタデータを開かずデータも読まずにテーブルを表示できます。ホストは検索の索引をこれから作れます。profile が持つのはデータから測った事実で、列が何を意味するかは書き手が `dataset.json` に書きます。`files.json` と同じくメタデータとデータから作るもので、食い違うときはメタデータとデータが正です。任意で、読み手は profile が無くても読めなければなりません。
+profile は、`ducklake.snapshot_id` の時点の 1 つのテーブルの要約です。行数、列ごとの中身、先頭の行、図形の列を持つテーブルでは図形の範囲と見本を持ちます。読み手はこの小さなファイル 1 つで、メタデータを開かずデータも読まずにテーブルを表示できます。ホストは検索の索引をこれから作れます。profile が持つのはデータから測った事実で、列が何を意味するかは持ちません。`files.json` と同じくメタデータとデータから作るもので、食い違うときはメタデータとデータが正です。任意で、読み手は profile が無くても読めなければなりません。
 
 テーブルごとの profile は `versions/<ID>/profiles/<schema>/<table>.json` に置きます。ビューにも置き、クエリが返す行から測ります。スキーマ名かテーブル名が空・`.`・`..` のとき、または `/` を含むときは置きません。profile を作らなかった書き手や作るのに失敗した書き手のバージョンには、あとから profile を足せます。ほかの profile と同じく、そのバージョンのメタデータとデータから測ります。
 
@@ -233,7 +199,7 @@ profile は、`ducklake.snapshot_id` の時点の 1 つのテーブルの要約�
 }
 ```
 
-- `rows` はテーブルの行数。`columns` にはメタデータの順にすべての列を並べ、`name` と `type`（DuckLake の型名）は `dataset.json` と同じにする。`dataset.json` に型の無いビューでは、クエリが返す列を DuckDB の型名で並べる
+- `rows` はテーブルの行数。`columns` にはメタデータの順にすべての列を並べ、`name` と `type`（DuckLake の型名）は `files.json` と同じにする。メタデータに列の無いビューでは、クエリが返す列を DuckDB の型名で並べる
 - 図形の列を除くすべての列が `null_count` を持つ。数値・テキスト・日付と時刻の列は `distinct_count` と `values` を持つ。大きなテーブルの `distinct_count` は推定値のことがある
 - `values` は、値（テキスト）とその値を持つ行の数を、多い順、同数なら値の順に並べる。列が持つ異なる値が 2,000 以下なら全部を並べ、そのとき `distinct_count` は正確な数になる。読み手は、`values` の長さが `distinct_count` と等しいことで全部の一覧だと判定する。それより多い列は上位 10 件だけを並べる。ホストは全部の一覧を、地域コードや名前などの値で検索できる
 - 数値の列は `min`・`max`・`mean`・`std`、四分位数の `q1`・`median`・`q3`、`min` から `max` までを等幅に区切った `histogram` を持つ。日付と時刻の列は `min` と `max` をテキストで持ち、日付とタイムスタンプは `span_days` も持つ。真偽値の列は `true_count` と `false_count` を持つ
@@ -255,69 +221,41 @@ profile は、`ducklake.snapshot_id` の時点の 1 つのテーブルの要約�
 - `data_path` は、書き手が公開したデータフォルダの絶対 URL（ルートと `data_dir`）。読み手はこれを上書きする（[読む](/ja/spec/reading)を参照）
 - 読み手は、前のバージョンをそのバージョンのメタデータを開いて読む（[読む](/ja/spec/reading#前のバージョン)）。別のバージョンのメタデータで `AT (VERSION => n)` を使って読まない
 
-## dataset.json
+## tag
 
-バージョンの中身を言葉で説明するファイルです。データセット、その表、表の列を説明します。バージョンの一部としてバージョンと一緒に一度だけ書くので、読み手はメタデータを開かなくても、何がどんな条件で入っているかが分かり、古いバージョンも公開したときの説明を持ち続けます。
+FDL が列のほかにテーブルやビューについて知る必要のある値は、メタデータの中に、テーブルやビューの DuckLake の tag として持ちます。1 つの値が DuckLake の `ducklake_tag` の 1 行で、`object_id` はテーブルかビューの ID、有効期間は書いたスナップショットからです。キーは `fdl.` で始まり、値は JSON のテキストです。
 
-書き手が説明を書き、書き手のツールがそれを固めたメタデータと照らし合わせ、メタデータから分かることを書き足します。形式が使うのは、データセットの `name`、表と列とメタデータから書き足す値、ビューの `sql`、`primary_key`（[主キーでの行のマージ](/ja/spec/writing#主キーでの行のマージ)のため）、`asset`（[アセット](#アセット)）だけです。ほかのキーは、書き手と読み手が同じ意味で使えるように名前を決めたもので、形式は中身を解釈しません。
+| キー | 付ける先 | 値 | 使い道 |
+| --- | --- | --- | --- |
+| `fdl.primary_key` | テーブル | 行を識別する列の名前の JSON 配列 | [主キーでの行のマージ](/ja/spec/writing#主キーでの行のマージ) |
+| `fdl.assets` | テーブル | アセットを持つ列の名前の JSON 配列 | [アセット](#アセット) |
+| `fdl.catalogs` | ビュー | ビューの SQL が読むほかのデータセットについて、ATTACH する名前とそのリポジトリの URL の対応の JSON オブジェクト（`{"census": "https://example.org/census/"}`） | ビューを読む。読み手は先にそれぞれのリポジトリをその名前で ATTACH する |
 
-```json
-{
-  "name": "population",
-  "title": "Population by town",
-  "description": "Census population of each town, by age and sex",
-  "keywords": ["population", "census"],
-  "language": "en",
-  "homepage": "https://example.org/population",
-  "issued": "2026-10-30",
-  "update_frequency": "yearly",
-  "licenses": [{ "id": "CC-BY-4.0", "spdx": "CC-BY-4.0", "url": "https://creativecommons.org/licenses/by/4.0/" }],
-  "sources": [{ "title": "2025 census", "path": "https://example.org/census-2025" }],
-  "contributors": [{ "title": "Example City", "roles": ["publisher"] }],
-  "temporal_coverage": { "start": "2025", "end": "2025" },
-  "spatial_coverage": ["JP"],
-  "schemas": [{ "name": "main", "title": "Tables" }],
-  "catalogs": { "census": "https://example.org/census/" },
-  "tables": [
-    {
-      "schema": "main",
-      "name": "population",
-      "title": "Population",
-      "description": "One row per town, age group and sex",
-      "primary_key": ["town_code", "age_group", "sex"],
-      "depends_on": ["https://example.org/census/#main.towns"],
-      "sql": "SELECT …",
-      "rows": 120000,
-      "fields": [
-        { "name": "town_code", "title": "Town code", "description": "…", "type": "varchar", "nullable": false }
-      ]
-    }
-  ],
-  "annotations": {}
-}
+```sql
+SELECT schema_name, table_name, tags FROM duckdb_tables() WHERE database_name = 'lake';
+-- main  population  {fdl.primary_key=["town_code","age_group","sex"]}
 ```
 
-- 必須なのは `name` だけで、ほかは省いてよい
-- バージョンを作る前に書き手が説明をどう持つか（別のファイル、別の形式）は書き手が決める。バージョンには常に説明全体が 1 つの JSON で入る
-- `licenses` の各要素は SPDX の識別子か、`id` に書き手が足したいもの（`spdx`・`url`・`title`）を添えたオブジェクト
-- `tables` には、メタデータの最後のスナップショットにある表をすべて並べる。書き手が説明しなかった表は、書き手のツールがメタデータから分かることで足す。メタデータに無い表や列を説明していたら断る
-- `depends_on` は、その表の元になった表を並べる。このデータセットの表は `schema.name`、他のデータセットの表はそのリポジトリの URL・`#`・`schema.name` を続けて書く（`https://example.org/census/#main.towns`）
-- `catalogs` は、SQL で他のデータセットを ATTACH している名前から、そのリポジトリの URL への対応（`{"census": "https://example.org/census/"}`）。読み手は、それを使うビューを読むために各リポジトリをこの名前で ATTACH できる
-- メタデータのビューは表のあとに `"kind": "view"` を付けて並べ、`sql` はメタデータのものを入れる。メタデータはビューの列を記録しないので、ビューの `fields` は書き手が書いたままで、`type`・`nullable`・`rows` を持たない。表には `kind` を付けない
-- メタデータから取るもの: 表ごとの `rows`、列ごとの `type`（DuckLake の型名）と `nullable`。メタデータのコメント（`COMMENT ON`）は読まない。説明は書き手が `dataset.json` に書く
-- 読み手は、この仕様が決めていないキーを無視する。書き手のツールはそのキーを断らず、書かれたまま残す。ホストは push のときに自分の規則で確認してよい（[push が断られるとき](/ja/spec/writing#push-が断られるとき)）。形式が解釈しない情報は、最上位・表・列それぞれの `annotations` に、読む側の名前をキーにして置く。書き手は書かれたまま残す
-- `annotations` という名前になる前のバージョンは、同じものを `extensions` に持つ。読み手は `extensions` を `annotations` として読む
-- ライセンスや出典に書いたことは書き手の主張で、ホストは公開する前に確かめてよい
+- 書き手のツールは、固める前の作業メタデータか、固めるときのメタデータにこの行を書く。DuckDB が SQL で書ける tag は `comment`（`COMMENT ON`）だけ
+- tag はテーブルに付け、列には付けない（`ducklake_column_tag`）。DuckDB は `comment` 以外の列の tag を持つテーブルを開けない
+- `CREATE OR REPLACE`（dbt が使う）などで同じ名前のテーブルを作り直すと、ID が変わって tag が消える。書き手のツールは固める前に書き直す
+- tag が示す列は、そのスナップショットのテーブルに 1 回ずつ無ければならない。`fdl.assets` の列は `varchar`。満たさないとき、書き手は固めるのを断る
+- 読み手はメタデータの `duckdb_tables()`・`duckdb_views()` の `tags` か、`ducklake_tag` の行から読む。メタデータを開かない読み手は、テーブルの tag を `files.json` で読む
+- 読み手は、知らない `fdl.` のキーを無視する。それ以外のキーは FDL のものではなく、書き手はそのまま残し、FDL は読まない。DuckLake の `comment` もその 1 つ
+- tag はテーブルの一部で、tag が変わったテーブルは変わったものとして扱う（[変更がないとき](/ja/spec/writing#変更がないとき)、[マージ](/ja/spec/writing#テーブル)）
+
+データセット・テーブル・列が人にとって何を意味するか（タイトル、説明、ライセンス、出典、ガイドなど）はバージョンに含めません。ホストが自分の手段で持ち、それが無い push を断ってかまいません（[push が断られるとき](/ja/spec/writing#push-が断られるとき)）。
 
 ### アセット
 
 テーブルは、報告書の PDF や施設の写真などのファイルを指せます。Git LFS が大きなファイルを指すのと同じ形で、行にはファイルの sha256 を持ち、ファイルはデータと同じリポジトリに置きます。
 
-```json
-{ "name": "sha256", "title": "PDF", "type": "varchar", "asset": true }
+```sql
+-- テーブル main.reports、tag は fdl.assets = ["pdf_sha256"]
+SELECT title, pdf_sha256, pdf_media_type FROM lake.main.reports;
 ```
 
-- `"asset": true` の列は、各行にファイルの sha256（小文字の 16 進）か null を持つ。型は `varchar`
+- `fdl.assets` が示す列は、各行にファイルの sha256（小文字の 16 進）か null を持つ。型は `varchar`
 - 各ファイルはルートの `assets/<sha256>` に置く（[レイアウト](/ja/spec/layout#パス)）。同じ中身は 1 回だけ置き、複数のバージョンで共有する
 - ファイルの名前・大きさ・メディアタイプは、同じテーブルの列として持つ。列名は書き手が決める。読み手がファイルを取得する前に表示方法を判定できるよう、少なくともメディアタイプの列を持つのがよい
 - ファイルを差し替えるときは、新しい中身を置き、その sha256 を行に入れる。古いバージョンは古い中身を指したまま残る
@@ -345,3 +283,21 @@ versions/<ID>/
 - `metadata.storage` は、宣言した読み手が開ける一番古い DuckDB の保存形式にするのがよい
 
 DuckDB 2.0 で古い形式を書く方法は [DuckLake の形式](/ja/internals/ducklake-formats)にあります。
+
+## 以前のバージョンのファイル
+
+FDL が必要とする値を tag に置く前に書かれたバージョンは、メタデータの隣にファイルを 2 つ多く持ちます。`version.json` に `dataset` があるバージョンがそれです。
+
+```
+versions/<バージョン ID>/
+  dataset.json       書き手が書いた、バージョンの中身の説明
+  tree.json          README など、バージョンのほかのファイルのパスの一覧（任意）
+objects/<sha256>     tree.json が並べるファイル（共有、変更しない）
+```
+
+- `version.json` の `dataset` と `tree` は、`files` と同じく、これらのファイルの名前・大きさ・sha256 を持つ
+- 読み手は `dataset.json`・`tree.json`・`objects/` を無視してよい。表示する読み手が表示するのは、書き手が当時書いたもので、いまの意味ではない
+- このバージョンには FDL の tag が無い。読み手と書き手は、主キーとアセットを `dataset.json` から読む。`tables` の要素（`schema` と `name` で対応を取る）の `primary_key` が `fdl.primary_key`、その `fields` のうち `"asset": true` の要素の `name` が `fdl.assets` に入る。`dataset.json` の最上位の `catalogs` は、すべてのビューの `fdl.catalogs`。このバージョンを基点にしたマージと、どのバージョンからも到達しないアセットの削除は、これに頼る
+- `tree.json` の `entries` には、`path`、ファイルの `sha256` と `bytes` を並べる。各ファイルは `objects/<sha256>` にあり、そのバージョンが到達する共有オブジェクト（[データファイル](/ja/spec/data-files#共有オブジェクト)）。fdl-cli 0.31 以前はこれらのファイルを `assets/<sha256>` に置いていた。そのバージョンを持つリポジトリは、それを `objects/<sha256>` に写す
+- `dataset.json` と `tree.json` は、バージョンを保持期間から外すときにメタデータと一緒に消す。`tree.json` を持つ有効なバージョンが無くなれば、`objects/` の下のファイルはどのバージョンからも到達せず、猶予期間のあとに消える
+- 書き手は、新しいバージョンにこれらのファイルを書かない。このバージョンからコミット・元に戻す・マージで新しいバージョンを作る書き手は、読んだ主キー・アセット・`catalogs` を tag として書く

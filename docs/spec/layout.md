@@ -20,16 +20,14 @@ Paths are relative to the root, lower case, and separated by `/`. The root is wh
     version.json                   the version record, written last
     version.json.sig               a signature of the record (optional)
     metadata.db                    the frozen metadata
-    dataset.json                   what the version holds, described
     files.json                     each table's data files, indexed from the metadata (optional)
-    tree.json                      the other files of the version, such as a README, by path (optional)
     profiles/<schema>/<table>.json a summary of each table, measured from the data (optional)
     metadata/<format>.db           the metadata in another DuckLake format (optional)
     expired.json                   the past-retention mark (only once expired)
     <others>                       files a host adds
   <data_dir><schema>/<table>/ducklake-<uuid>.parquet   data files (shared, immutable)
   assets/<sha256>                  files the rows of a table point at (shared, immutable)
-  objects/<sha256>                 files a version's tree.json lists (shared, immutable)
+  objects/<sha256>                 files an earlier version's tree.json lists (shared, immutable)
 ```
 
 `HEAD` and everything under `refs/` have no extension, as in Git. Their content is UTF-8 text.
@@ -37,6 +35,8 @@ Paths are relative to the root, lower case, and separated by `/`. The root is wh
 The root must not hold a DuckLake metadata file outside `versions/`, and must never hold a working metadata file. Either would give readers a state that was never published.
 
 Files with other names may sit at the root. Readers must ignore them.
+
+Versions written before [tags](/spec/versions#tags) held what FDL needs also have `dataset.json` and `tree.json`, and the files under `objects/` belong to them ([Files of earlier versions](/spec/versions#files-of-earlier-versions)). A new version has neither, and a repository started now has no `objects/`.
 
 A repository's root must not be under another repository's root. Deleting the outer repository's shared objects would take the inner one's files for objects no version reaches.
 

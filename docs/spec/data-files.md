@@ -1,17 +1,17 @@
 ---
 title: Data files
-description: Rules for shared objects (data files, assets and tree files), when a shared object may be deleted, and how a version is taken out of retention.
+description: Rules for shared objects (data files, assets, and the tree files of earlier versions), when a shared object may be deleted, and how a version is taken out of retention.
 ---
 
 ## Shared objects
 
-Data files, assets and tree files are shared objects: written once, never overwritten, and reached by any number of versions, as blobs are in Git. A version reaches them this way:
+Data files, assets, and the tree files of earlier versions are shared objects: written once, never overwritten, and reached by any number of versions, as blobs are in Git. A version reaches them this way:
 
 | Object | Path | A version reaches it when |
 | --- | --- | --- |
 | data file | `<data_dir><schema>/<table>/ducklake-<uuid>.parquet` | its metadata names it |
-| asset | `assets/<sha256>` | a column its `dataset.json` marks as `asset` holds the sha256 in a row |
-| tree file | `objects/<sha256>` | its `tree.json` lists it |
+| asset | `assets/<sha256>` | a column its `fdl.assets` tag names holds the sha256 in a row |
+| tree file | `objects/<sha256>` | its `tree.json` lists it. Only [earlier versions](/spec/versions#files-of-earlier-versions) have one |
 
 - A writer may place shared objects before making a version. Until a version reaches them, readers do not see them
 - A writer that finds an object already there need not upload it again. It may still be deleted before the version is written, so a push whose version reaches a missing object is refused ([Writing](/spec/writing#when-a-push-is-refused))
@@ -23,7 +23,7 @@ Data files, assets and tree files are shared objects: written once, never overwr
 
 ### Assets and tree files
 
-- Named by the lower-case hex sha256 of the content, so the same content is stored once (see [Assets](/spec/versions#assets) and [tree.json](/spec/versions#treejson))
+- Named by the lower-case hex sha256 of the content, so the same content is stored once (see [Assets](/spec/versions#assets) and [Files of earlier versions](/spec/versions#files-of-earlier-versions))
 - The same content may be both an asset and a tree file. It is then stored twice, once in each folder, and each copy is reached on its own
 
 ## When a shared object may be deleted
@@ -59,7 +59,7 @@ A process may move an object to a place readers never read from, such as a separ
 A version is taken out of retention in this order:
 
 1. Put `versions/<ID>/expired.json`
-2. Delete the version's metadata files, `metadata.db` and `metadata/`, and its `files.json` and `tree.json`
+2. Delete the version's metadata files, `metadata.db` and `metadata/`, and its `files.json`, and `dataset.json` and `tree.json` if it has them
 3. After the grace period, delete the shared objects that meet the conditions above
 
 ```json expired.json
