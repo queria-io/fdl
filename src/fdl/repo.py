@@ -348,6 +348,9 @@ def record(
     the frozen one, and says whether what the writer wrote in `dataset.json`
     changed when both it and ``parent_dataset`` (the parent's) are given.
 
+    The primary keys, assets and catalogs ``dataset`` declares are written into
+    the metadata as `fdl.` tags (see `tags.write`).
+
     ``merged`` is the second parent of a merge version; ``seq`` follows the first.
     """
     if merged is not None and parent is None:
@@ -363,9 +366,7 @@ def record(
         recorded = catalog.recorded_format(copied)
         if not recorded:
             raise RepoError(f"{frozen} records no DuckLake format")
-        first, last = catalog.snapshot_range(
-            copied, parent.ducklake.snapshot_id if parent else None
-        )
+        after = parent.ducklake.snapshot_id if parent else None
         described = None
         completed = None
         if dataset is not None:
@@ -375,14 +376,13 @@ def record(
             described = File(
                 path=layout.DATASET, bytes=written.stat().st_size, sha256=_sha256(written)
             )
-        difference = diffs.between(
-            copied, parent.ducklake.snapshot_id if parent else None, last
-        )
+            # The values FDL reads, kept in the metadata as `fdl.` tags beside `dataset.json`.
+            # Before the range: tags that change alone get a snapshot of their own.
+            fdl_tags.write(copied, fdl_tags.from_dataset(completed), after=after)
+        first, last = catalog.snapshot_range(copied, after)
+        difference = diffs.between(copied, after, last)
         if difference is not None:
             difference = diffs.with_dataset(difference, parent_dataset, completed)
-        if completed is not None:
-            # The values FDL reads, kept in the metadata as `fdl.` tags beside `dataset.json`.
-            fdl_tags.write(copied, last, fdl_tags.from_dataset(completed))
         # After the diff, which reads the parent's snapshot: the version keeps only its own.
         catalog.keep_last_snapshot(copied)
         # Attaching it through DuckLake must not have moved it to another format.

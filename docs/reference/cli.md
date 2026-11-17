@@ -144,7 +144,7 @@ What changed in a version (default: the one `HEAD` holds) since its parent, or s
 ~ dataset.json
 ```
 
-Against its parent, the changes come from the version's `diff` (see [diff](/spec/versions#diff)). Otherwise, or for a version written without one, rows come from `dataset.json`, data files from `files.json`, and columns are compared by name, which does not see a rename. `~ data` means the table's data files differ, even when the rows are the same. `~ dataset.json` means what the writer wrote in `dataset.json` changed, apart from what the commit fills in from the metadata. `--json` prints the same as an object with `tables` (`added`, `dropped`), `rows`, `columns`, `data` and `dataset`. Versions written by fdl-cli 0.31 and earlier show `~ description` lines from their `descriptions` instead.
+Against its parent, the changes come from the version's `diff` (see [diff](/spec/versions#diff)). Otherwise, or for a version written without one, rows come from `dataset.json`, data files from `files.json`, and columns are compared by name, which does not see a rename. `~ data` means the table's data files differ, even when the rows are the same. `~ tags` means the table's or view's [tags](/spec/versions#tags) changed. `~ dataset.json` means what the writer wrote in `dataset.json` changed, apart from what the commit fills in from the metadata. `--json` prints the same as an object with `tables` (`added`, `dropped`), `rows`, `columns`, `data`, `tags` and `dataset`. Versions written by fdl-cli 0.31 and earlier show `~ description` lines from their `descriptions` instead.
 
 ## fdl show
 

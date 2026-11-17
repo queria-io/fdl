@@ -14,7 +14,7 @@ from pathlib import Path
 import duckdb
 import pytest
 
-from fdl import catalog, diff, layout, refs, repo
+from fdl import catalog, diff, layout, refs, repo, tags
 from fdl.stores import LocalStore
 from fdl.version import is_id, new_id, parse
 
@@ -812,6 +812,28 @@ def test_a_version_keeps_primary_keys_assets_and_catalogs_as_tags(tmp_path: Path
     )
     assert second.diff["tags"] == ["main.reports"]
     assert files_index_local(tmp_path, second)["main.reports"]["primary_key"] == ["id", "year"]
+
+
+def test_tags_changed_alone_get_a_snapshot_of_their_own(tmp_path: Path, remote) -> None:
+    def described(key: list[str]) -> dict:
+        return {"name": "towns", "tables": [{"schema": "main", "name": "towns", "primary_key": key}]}
+
+    build(tmp_path / "work.sqlite", remote, "CREATE TABLE lake.main.towns AS SELECT 1 AS id, 2 AS year")
+    first = repo.commit(
+        tmp_path / "work.sqlite", tmp_path / "local", parent=None, data_path=data_path(remote),
+        author=AUTHOR, message="m", dataset=described(["id"]),
+    )
+    repo.push(remote, tmp_path / "local" / first.id, first)
+    repo.clone(remote, tmp_path / "again.sqlite", version=first)
+    second = repo.commit(
+        tmp_path / "again.sqlite", tmp_path / "local", parent=first, data_path=data_path(remote),
+        author=AUTHOR, message="m", dataset=described(["id", "year"]),
+        parent_dataset=json.loads(remote.get(layout.version_dir(first.id) + layout.DATASET)),
+    )
+    assert second.ducklake.snapshot_id > first.ducklake.snapshot_id
+    assert second.diff["tags"] == ["main.towns"]
+    metadata = tmp_path / "local" / second.id / second.metadata.path
+    assert tags.read(metadata, second.ducklake.snapshot_id) == {"main.towns": {tags.PRIMARY_KEY: ["id", "year"]}}
 
 
 def files_index_local(tmp_path: Path, version) -> dict:

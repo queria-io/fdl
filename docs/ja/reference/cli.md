@@ -144,7 +144,7 @@ fdl diff <remote> [<version>] [--against <version>] [--json]
 ~ dataset.json
 ```
 
-親と比べるときは、バージョンの `diff` から取ります（[diff](/ja/spec/versions#diff)）。それ以外のときや `diff` のないバージョンでは、行数を `dataset.json` から、データファイルを `files.json` から取り、列は名前で比べます。そのため列名の変更は見分けられません。`~ data` は、行が同じでもテーブルのデータファイルが変わったことを示します。`~ dataset.json` は、コミットがメタデータから書き足す値を除いて、書き手が `dataset.json` に書いた内容が親と変わったことを示します。`--json` を付けると、同じ内容を `tables`（`added`・`dropped`）・`rows`・`columns`・`data`・`dataset` を持つオブジェクトで表示します。fdl-cli 0.31 以前が書いたバージョンでは、代わりに `descriptions` から `~ description` の行を表示します。
+親と比べるときは、バージョンの `diff` から取ります（[diff](/ja/spec/versions#diff)）。それ以外のときや `diff` のないバージョンでは、行数を `dataset.json` から、データファイルを `files.json` から取り、列は名前で比べます。そのため列名の変更は見分けられません。`~ data` は、行が同じでもテーブルのデータファイルが変わったことを示します。`~ tags` は、テーブルかビューの [tag](/ja/spec/versions#tag) が変わったことを示します。`~ dataset.json` は、コミットがメタデータから書き足す値を除いて、書き手が `dataset.json` に書いた内容が親と変わったことを示します。`--json` を付けると、同じ内容を `tables`（`added`・`dropped`）・`rows`・`columns`・`data`・`tags`・`dataset` を持つオブジェクトで表示します。fdl-cli 0.31 以前が書いたバージョンでは、代わりに `descriptions` から `~ description` の行を表示します。
 
 ## fdl show
 

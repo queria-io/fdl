@@ -14,6 +14,8 @@ import json
 from pathlib import Path
 from typing import Any
 
+from .catalog import CatalogError, _open
+
 PRIMARY_KEY = "fdl.primary_key"
 ASSETS = "fdl.assets"
 CATALOGS = "fdl.catalogs"
@@ -36,28 +38,46 @@ def from_dataset(described: dict | None) -> Tags:
             **({ASSETS: assets} if assets else {}),
         }
 
-    tagged = {
-        f"{table.get('schema', 'main')}.{table['name']}": of(table)
-        for table in described.get("tables", [])
-        if isinstance(table, dict) and table.get("name")
-    }
+    tagged = {name: of(table) for name, table in _entries(described).items()}
     return {name: values for name, values in tagged.items() if values}
 
 
-def write(frozen: Path, snapshot: int, tags: Tags) -> None:
-    """Replace the `fdl.` tags of the tables and views alive at ``snapshot`` with ``tags``.
+def names(described: dict) -> set[str]:
+    """The tables and views a `dataset.json` lists, keyed as tags are."""
+    return set(_entries(described))
 
-    The new rows are valid from ``snapshot``. Tags of other keys, such as
-    DuckLake's ``comment``, are left as they are.
+
+def _entries(described: dict) -> dict[str, dict]:
+    return {
+        f"{table.get('schema', 'main')}.{table['name']}": table
+        for table in described.get("tables", [])
+        if isinstance(table, dict) and table.get("name")
+    }
+
+
+def write(frozen: Path, tags: Tags, *, after: int | None) -> None:
+    """Make ``tags`` the `fdl.` tags of the tables and views alive at the last snapshot.
+
+    ``after`` is the parent's snapshot. The new rows are valid from a snapshot
+    past it: when the last snapshot is the parent's, and the tags differ from
+    those it holds, a snapshot is made for them, so that the version does not
+    hold other tags under the parent's snapshot. Nothing is written when the
+    tags are already these. Tags of other keys, such as DuckLake's ``comment``,
+    are left as they are.
     """
-    from .catalog import _open
-
     con = _open(Path(frozen))
     try:
+        snapshot = con.execute("SELECT max(snapshot_id) FROM ducklake_snapshot").fetchone()[0]
         ids = _objects(con, snapshot)
         missing = sorted(set(tags) - set(ids))
         if missing:
-            raise ValueError(f"tags name tables or views the metadata lacks: {', '.join(missing)}")
+            raise CatalogError(f"tags name tables or views the metadata lacks: {', '.join(missing)}")
+        held = _read(con, snapshot)
+        altered = changed(held, tags, set(held) | set(tags))
+        if not altered:
+            return
+        if after is not None and snapshot <= after:
+            snapshot = _new_snapshot(con, snapshot, sorted(ids[name] for name in altered))
         con.execute("DELETE FROM ducklake_tag WHERE key LIKE 'fdl.%' AND begin_snapshot >= ?", [snapshot])
         con.execute(
             "UPDATE ducklake_tag SET end_snapshot = ? WHERE key LIKE 'fdl.%' AND end_snapshot IS NULL",
@@ -73,26 +93,46 @@ def write(frozen: Path, snapshot: int, tags: Tags) -> None:
         con.close()
 
 
+def _new_snapshot(con, last: int, altered: list[int]) -> int:
+    """Add a snapshot after ``last`` that changes nothing but the tags, as `COMMENT ON` would."""
+    snapshot = last + 1
+    con.execute(
+        """
+        INSERT INTO ducklake_snapshot
+        SELECT ?, now(), schema_version + 1, next_catalog_id, next_file_id
+        FROM ducklake_snapshot WHERE snapshot_id = ?
+        """,
+        [snapshot, last],
+    )
+    con.execute(
+        "INSERT INTO ducklake_snapshot_changes (snapshot_id, changes_made) VALUES (?, ?)",
+        [snapshot, ",".join(f"altered_table:{object_id}" for object_id in altered)],
+    )
+    return snapshot
+
+
 def read(frozen: Path, snapshot: int) -> Tags:
     """The `fdl.` tags of the tables and views alive at ``snapshot``."""
-    from .catalog import _open
-
     con = _open(Path(frozen))
     try:
-        names = {object_id: name for name, object_id in _objects(con, snapshot).items()}
-        rows = con.execute(
-            """
-            SELECT object_id, key, value FROM ducklake_tag
-            WHERE key LIKE 'fdl.%' AND begin_snapshot <= ? AND (end_snapshot IS NULL OR end_snapshot > ?)
-            """,
-            [snapshot, snapshot],
-        ).fetchall()
+        return _read(con, snapshot)
     finally:
         con.close()
+
+
+def _read(con, snapshot: int) -> Tags:
+    by_id = {object_id: name for name, object_id in _objects(con, snapshot).items()}
+    rows = con.execute(
+        """
+        SELECT object_id, key, value FROM ducklake_tag
+        WHERE key LIKE 'fdl.%' AND begin_snapshot <= ? AND (end_snapshot IS NULL OR end_snapshot > ?)
+        """,
+        [snapshot, snapshot],
+    ).fetchall()
     found: Tags = {}
     for object_id, key, value in rows:
-        if object_id in names:
-            found.setdefault(names[object_id], {})[key] = json.loads(value)
+        if object_id in by_id:
+            found.setdefault(by_id[object_id], {})[key] = json.loads(value)
     return found
 
 

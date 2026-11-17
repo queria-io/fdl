@@ -238,25 +238,18 @@ def versions(store: Store, old: Version | None, new: Version) -> dict[str, Any]:
 
 
 def with_dataset(result: dict[str, Any], old: dict | None, new: dict | None) -> dict[str, Any]:
-    """``result`` with ``dataset``: whether what the writer wrote in `dataset.json` changed.
+    """``result`` with ``dataset``: whether what the writer wrote in `dataset.json` changed,
+    and ``tags``: the tables and views both list whose `fdl.` tags it declares changed.
 
     Left out when either version has no `dataset.json`, as before the first.
     """
     if old is None or new is None:
         return result
-    held = _names(old) & _names(new)
+    held = tags.names(old) & tags.names(new)
     return {
         **result,
         "tags": tags.changed(tags.from_dataset(old), tags.from_dataset(new), held),
         "dataset": written(old) != written(new),
-    }
-
-
-def _names(described: dict) -> set[str]:
-    return {
-        f"{table.get('schema', 'main')}.{table['name']}"
-        for table in described.get("tables", [])
-        if isinstance(table, dict) and table.get("name")
     }
 
 
