@@ -724,3 +724,18 @@ def test_a_version_keeps_only_its_last_snapshot(tmp_path: Path) -> None:
     # The diff was made before the earlier snapshots went.
     assert second.diff is not None and second.diff["tables"]["dropped"] == ["main.b"]
     assert catalog.storage_version(remote / layout.version_metadata(second)) == second.metadata.storage
+
+
+def test_commit_writes_annotations(tmp_path: Path) -> None:
+    remote, working = tmp_path / "remote", tmp_path / "lake.sqlite"
+    store = LocalStore(remote)
+    run("init", remote)
+    run("clone", remote, working)
+    write(working, store, "CREATE TABLE lake.main.towns AS SELECT 1 AS id")
+    built = {"built_from": {"repository": "o/r", "commit": "a" * 40}}
+    run("commit", working, "-m", "m", "--author", "t", "--annotation", f"host={json.dumps(built)}")
+    run("push", working)
+    assert repo.head(store).annotations == {"host": built}
+
+    result = runner.invoke(app, ["commit", str(working), "-m", "m", "--author", "t", "--annotation", "host"])
+    assert result.exit_code == 1 and "NAME=JSON" in result.output

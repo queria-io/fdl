@@ -236,6 +236,11 @@ def commit(
         file_okay=False,
         help="A folder with the files the asset columns point at, to upload those the repository lacks",
     ),
+    annotation: list[str] = typer.Option(
+        [],
+        "--annotation",
+        help="NAME=JSON: an entry of the version's annotations, keyed by whoever reads it. Repeatable",
+    ),
 ) -> None:
     """Freeze the working metadata into a version, kept beside it until you push it.
 
@@ -246,6 +251,7 @@ def commit(
     state = _read_state(working)
     store = _store(state["remote"])
     try:
+        annotations = _annotations(annotation)
         description = describe or dataset.find()
         declared = dataset.read(description)
         root = Path(description).resolve().parent
@@ -263,6 +269,7 @@ def commit(
             local_objects={item["sha256"]: str(root / item["path"]) for item in listed},
             assets_dir=assets_dir,
             allow_empty=allow_empty,
+            annotations=annotations,
         )
     except repo.NothingToCommit as exc:
         typer.echo(f"Nothing to commit: {exc}")
@@ -271,6 +278,21 @@ def commit(
         raise _fail(exc) from exc
     typer.echo(f"Committed {version.id} (version {version.seq}). Push it to {state['ref']} with:")
     typer.echo(f"  fdl push {working}")
+
+
+def _annotations(entries: list[str]) -> dict:
+    """The version's annotations from ``NAME=JSON`` entries, the last of a name winning."""
+
+    def entry(text: str) -> tuple[str, object]:
+        name, sep, value = text.partition("=")
+        if not sep or not name:
+            raise repo.RepoError(f"--annotation takes NAME=JSON, not {text!r}")
+        try:
+            return name, json.loads(value)
+        except json.JSONDecodeError as exc:
+            raise repo.RepoError(f"--annotation {name}: not JSON ({exc})") from exc
+
+    return dict(map(entry, entries))
 
 
 def _workings(root: Path) -> list[Path]:
@@ -302,6 +324,7 @@ def _commit(
     assets_dir: Path | None,
     allow_empty: bool,
     merged=None,
+    annotations: dict | None = None,
 ):
     """Freeze the working metadata into a version beside it, to push later.
 
@@ -329,6 +352,7 @@ def _commit(
                 working_data=written,
                 parent_dataset=parent_dataset,
                 merged=merged,
+                annotations=annotations,
             )
 
         try:

@@ -60,7 +60,7 @@ Sets who makes the versions you commit, kept in `~/.config/fdl/config.json` (und
 ## fdl commit
 
 ```bash
-fdl commit <working.sqlite> -m "What changed" [--author alice] [--dataset dataset.json] [--allow-empty] [--assets files/]
+fdl commit <working.sqlite> -m "What changed" [--author alice] [--dataset dataset.json] [--allow-empty] [--assets files/] [--annotation NAME=JSON]
 ```
 
 Freezes the working metadata into a new version whose parent is the version it was cloned at (or last pushed), and keeps it in `<working.sqlite>.pending/` until `fdl push` sends it. Nothing in the repository changes. It prints the new version ID and its `seq`. Committing again before pushing replaces the version not pushed yet.
@@ -68,6 +68,8 @@ Freezes the working metadata into a new version whose parent is the version it w
 Every version is described by a `dataset.json` (see [Versions](/spec/versions#files-of-earlier-versions)), read from `--dataset` or else from the current directory. It is read as JSON only. The command checks it against the metadata and fills in the column types, nulls and row counts. Comments in the metadata (`COMMENT ON`) are not read, and keys the format does not define are kept as written. Each table's `primary_key` and the fields marked `asset: true`, and `catalogs` for every view, are also written into the metadata as [tags](/spec/versions#tags).
 
 The command puts every other file in the folder of `dataset.json` and below it in the version's tree, leaving out hidden files and folders, and each working metadata `fdl clone` made in that folder (the one committed and any other, found by its `.fdl.json`) with the files `fdl` and SQLite keep beside it (`<working.sqlite>.fdl.json`, `.pending/`, `.data/`, `-wal`), and the `--assets` folder when it is there. Keep the description in a folder of its own, so that nothing else goes in: it writes `tree.json` with their paths from that folder and the push uploads those the repository lacks to `objects/<sha256>`, as written (see [tree.json](/spec/versions#files-of-earlier-versions)).
+
+`--annotation NAME=JSON` adds an entry to the version's `annotations` (see [version.json](/spec/versions#versionjson)), keyed by whoever reads it, for example `--annotation 'ci={"commit":"3f2a…"}'`. Repeat it for more entries. Annotations do not count as a change: a version that differs from its parent only in them is not made.
 
 Columns marked `asset: true` hold the sha256 of files (see [Assets](/spec/versions#assets)). The command reads the values those columns hold, and the push uploads the files the repository lacks from the `--assets` folder to `assets/<sha256>`, by their content: file names in the folder do not matter.
 
