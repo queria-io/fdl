@@ -135,6 +135,7 @@ def _merge(table: dict[str, Any], physical: dict[str, Any]) -> dict[str, Any]:
                 f"so its type has to be varchar (a sha256 in hex)"
             )
         written[field["name"]] = field
+    _check_primary_key(table.get("primary_key"), physical)
     fields = [
         {
             **written.get(name, {}),
@@ -152,6 +153,23 @@ def _merge(table: dict[str, Any], physical: dict[str, Any]) -> dict[str, Any]:
         "rows": physical["rows"],
         "fields": fields,
     }
+
+
+def _check_primary_key(key: Any, physical: dict[str, Any]) -> None:
+    """Refuse a primary key that is not a list of the table's columns, each once.
+
+    It is written into the metadata as the tag `fdl.primary_key` (see `tags`).
+    """
+    if key is None:
+        return
+    where = f"{physical['schema']}.{physical['name']}"
+    if not isinstance(key, list) or not all(isinstance(name, str) for name in key):
+        raise DatasetError(f"{where}: primary_key is a list of column names")
+    if len(set(key)) != len(key):
+        raise DatasetError(f"{where}: primary_key names a column more than once")
+    missing = [name for name in key if name not in physical["columns"]]
+    if missing:
+        raise DatasetError(f"{where}: primary_key names columns the table lacks: {', '.join(missing)}")
 
 
 def _catalog_tables(frozen: Path) -> dict[tuple[str, str], dict[str, Any]]:

@@ -48,6 +48,15 @@ def test_what_the_catalog_lacks_is_refused(frozen: Path) -> None:
         )
 
 
+@pytest.mark.parametrize(
+    ("key", "error"),
+    [("code", "list of column names"), (["code", "code"], "more than once"), (["code", "x"], "lacks: x")],
+)
+def test_a_primary_key_names_columns_of_the_table_once(frozen: Path, key, error: str) -> None:
+    with pytest.raises(DatasetError, match=error):
+        describe({"name": "t", "tables": [{"schema": "main", "name": "towns", "primary_key": key}]}, frozen)
+
+
 def test_keys_outside_the_format_are_kept_as_written(frozen: Path, capsys) -> None:
     described = describe(
         {"name": "t", "title_kana": "ティー", "tables": [{"schema": "main", "name": "towns", "themes": ["x"]}]},
