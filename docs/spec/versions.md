@@ -90,7 +90,7 @@ The description and SQL of the snapshot frozen stay in the metadata, in DuckLake
 | `rows` | `table`, `from`, `to`: the tables both hold whose row count differs |
 | `columns` | The column differences, below |
 | `data` | The tables both hold whose data files differ, even with the same rows |
-| `tags` | The tables both hold whose [table tags](#tags) differ |
+| `tags` | The tables and views both hold whose [tags](#tags) differ |
 
 A writer compares the working metadata at the parent's snapshot with its last snapshot, before freezing. The working metadata is cloned from the parent's metadata, so it holds the parent's snapshot. The writer leaves `diff` out when it does not. Earlier versions carry `dataset` or `descriptions` in `diff`, which say whether `dataset.json` changed; a reader ignores them. A reader compares the two versions' `files.json` for a version without `diff`, or against a version other than its first parent.
 
@@ -236,13 +236,13 @@ SELECT schema_name, table_name, tags FROM duckdb_tables() WHERE database_name = 
 -- main  population  {fdl.primary_key=["town_code","age_group","sex"]}
 ```
 
-- A writer's tool writes these rows into the working metadata before freezing, or into the frozen metadata while freezing. DuckDB writes only `comment` tags in SQL (`COMMENT ON`)
+- A writer's tool writes these rows into the working metadata before freezing, valid from a snapshot after the parent's, and makes a new snapshot for them when the last snapshot is the parent's. Rows valid from the parent's snapshot would not show in `diff` or in [When nothing changed](/spec/writing#when-nothing-changed). DuckDB writes only `comment` tags in SQL (`COMMENT ON`)
 - Tags are kept on the table, never on a column (`ducklake_column_tag`): DuckDB does not open a table that has a column tag other than `comment`
 - A table made again under the same name, such as by `CREATE OR REPLACE` as dbt does, gets a new ID and loses its tags. The writer's tool sets them again before it freezes
-- Every column a tag names must be in the table at the snapshot, once. A column of `fdl.assets` must be `varchar`. A writer refuses to freeze otherwise
+- Every column a tag names must be in the table at the snapshot, once. A column renamed after the tag was set keeps its old name in the tag: the writer's tool follows the column's ID and writes the new name before it checks. A column of `fdl.assets` must be `varchar`. A writer refuses to freeze otherwise
 - A reader reads them from the metadata, as `tags` of `duckdb_tables()` and `duckdb_views()`, or from the `ducklake_tag` rows. A reader that does not open the metadata finds a table's in `files.json`
 - A reader ignores `fdl.` keys it does not know. Other keys are not FDL's: a writer keeps them as they are, and FDL does not read them. DuckLake's `comment` is one of them
-- Tags are part of the table: a table whose tags changed has changed ([When nothing changed](/spec/writing#when-nothing-changed), [Merging](/spec/writing#tables))
+- FDL tags are part of the table: a table or view whose `fdl.` tags changed has changed ([When nothing changed](/spec/writing#when-nothing-changed), [Merging](/spec/writing#tables)). Where this specification compares tags, it compares the `fdl.` keys only, so a `COMMENT ON` alone changes nothing
 
 What a dataset, a table or a column means to people, such as a title, a description, a license, a source or a guide, is not part of a version. A host keeps it by its own means, and may refuse a push without it ([When a push is refused](/spec/writing#when-a-push-is-refused)).
 
@@ -286,7 +286,7 @@ versions/<ID>/
 
 ## Files of earlier versions
 
-Versions written before tags held what FDL needs carry two more files beside the metadata. A version is one of them when its `version.json` has `dataset`.
+Versions written before tags held what FDL needs carry two more files beside the metadata. A version is one of them when its `version.json` has `dataset` or `tree`.
 
 ```
 versions/<version ID>/
@@ -300,4 +300,4 @@ objects/<sha256>     the files tree.json lists (shared, immutable)
 - Such a version has no FDL tags. A reader and a writer read its primary keys and assets from `dataset.json` instead: `primary_key` of an entry of `tables` (keyed by `schema` and `name`) is `fdl.primary_key`, and the `name` of each entry of its `fields` with `"asset": true` is in `fdl.assets`. `catalogs` at the top of `dataset.json` is `fdl.catalogs` of every view. Merging with such a version as the base, and deleting the assets no version reaches, depend on this
 - `tree.json` lists `entries`, each a `path`, the file's `sha256` and `bytes`. Each file is at `objects/<sha256>`, a shared object the version reaches ([Data files](/spec/data-files#shared-objects)). Versions written by fdl-cli 0.31 and earlier stored these files at `assets/<sha256>`; a repository with such versions copies them to `objects/<sha256>`
 - `dataset.json` and `tree.json` are deleted with the metadata files when the version is taken out of retention. Once no live version has a `tree.json`, every file under `objects/` is reached by none, and is deleted after the grace period
-- A writer does not write these files for a new version. A writer that makes a version from such a version, by committing, reverting or merging, writes the primary keys, assets and catalogs it read as tags
+- A writer does not write these files for a new version. A writer that makes a version from such a version, by committing, reverting or merging, writes the primary keys, assets and catalogs it read as tags. In `diff` and in [When nothing changed](/spec/writing#when-nothing-changed) it compares them with those it read from the parent's `dataset.json`, so a table whose primary key and assets stay the same has not changed
