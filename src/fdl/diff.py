@@ -18,7 +18,7 @@ import json
 from pathlib import Path
 from typing import Any, Iterable
 
-from . import catalog, layout
+from . import catalog, layout, tags
 from .store import Store, is_missing
 from .version import Version
 
@@ -186,6 +186,7 @@ def lines(result: dict[str, Any]) -> list[str]:
         + [f"~ rows {r['table']}: {r['from']:,} -> {r['to']:,}" for r in result["rows"]]
         + [column(c) for c in result["columns"]]
         + [f"~ data {name}" for name in result["data"]]
+        + [f"~ tags {name}" for name in result.get("tags", [])]
         + (["~ dataset.json"] if result.get("dataset") else [])
         # Written by fdl-cli 0.31 and earlier.
         + [f"~ description {target}" for target in result.get("descriptions", [])]
@@ -243,7 +244,20 @@ def with_dataset(result: dict[str, Any], old: dict | None, new: dict | None) -> 
     """
     if old is None or new is None:
         return result
-    return {**result, "dataset": written(old) != written(new)}
+    held = _names(old) & _names(new)
+    return {
+        **result,
+        "tags": tags.changed(tags.from_dataset(old), tags.from_dataset(new), held),
+        "dataset": written(old) != written(new),
+    }
+
+
+def _names(described: dict) -> set[str]:
+    return {
+        f"{table.get('schema', 'main')}.{table['name']}"
+        for table in described.get("tables", [])
+        if isinstance(table, dict) and table.get("name")
+    }
 
 
 #: What the writer's tool fills in from the metadata, by where it sits.

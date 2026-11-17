@@ -18,6 +18,7 @@ from pathlib import Path
 from typing import Callable, Iterable, Iterator, Mapping
 
 from . import catalog, layout, objects, profiles, refs
+from . import tags as fdl_tags
 from . import dataset as dataset_json
 from . import diff as diffs
 from .store import Store, is_conflict, is_missing
@@ -379,6 +380,9 @@ def record(
         )
         if difference is not None:
             difference = diffs.with_dataset(difference, parent_dataset, completed)
+        if completed is not None:
+            # The values FDL reads, kept in the metadata as `fdl.` tags beside `dataset.json`.
+            fdl_tags.write(copied, last, fdl_tags.from_dataset(completed))
         # After the diff, which reads the parent's snapshot: the version keeps only its own.
         catalog.keep_last_snapshot(copied)
         # Attaching it through DuckLake must not have moved it to another format.
@@ -422,9 +426,25 @@ def record(
 def _write_files_index(target: Path, frozen: Path, snapshot_id: int) -> File:
     """Write `files.json`: each table's files at the frozen snapshot, and every file the metadata names."""
     written = target / layout.FILES
-    index = {"tables": catalog.table_files(frozen, snapshot_id), "named": catalog.data_files(frozen)}
+    tagged = fdl_tags.read(frozen, snapshot_id)
+    index = {
+        "tables": {
+            name: {**table, **_index_tags(tagged.get(name, {}))}
+            for name, table in catalog.table_files(frozen, snapshot_id).items()
+        },
+        "named": catalog.data_files(frozen),
+    }
     written.write_bytes((json.dumps(index, ensure_ascii=False, indent=2) + "\n").encode())
     return File(path=layout.FILES, bytes=written.stat().st_size, sha256=_sha256(written))
+
+
+def _index_tags(values: dict) -> dict:
+    """A table's `fdl.primary_key` and `fdl.assets`, as `files.json` keys them."""
+    return {
+        key: values[tag]
+        for key, tag in (("primary_key", fdl_tags.PRIMARY_KEY), ("assets", fdl_tags.ASSETS))
+        if tag in values
+    }
 
 
 def push(

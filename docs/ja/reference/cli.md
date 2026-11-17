@@ -65,7 +65,7 @@ fdl commit <working.sqlite> -m "What changed" [--author alice] [--dataset datase
 
 作業メタデータを、クローンした（または最後に push した）バージョンを親とする新しいバージョンに固め、`fdl push` で送るまで `<working.sqlite>.pending/` に置きます。リポジトリは何も変わりません。新しいバージョン ID と `seq` を表示します。push する前にもう一度コミットすると、まだ push していないバージョンを置き換えます。
 
-バージョンはそれぞれ `dataset.json`（[バージョン](/ja/spec/versions#以前のバージョンのファイル)を参照）で説明します。`--dataset` で指定したファイルか、なければいまのディレクトリの `dataset.json` を読みます。JSON だけを読みます。コマンドはそれをメタデータと照らし合わせ、列の型、NULL の可否、行数を書き足します。メタデータのコメント（`COMMENT ON`）は読まず、形式が決めていないキーは書かれたまま残します。
+バージョンはそれぞれ `dataset.json`（[バージョン](/ja/spec/versions#以前のバージョンのファイル)を参照）で説明します。`--dataset` で指定したファイルか、なければいまのディレクトリの `dataset.json` を読みます。JSON だけを読みます。コマンドはそれをメタデータと照らし合わせ、列の型、NULL の可否、行数を書き足します。メタデータのコメント（`COMMENT ON`）は読まず、形式が決めていないキーは書かれたまま残します。テーブルごとの `primary_key` と `asset: true` の列、すべてのビューの `catalogs` は、メタデータの [tag](/ja/spec/versions#tag) にも書きます。
 
 コマンドは、`dataset.json` のフォルダとその下にあるほかのファイルをすべてバージョンの tree に入れます。隠しファイルと隠しフォルダ、そのフォルダの中に `fdl clone` が作った作業メタデータ（コミットするもの以外も含め、`.fdl.json` で見つけます）と、`fdl` と SQLite がその隣に置くファイル（`<working.sqlite>.fdl.json`・`.pending/`・`.data/`・`-wal`）、そのフォルダの中にある `--assets` のフォルダは除きます。ほかのファイルが入らないよう、説明は専用のフォルダに置いてください。そのフォルダからのパスで `tree.json` を書き、push がリポジトリに無いものを書いたままの中身で `objects/<sha256>` にアップロードします（[tree.json](/ja/spec/versions#以前のバージョンのファイル)）。
 

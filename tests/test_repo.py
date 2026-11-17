@@ -656,6 +656,7 @@ def test_a_version_records_what_changed_since_its_parent(tmp_path: Path, remote)
         "rows": [{"table": "main.towns", "from": 1, "to": 2}],
         "columns": [],
         "data": ["main.towns"],
+        "tags": [],
         "dataset": True,
     }
     repo.push(remote, tmp_path / "local" / second.id, second)
@@ -751,7 +752,67 @@ def test_dataset_in_diff_is_what_the_writer_wrote() -> None:
             {"schema": "main", "name": "v", "kind": "view", "sql": "SELECT 2"},
         ],
     }
-    assert diff.with_dataset({}, old, grown) == {"dataset": False}
+    assert diff.with_dataset({}, old, grown) == {"tags": [], "dataset": False}
     retitled = {**grown, "tables": [{**grown["tables"][0], "title": "Towns"}, *grown["tables"][1:]]}
-    assert diff.with_dataset({}, old, retitled) == {"dataset": True}
+    assert diff.with_dataset({}, old, retitled) == {"tags": [], "dataset": True}
+    keyed = {**grown, "tables": [{**grown["tables"][0], "primary_key": ["id"]}, *grown["tables"][1:]]}
+    assert diff.with_dataset({}, grown, keyed) == {"tags": ["main.towns"], "dataset": True}
     assert diff.with_dataset({}, None, grown) == {}
+
+
+def test_a_version_keeps_primary_keys_assets_and_catalogs_as_tags(tmp_path: Path, remote) -> None:
+    def described(key: list[str]) -> dict:
+        return {
+            "name": "reports",
+            "catalogs": {"census": "https://example.org/census/"},
+            "tables": [
+                {
+                    "schema": "main",
+                    "name": "reports",
+                    "primary_key": key,
+                    "fields": [{"name": "pdf", "asset": True}],
+                },
+                {"schema": "main", "name": "latest"},
+            ],
+        }
+
+    build(
+        tmp_path / "work.sqlite",
+        remote,
+        "CREATE TABLE lake.main.reports AS SELECT 1 AS id, 2 AS year, NULL::VARCHAR AS pdf;"
+        "COMMENT ON TABLE lake.main.reports IS 'kept';"
+        "CREATE VIEW lake.main.latest AS SELECT * FROM lake.main.reports",
+    )
+    first = repo.commit(
+        tmp_path / "work.sqlite", tmp_path / "local", parent=None, data_path=data_path(remote),
+        author=AUTHOR, message="m", dataset=described(["id"]),
+    )
+    repo.push(remote, tmp_path / "local" / first.id, first)
+
+    con = duckdb.connect()
+    con.execute("INSTALL ducklake; LOAD ducklake;")
+    metadata = remote.root / layout.version_dir(first.id) / first.metadata.path
+    con.execute(f"ATTACH 'ducklake:{metadata}' AS lake (DATA_PATH '{data_path(remote)}', READ_ONLY)")
+    assert con.execute("SELECT count(*) FROM lake.main.latest").fetchone() == (1,)
+    assert con.execute("SELECT comment, tags FROM duckdb_tables() WHERE database_name = 'lake'").fetchall() == [
+        ("kept", {"fdl.assets": '["pdf"]', "fdl.primary_key": '["id"]'})
+    ]
+    assert con.execute("SELECT tags FROM duckdb_views() WHERE database_name = 'lake'").fetchall() == [
+        ({"fdl.catalogs": '{"census":"https://example.org/census/"}'},)
+    ]
+    con.close()
+    indexed = files_index(remote, first)["main.reports"]
+    assert (indexed["primary_key"], indexed["assets"]) == (["id"], ["pdf"])
+
+    build(tmp_path / "work.sqlite", remote, "INSERT INTO lake.main.reports VALUES (1, 3, NULL)")
+    second = repo.commit(
+        tmp_path / "work.sqlite", tmp_path / "local", parent=first, data_path=data_path(remote),
+        author=AUTHOR, message="m", dataset=described(["id", "year"]),
+        parent_dataset=json.loads(remote.get(layout.version_dir(first.id) + layout.DATASET)),
+    )
+    assert second.diff["tags"] == ["main.reports"]
+    assert files_index_local(tmp_path, second)["main.reports"]["primary_key"] == ["id", "year"]
+
+
+def files_index_local(tmp_path: Path, version) -> dict:
+    return json.loads((tmp_path / "local" / version.id / version.files.path).read_text())["tables"]
