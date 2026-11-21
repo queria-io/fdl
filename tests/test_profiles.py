@@ -307,6 +307,41 @@ def test_a_view_keeps_its_profile_only_while_no_table_changes(repository, monkey
     assert profile_of(store, "big")["rows"] == 2
 
 
+def test_a_view_keeps_its_profile_when_only_a_table_it_does_not_read_changes(repository, monkeypatch) -> None:
+    store, working = repository
+    write(working, store, "CREATE TABLE lake.main.towns AS SELECT 1 AS id")
+    write(working, store, "CREATE TABLE lake.main.roads AS SELECT 1 AS id")
+    write(working, store, "CREATE VIEW lake.main.big AS SELECT id FROM lake.main.towns")
+    write(working, store, "CREATE VIEW lake.main.top AS WITH b AS (SELECT id FROM big) SELECT id FROM b")
+    commit(working, "-m", "m", "--author", "t")
+    built = _spy_builds(monkeypatch)
+
+    write(working, store, "INSERT INTO lake.main.roads VALUES (2)")
+    commit(working, "-m", "roads", "--author", "t")
+    assert built == ["roads"]
+
+    write(working, store, "INSERT INTO lake.main.towns VALUES (2)")
+    commit(working, "-m", "towns", "--author", "t")
+    assert sorted(built) == ["big", "roads", "top", "towns"]
+    assert profile_of(store, "top")["rows"] == 2
+
+
+def test_a_view_over_a_table_function_is_profiled_again_when_any_table_changes(repository, monkeypatch) -> None:
+    store, working = repository
+    write(working, store, "CREATE TABLE lake.main.towns AS SELECT 1 AS id")
+    write(working, store, "CREATE VIEW lake.main.numbers AS SELECT * FROM range(3)")
+    commit(working, "-m", "m", "--author", "t")
+    built = _spy_builds(monkeypatch)
+
+    run("commit", working, "-m", "same", "--author", "t", "--allow-empty")
+    run("push", working)
+    assert built == []
+
+    write(working, store, "INSERT INTO lake.main.towns VALUES (2)")
+    commit(working, "-m", "towns", "--author", "t")
+    assert sorted(built) == ["numbers", "towns"]
+
+
 def test_a_view_over_a_view_is_profiled_again_when_that_view_changes(repository, monkeypatch) -> None:
     store, working = repository
     write(working, store, "CREATE TABLE lake.main.towns AS SELECT i AS id FROM range(5) t(i)")
