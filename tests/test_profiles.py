@@ -9,7 +9,7 @@ import duckdb
 import pytest
 from typer.testing import CliRunner
 
-from fdl import catalog, layout, profiles, repo
+from fdl import catalog, layout, profiles, repo, tags
 from fdl.cli import app
 from fdl.stores import LocalStore
 
@@ -365,3 +365,30 @@ def test_a_wide_table_is_measured_a_few_columns_at_a_time(repository, monkeypatc
         ("b", 1, 3),
         ("c", 2, 4),
     ]
+
+
+def test_a_table_or_view_with_profile_false_gets_no_profile(repository, monkeypatch) -> None:
+    store, working = repository
+    Path("dataset.json").write_text(
+        json.dumps(
+            {
+                "name": "towns",
+                "tables": [
+                    {"schema": "main", "name": "raw_towns", "profile": False},
+                    {"schema": "main", "name": "stg_towns", "profile": False},
+                ],
+            }
+        )
+    )
+    write(working, store, "CREATE TABLE lake.main.raw_towns AS SELECT 1 AS id")
+    write(working, store, "CREATE VIEW lake.main.stg_towns AS SELECT id FROM lake.main.raw_towns")
+    write(working, store, "CREATE TABLE lake.main.towns AS SELECT 1 AS id")
+    built = _spy_builds(monkeypatch)
+    commit(working, "-m", "m", "--author", "t")
+    assert built == ["towns"]
+    head = repo.head(store)
+    assert store.list(f"{layout.version_dir(head.id)}profiles/") == [f"{layout.version_dir(head.id)}profiles/main/towns.json"]
+    assert repo.missing_profiles(store, head) == []
+    frozen = tags.read(Path(store.root) / layout.version_metadata(head), head.ducklake.snapshot_id)
+    assert frozen["main.raw_towns"] == {tags.PROFILE: False}
+    assert frozen["main.stg_towns"] == {tags.PROFILE: False}

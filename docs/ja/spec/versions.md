@@ -207,6 +207,7 @@ profile は、`ducklake.snapshot_id` の時点の 1 つのテーブルの要約�
 - `geometry` は、書き手が読めたときに、最初の図形の列を説明する。図形を持つ行の数、全体の `bbox`（列の座標で `[xmin, ymin, xmax, ymax]`）、含まれる図形の種類、地図を描くための、無作為に選んで簡略化した図形の GeoJSON `FeatureCollection` を持つ
 - 書き手は計算できないキーを省いてよい。読み手は知らないキーを無視する
 - 書き手は、データファイル（`files.json`）と列が親と同じテーブルには親の profile を使い回す。profile を作るときに読むのは変わったテーブルだけになる。ビューは、そのビューの `sql` が親と同じで、クエリが読むテーブルとビューがどれも変わっていないときに親の profile を使い回す。テーブルはデータファイルで、ビューは同じ規則で判定する。クエリから読むテーブルを判定できないビュー（テーブル関数を読むものなど）は、すべてのビューの `sql` が親と同じで、どのテーブルのデータファイルも変わっていないときだけ親の profile を使い回す。親の profile の `values` が書き手と異なる上限で書かれているときは、profile を作り直す
+- 書き手は、`fdl.profile` tag が `false` のテーブルとビューの profile を作らない。書き手のツールは、ビルドが作る中間のテーブルなど、利用者に読ませないテーブルにこの tag を付け、profile を作るときに読まないようにする。ホストも、自分が表示するものだけの profile を作ってよい
 - profile はバージョンの一部で、そのバージョンの中では変わらない。保持期間から外すときはメタデータと一緒に消す
 
 ## 固めたメタデータ
@@ -230,6 +231,7 @@ FDL が列のほかにテーブルやビューについて知る必要のある�
 | `fdl.primary_key` | テーブル | 行を識別する列の名前の JSON 配列 | [主キーでの行のマージ](/ja/spec/writing#主キーでの行のマージ) |
 | `fdl.assets` | テーブル | アセットを持つ列の名前の JSON 配列 | [アセット](#アセット) |
 | `fdl.catalogs` | ビュー | ビューの SQL が読むほかのデータセットについて、ATTACH する名前とそのリポジトリの URL の対応の JSON オブジェクト（`{"census": "https://example.org/census/"}`） | ビューを読む。読み手は先にそれぞれのリポジトリをその名前で ATTACH する |
+| `fdl.profile` | テーブルまたはビュー | `false`: 書き手はプロファイルを作らない | [profiles/](#profiles) |
 
 ```sql
 SELECT schema_name, table_name, tags FROM duckdb_tables() WHERE database_name = 'lake';
