@@ -19,23 +19,27 @@ from .catalog import CatalogError, _open
 PRIMARY_KEY = "fdl.primary_key"
 ASSETS = "fdl.assets"
 CATALOGS = "fdl.catalogs"
+PROFILE = "fdl.profile"
 
 Tags = dict[str, dict[str, Any]]
 
 
 def from_dataset(described: dict | None) -> Tags:
-    """The tags a `dataset.json` declares: primary keys and assets of tables, catalogs of views."""
+    """The tags a `dataset.json` declares: primary keys and assets of tables, catalogs of views,
+    and `"profile": false` of either."""
     if not described:
         return {}
     catalogs = described.get("catalogs")
 
     def of(table: dict) -> dict[str, Any]:
+        unprofiled = {PROFILE: False} if table.get("profile") is False else {}
         if table.get("kind") == "view":
-            return {CATALOGS: catalogs} if catalogs else {}
+            return {**({CATALOGS: catalogs} if catalogs else {}), **unprofiled}
         assets = [f["name"] for f in table.get("fields", []) if isinstance(f, dict) and f.get("asset") is True]
         return {
             **({PRIMARY_KEY: table["primary_key"]} if table.get("primary_key") else {}),
             **({ASSETS: assets} if assets else {}),
+            **unprofiled,
         }
 
     tagged = {name: of(table) for name, table in _entries(described).items()}

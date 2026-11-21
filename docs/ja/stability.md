@@ -16,7 +16,7 @@ FDL 0.1 で書いたリポジトリは、この先のリリースの `fdl` で�
 - `fdl.json`・`HEAD`・`refs/`・`refs.json`
 - `version.json` とその必須の項目
 - 固めたメタデータ（`metadata.path` の名前。`metadata.db`、fdl-cli 0.26 以前が書いたバージョンでは `ducklake.duckdb`）
-- メタデータの中のテーブルとビューの `fdl.` の tag（`fdl.primary_key`・`fdl.assets`・`fdl.catalogs`）
+- メタデータの中のテーブルとビューの `fdl.` の tag（`fdl.primary_key`・`fdl.assets`・`fdl.catalogs`・`fdl.profile`）
 - tag より前に書かれたバージョンの `dataset.json`（`name`・`title`・`tables` と、各テーブルの `fields`）と `tree.json`
 - `expired.json`
 - データファイル・`assets/<sha256>`・`objects/<sha256>`

@@ -81,8 +81,12 @@ def path(schema: str, table: str) -> str | None:
 
 
 def tables(described: dict[str, Any]) -> list[dict[str, Any]]:
-    """The tables and views of a `dataset.json` that get a profile: all whose names a path can hold."""
-    return [t for t in described.get("tables", []) if path(t["schema"], t["name"])]
+    """The tables and views of a `dataset.json` that get a profile.
+
+    All whose names a path can hold, but those with `"profile": false` (the tag
+    `fdl.profile`), which a writer leaves out.
+    """
+    return [t for t in described.get("tables", []) if t.get("profile") is not False and path(t["schema"], t["name"])]
 
 
 def columns_of(table: dict[str, Any]) -> list[dict[str, str]]:

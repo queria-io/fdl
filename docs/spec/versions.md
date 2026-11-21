@@ -207,6 +207,7 @@ Each table's profile is at `versions/<ID>/profiles/<schema>/<table>.json`. A vie
 - `geometry` describes the first geometry column, when the writer could read it: how many rows have a shape, the `bbox` of all of them (`[xmin, ymin, xmax, ymax]` in the column's coordinates), the geometry types present, and a GeoJSON `FeatureCollection` of a random sample of simplified shapes for drawing a map
 - A writer may leave out any key it cannot compute. A reader ignores keys it does not know
 - A writer reuses its parent's profile for a table whose data files (in `files.json`) and columns are the parent's, so profiling reads only the tables that changed. It reuses a view's when the view's `sql` is the parent's and every table and view its query reads is unchanged: a table by its data files, a view by the same rule. A view whose tables cannot be told from its query (one that reads a table function, say) reuses its parent's only when every view's `sql` is the parent's and no table's data files changed. It makes the profile again when the parent's `values` follow another limit than its own
+- A writer makes no profile for a table or view whose `fdl.profile` tag is `false`. A writer's tool sets it for the tables people are not meant to read, such as the intermediate tables a build makes, so that profiling does not read them. A host may also make profiles only of what it shows
 - Profiles are part of the version and do not change with it. They are deleted with the metadata files when the version is taken out of retention
 
 ## The frozen metadata
@@ -230,6 +231,7 @@ What FDL needs to know about a table or a view beyond its columns is kept in the
 | `fdl.primary_key` | a table | The names of the columns that identify a row, as a JSON array | [Merging by rows](/spec/writing#rows-merged-by-primary-key) |
 | `fdl.assets` | a table | The names of the columns that hold assets, as a JSON array | [Assets](#assets) |
 | `fdl.catalogs` | a view | The name each other dataset the view's SQL reads is attached under, mapped to the URL of its repository, as a JSON object (`{"census": "https://example.org/census/"}`) | Reading the view: a reader attaches each repository under that name first |
+| `fdl.profile` | a table or a view | `false`: the writer makes no profile for it | [profiles/](#profiles) |
 
 ```sql
 SELECT schema_name, table_name, tags FROM duckdb_tables() WHERE database_name = 'lake';
