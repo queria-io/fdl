@@ -1,6 +1,84 @@
 # CHANGELOG
 
 
+## v0.33.0 (2026-11-21)
+
+### Bug Fixes
+
+- Allow descriptions kept as table rows, and keep comments when merging
+  ([#80](https://github.com/queria-io/fdl/pull/80),
+  [`0675306`](https://github.com/queria-io/fdl/commit/0675306b4f74ee5e5197f0788728ada352721c1e))
+
+- Profile a view again only when a table or view it reads changed
+  ([#81](https://github.com/queria-io/fdl/pull/81),
+  [`3a760ed`](https://github.com/queria-io/fdl/commit/3a760ed884b7206538fcbc994c12fa0ca8aead9c))
+
+### Documentation
+
+- **spec**: Keep primary keys, assets and catalogs as DuckLake tags and drop dataset.json and
+  tree.json ([#77](https://github.com/queria-io/fdl/pull/77),
+  [`945dab3`](https://github.com/queria-io/fdl/commit/945dab3a94ac579386c1572007972aa7be8fbef4))
+
+* docs(spec)!: keep primary keys, assets and catalogs as DuckLake tags and drop dataset.json and
+  tree.json
+
+A version no longer carries dataset.json, tree.json or files under objects/. What FDL reads about a
+  table or a view is kept in the metadata as tags: fdl.primary_key and fdl.assets on tables,
+  fdl.catalogs on views. Titles, descriptions, licenses, sources and guides are left to the host.
+
+Earlier versions keep their files: readers may ignore dataset.json and tree.json, read primary keys,
+  assets and catalogs from dataset.json when a version has no tags, and files under objects/ stay
+  shared objects until the versions that list them are taken out of retention.
+
+* docs(spec): compare fdl. tags only, follow renamed columns, and keep checks for earlier versions
+
+Tags are written after the parent's snapshot so a change to tags alone shows in diff. Renamed
+  columns are followed by ID. An earlier version is one with dataset or tree, its dataset.json stops
+  deletion when unreadable, and a push still needs the files its tree.json lists. diff.tags covers
+  views. The stability page lists the fdl. tags.
+
+### Features
+
+- Skip the profile of a table or view tagged fdl.profile = false
+  ([#82](https://github.com/queria-io/fdl/pull/82),
+  [`31a743c`](https://github.com/queria-io/fdl/commit/31a743c803b2b5f88818972477c26ed62e7491c8))
+
+- Write primary keys, assets and catalogs as fdl. tags in the metadata
+  ([#78](https://github.com/queria-io/fdl/pull/78),
+  [`eeab3e9`](https://github.com/queria-io/fdl/commit/eeab3e9e35546000428f98c769baeed1ac8ef9d5))
+
+* docs(spec)!: keep primary keys, assets and catalogs as DuckLake tags and drop dataset.json and
+  tree.json
+
+A version no longer carries dataset.json, tree.json or files under objects/. What FDL reads about a
+  table or a view is kept in the metadata as tags: fdl.primary_key and fdl.assets on tables,
+  fdl.catalogs on views. Titles, descriptions, licenses, sources and guides are left to the host.
+
+Earlier versions keep their files: readers may ignore dataset.json and tree.json, read primary keys,
+  assets and catalogs from dataset.json when a version has no tags, and files under objects/ stay
+  shared objects until the versions that list them are taken out of retention.
+
+* docs(spec): compare fdl. tags only, follow renamed columns, and keep checks for earlier versions
+
+Tags are written after the parent's snapshot so a change to tags alone shows in diff. Renamed
+  columns are followed by ID. An earlier version is one with dataset or tree, its dataset.json stops
+  deletion when unreadable, and a push still needs the files its tree.json lists. diff.tags covers
+  views. The stability page lists the fdl. tags.
+
+* feat: write primary keys, assets and catalogs as fdl. tags in the metadata
+
+fdl commit writes fdl.primary_key and fdl.assets on tables and fdl.catalogs on views from
+  dataset.json, still writing dataset.json as before. files.json carries each table's primary_key
+  and assets, and diff lists the tables and views whose tags changed.
+
+* fix: give a change of tags alone its own snapshot and check primary keys
+
+Tags are written before the snapshot range is taken. When the last snapshot is the parent's and the
+  tags differ, a new snapshot holds them; unchanged tags are not rewritten. dataset.json's
+  primary_key must be a list of the table's columns, each once. A tag naming a missing table raises
+  CatalogError. The fdl diff reference lists the tags key.
+
+
 ## v0.32.0 (2026-11-16)
 
 ### Features
