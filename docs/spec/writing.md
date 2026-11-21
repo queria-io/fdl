@@ -72,6 +72,8 @@ A table is the same table in two versions when it has the same `schema.table`. E
 
 A view is compared by its SQL and its tags, as a table without a primary key.
 
+Comments (DuckLake's `comment`) are not compared, but the merge version keeps them. Each comment of a table, a view or a column is merged as a value: a comment only one side changed takes that side's change, wherever the table itself comes from. When both sides changed it differently, the merge version keeps ours and the writer warns.
+
 ### Rows merged by primary key
 
 Two changes to the same table are merged row by row when ours and theirs have the same tags for it, `fdl.primary_key` among them, and the base has the same `fdl.primary_key`, or did not hold the table. The columns and their types must be the same in ours and theirs; a table whose columns changed on both sides is a conflict. A base written before tags reads them from its `dataset.json` ([Files of earlier versions](/spec/versions#files-of-earlier-versions)).

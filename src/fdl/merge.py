@@ -170,6 +170,8 @@ class Plan:
     rows: dict[tuple[str, str], int] = field(default_factory=dict)
     #: The description files theirs changed: the writer's own copies lack those changes.
     described: list[str] = field(default_factory=list)
+    #: Comments both sides changed differently: ours is kept.
+    comments: list[str] = field(default_factory=list)
 
 
 def tables(
@@ -369,7 +371,24 @@ class _Merging:
                 plan.conflicts.append(f"{'.'.join(key)}: both sides changed the view")
         self.views = views
         self.ids = ids
+        self.comments = {alias: self.comments_of(alias) for alias in ("base", "lake", "theirs")}
         return plan
+
+    def comments_of(self, alias: str) -> dict[tuple[str, str, str | None], str | None]:
+        """DuckLake's ``comment`` of each table, view (column ``None``) and column."""
+        params = {"d": alias}
+        objects = self.con.execute(
+            "SELECT schema_name, table_name, comment FROM duckdb_tables() WHERE database_name = $d "
+            "UNION ALL SELECT schema_name, view_name, comment FROM duckdb_views() WHERE database_name = $d",
+            params,
+        ).fetchall()
+        columns = self.con.execute(
+            "SELECT schema_name, table_name, column_name, comment FROM duckdb_columns() WHERE database_name = $d",
+            params,
+        ).fetchall()
+        held = {(schema, name, None): text for schema, name, text in objects}
+        held |= {(schema, name, column): text for schema, name, column, text in columns}
+        return held
 
     def _plan_rows(self, plan: Plan, key: tuple[str, str], *, has_base: bool) -> None:
         label = ".".join(key)
@@ -458,7 +477,31 @@ class _Merging:
         gone = (self.schemas_of("base") & self.schemas_of("lake")) - self.schemas_of("theirs") - kept
         for schema in sorted(gone):
             con.execute(f"DROP SCHEMA lake.{_quoted(schema)}")
+        self._merge_comments(plan)
         con.execute("COMMIT")
+
+    def _merge_comments(self, plan: Plan) -> None:
+        """Merge each comment three ways, as a value: writing a table again would lose ours or theirs."""
+        base, ours, theirs = (self.comments[alias] for alias in ("base", "lake", "theirs"))
+        merged = self.comments_of("lake")
+        for slot in sorted(merged, key=lambda slot: (slot[0], slot[1], slot[2] or "")):
+            old, mine, other = (side.get(slot) for side in (base, ours, theirs))
+            if mine == old:
+                wanted = other if slot in theirs else mine
+            elif other in (old, mine) or slot not in theirs:
+                wanted = mine
+            else:
+                wanted = mine
+                plan.comments.append(".".join(part for part in slot if part))
+            if wanted == merged[slot]:
+                continue
+            schema, name, column = slot
+            text = _literal(wanted) if wanted is not None else "NULL"
+            if column is not None:
+                target = f"COLUMN {self.name('lake', (schema, name))}.{_quoted(column)}"
+            else:
+                target = f"{'VIEW' if (schema, name) in self.views['theirs'] or (schema, name) in self.views['lake'] else 'TABLE'} {self.name('lake', (schema, name))}"
+            self.con.execute(f"COMMENT ON {target} IS {text}")
 
     def _take_table(self, key: tuple[str, str]) -> None:
         """Write the table as theirs holds it, beside ours, then put it in its place."""

@@ -581,6 +581,8 @@ def merge(
         typer.echo(f"  dropped      {'.'.join(key)}")
     for key, count in plan.rows.items():
         typer.echo(f"  rows merged  {'.'.join(key)} ({count:,} row(s) added, changed or deleted by theirs)")
+    for slot in plan.comments:
+        typer.echo(f"warning: both sides changed the comment of {slot} differently; ours is kept", err=True)
     if plan.described:
         typer.echo(
             f"warning: theirs changed {' and '.join(plan.described)}. Bring those changes into your local "
