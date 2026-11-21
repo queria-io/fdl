@@ -244,7 +244,7 @@ SELECT schema_name, table_name, tags FROM duckdb_tables() WHERE database_name = 
 - A reader ignores `fdl.` keys it does not know. Other keys are not FDL's: a writer keeps them as they are, and FDL does not read them. DuckLake's `comment` is one of them
 - FDL tags are part of the table: a table or view whose `fdl.` tags changed has changed ([When nothing changed](/spec/writing#when-nothing-changed), [Merging](/spec/writing#tables)). Where this specification compares tags, it compares the `fdl.` keys only, so a `COMMENT ON` alone changes nothing
 
-What a dataset, a table or a column means to people, such as a title, a description, a license, a source or a guide, is not part of a version. A host keeps it by its own means, and may refuse a push without it ([When a push is refused](/spec/writing#when-a-push-is-refused)).
+FDL defines no tag for what a dataset, a table or a column means to people, such as a title, a description, a license, a source or a guide. A writer may keep it as rows of ordinary tables in the metadata, such as in a schema of its own. FDL treats those tables as any other: a change to their rows makes a version, and they are merged like any table. A host may also keep it by its own means, and may refuse a push without it ([When a push is refused](/spec/writing#when-a-push-is-refused)).
 
 ### Assets
 
