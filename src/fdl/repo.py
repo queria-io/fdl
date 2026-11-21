@@ -602,16 +602,17 @@ def write_profiles(
             if not is_missing(exc):
                 raise
     views_now = _view_sql(described)
-    views_unchanged = False
-    if views_now and parent is not None and parent.dataset is not None and files_before == files_now:
-        # A view reads tables and other views, so it keeps its profile only when
-        # no table's data files and no view's query changed.
+    views_before: dict[str, str | None] = {}
+    if views_now and parent is not None and parent.dataset is not None:
         try:
-            held = json.loads(store.get(layout.version_dir(parent.id) + parent.dataset.path))
-            views_unchanged = _view_sql(held) == views_now
+            views_before = _view_sql(json.loads(store.get(layout.version_dir(parent.id) + parent.dataset.path)))
         except Exception as exc:  # noqa: BLE001 - stores raise their own types
             if not is_missing(exc):
                 raise
+    changed_tables = {
+        key for key in {*files_before, *files_now} if not _same_files(files_before.get(key), files_now.get(key))
+    }
+    unchanged_views = _unchanged_views(views_now, views_before, set(files_now), changed_tables)
     kept: dict[str, bytes] = {}
     pending = []
     for table in profiles.tables(described):
@@ -619,14 +620,9 @@ def write_profiles(
         relative = profiles.path(table["schema"], table["name"])
         previous = None
         if table.get("kind") == "view":
-            unchanged = views_unchanged
+            unchanged = key in unchanged_views
         else:
-            before, now = files_before.get(key), files_now.get(key, {})
-            if before is not None and "columns" not in before:
-                # A parent written before files.json listed the columns: compare the
-                # rest, and leave the names and types to profiles.reusable.
-                now = {name: value for name, value in now.items() if name != "columns"}
-            unchanged = before is not None and before == now
+            unchanged = _same_files(files_before.get(key), files_now.get(key, {}))
         if parent is not None and unchanged:
             try:
                 previous = store.get(layout.version_dir(parent.id) + relative)
@@ -643,6 +639,106 @@ def write_profiles(
         target.parent.mkdir(parents=True, exist_ok=True)
         target.write_bytes(content)
     return len(made)
+
+
+def _same_files(before: dict | None, now: dict | None) -> bool:
+    """Whether a table's entry in `files.json` is the parent's."""
+    if before is None or now is None:
+        return False
+    if "columns" not in before:
+        # A parent written before files.json listed the columns: compare the
+        # rest, and leave the names and types to profiles.reusable.
+        now = {name: value for name, value in now.items() if name != "columns"}
+    return before == now
+
+
+def _unchanged_views(
+    views_now: dict[str, str | None],
+    views_before: dict[str, str | None],
+    tables: set[str],
+    changed_tables: set[str],
+) -> set[str]:
+    """The views whose query is the parent's and whose tables and views read are unchanged.
+
+    A view whose tables cannot be told from its query (it does not parse or reads a
+    table function) keeps its profile only while no table and no view changed. One
+    that names a table this version does not hold counts as changed.
+    """
+    reads = {key: _tables_read(sql) for key, sql in views_now.items()}
+    known = tables | set(views_now)
+    unchanged: dict[str, bool] = {}
+
+    def resolve(view: str, schema: str, name: str) -> str | None:
+        # An unqualified name is a table of the view's own schema, else of main.
+        candidates = [f"{schema}.{name}"] if schema else [f"{view.split('.', 1)[0]}.{name}", f"main.{name}"]
+        return next((key for key in candidates if key in known), None)
+
+    def check(key: str, seen: frozenset[str]) -> bool:
+        if key in unchanged:
+            return unchanged[key]
+        if reads[key] is None:
+            # What it reads is unknown: it keeps its profile only while nothing changed.
+            unchanged[key] = not changed_tables and views_before == views_now
+            return unchanged[key]
+        result = key in views_before and views_before[key] == views_now[key]
+        for schema, name in reads[key]:
+            if not result:
+                break
+            found = resolve(key, schema, name)
+            if found is None:
+                result = False
+            elif found in views_now:
+                result = found not in seen and check(found, seen | {found})
+            else:
+                result = found not in changed_tables
+        unchanged[key] = result
+        return result
+
+    return {key for key in views_now if check(key, frozenset({key}))}
+
+
+def _tables_read(sql: str | None) -> set[tuple[str, str]] | None:
+    """The tables and views a view's query reads, as (schema, name) with an empty schema when
+    unqualified, or None when that cannot be told."""
+    if not sql:
+        return None
+    import duckdb
+
+    con = duckdb.connect()
+    try:
+        # DuckLake keeps the catalog in a view's query as a placeholder that does not parse.
+        query = sql.replace("{DUCKLAKE_CATALOG}", "lake")
+        tree = json.loads(con.execute("SELECT json_serialize_sql(?)", [query]).fetchone()[0])
+    finally:
+        con.close()
+    if tree.get("error"):
+        return None
+    found: list[tuple[str, str]] = []
+    ctes: set[str] = set()
+    functions = False
+
+    def walk(node) -> None:
+        nonlocal functions
+        if isinstance(node, list):
+            for item in node:
+                walk(item)
+            return
+        if not isinstance(node, dict):
+            return
+        kind = node.get("type")
+        if kind == "BASE_TABLE":
+            found.append((node.get("schema_name") or "", node["table_name"]))
+        elif kind == "TABLE_FUNCTION":
+            functions = True
+        for entry in (node.get("cte_map") or {}).get("map", []):
+            ctes.add(entry["key"])
+        for value in node.values():
+            walk(value)
+
+    walk(tree.get("statements", []))
+    if functions:
+        return None
+    return {(name_schema, name) for name_schema, name in found if name_schema or name not in ctes}
 
 
 def _view_sql(described: dict) -> dict[str, str | None]:
