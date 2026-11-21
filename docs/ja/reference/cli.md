@@ -65,7 +65,7 @@ fdl commit <working.sqlite> -m "What changed" [--author alice] [--dataset datase
 
 作業メタデータを、クローンした（または最後に push した）バージョンを親とする新しいバージョンに固め、`fdl push` で送るまで `<working.sqlite>.pending/` に置きます。リポジトリは何も変わりません。新しいバージョン ID と `seq` を表示します。push する前にもう一度コミットすると、まだ push していないバージョンを置き換えます。
 
-バージョンはそれぞれ `dataset.json`（[バージョン](/ja/spec/versions#以前のバージョンのファイル)を参照）で説明します。`--dataset` で指定したファイルか、なければいまのディレクトリの `dataset.json` を読みます。JSON だけを読みます。コマンドはそれをメタデータと照らし合わせ、列の型、NULL の可否、行数を書き足します。メタデータのコメント（`COMMENT ON`）は読まず、形式が決めていないキーは書かれたまま残します。テーブルごとの `primary_key` と `asset: true` の列、すべてのビューの `catalogs`、テーブルかビューの `"profile": false` は、メタデータの [tag](/ja/spec/versions#tag) にも書きます。
+バージョンはそれぞれ `dataset.json`（[バージョン](/ja/spec/versions#以前のバージョンのファイル)を参照）で説明します。`--dataset` で指定したファイルか、なければいまのディレクトリの `dataset.json` を読みます。JSON だけを読みます。コマンドはそれをメタデータと照らし合わせ、列の型、NULL の可否、行数を書き足します。メタデータのコメント（`COMMENT ON`）は読まず、形式が決めていないキーは書かれたまま残します。テーブルごとの `primary_key` と `asset: true` の列、すべてのビューの `catalogs`、テーブルかビューの `"profile": false` は、メタデータの [tag](/ja/spec/versions#以前のバージョンの-tag) にも書きます。
 
 コマンドは、`dataset.json` のフォルダとその下にあるほかのファイルをすべてバージョンの tree に入れます。隠しファイルと隠しフォルダ、そのフォルダの中に `fdl clone` が作った作業メタデータ（コミットするもの以外も含め、`.fdl.json` で見つけます）と、`fdl` と SQLite がその隣に置くファイル（`<working.sqlite>.fdl.json`・`.pending/`・`.data/`・`-wal`）、そのフォルダの中にある `--assets` のフォルダは除きます。ほかのファイルが入らないよう、説明は専用のフォルダに置いてください。そのフォルダからのパスで `tree.json` を書き、push がリポジトリに無いものを書いたままの中身で `objects/<sha256>` にアップロードします（[tree.json](/ja/spec/versions#以前のバージョンのファイル)）。
 
@@ -144,7 +144,7 @@ fdl diff <remote> [<version>] [--against <version>] [--json]
 ~ dataset.json
 ```
 
-親と比べるときは、バージョンの `diff` から取ります（[diff](/ja/spec/versions#diff)）。それ以外のときや `diff` のないバージョンでは、行数を `dataset.json` から、データファイルを `files.json` から取り、列は名前で比べます。そのため列名の変更は見分けられません。`~ data` は、行が同じでもテーブルのデータファイルが変わったことを示します。`~ tags` は、テーブルかビューの [tag](/ja/spec/versions#tag) が変わったことを示します。`~ dataset.json` は、コミットがメタデータから書き足す値を除いて、書き手が `dataset.json` に書いた内容が親と変わったことを示します。`--json` を付けると、同じ内容を `tables`（`added`・`dropped`）・`rows`・`columns`・`data`・`tags`・`dataset` を持つオブジェクトで表示します。fdl-cli 0.31 以前が書いたバージョンでは、代わりに `descriptions` から `~ description` の行を表示します。
+親と比べるときは、バージョンの `diff` から取ります（[diff](/ja/spec/versions#diff)）。それ以外のときや `diff` のないバージョンでは、行数を `dataset.json` から、データファイルを `files.json` から取り、列は名前で比べます。そのため列名の変更は見分けられません。`~ data` は、行が同じでもテーブルのデータファイルが変わったことを示します。`~ tags` は、テーブルかビューの [tag](/ja/spec/versions#以前のバージョンの-tag) が変わったことを示します。`~ dataset.json` は、コミットがメタデータから書き足す値を除いて、書き手が `dataset.json` に書いた内容が親と変わったことを示します。`--json` を付けると、同じ内容を `tables`（`added`・`dropped`）・`rows`・`columns`・`data`・`tags`・`dataset` を持つオブジェクトで表示します。fdl-cli 0.31 以前が書いたバージョンでは、代わりに `descriptions` から `~ description` の行を表示します。
 
 ## fdl show
 

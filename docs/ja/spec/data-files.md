@@ -10,7 +10,7 @@ description: 共有オブジェクト（データファイル・アセット・�
 | オブジェクト | パス | バージョンから到達するとき |
 | --- | --- | --- |
 | データファイル | `<data_dir><schema>/<table>/ducklake-<uuid>.parquet` | メタデータが参照している |
-| アセット | `assets/<sha256>` | `fdl.assets` の tag が示す列がどれかの行でその sha256 を持っている |
+| アセット | `assets/<sha256>` | `_fdl.columns` で `asset` が true の列（`_fdl.files` を含む）が、どれかの行でその sha256 を持っている（[_fdl スキーマ](/ja/spec/fdl-schema)） |
 | tree のファイル | `objects/<sha256>` | `tree.json` が並べている。`tree.json` を持つのは[以前のバージョン](/ja/spec/versions#以前のバージョンのファイル)だけ |
 
 - 書き手は、バージョンを作る前に共有オブジェクトを置いてよい。バージョンから到達するまで、読み手には見えない

@@ -16,7 +16,7 @@ A writer writes to a working metadata file: a DuckLake metadata file in SQLite, 
 | Step | What happens |
 | --- | --- |
 | clone | Make a working metadata file from the metadata of the branch's version, and remember that version. Before the first version, make an empty one |
-| commit | Set the [tags](/spec/versions#tags) of the tables and views, and freeze the working metadata's last snapshot into a new version, with the remembered version as its parent |
+| commit | Check the [_fdl schema](/spec/fdl-schema) against the tables and views, and freeze the working metadata's last snapshot into a new version, with the remembered version as its parent |
 | push | Check the data files, measure each table into a profile (optional), upload the metadata, `files.json` and the profiles, then `version.json`, then move the ref on condition |
 
 A writer may keep a committed version on its own disk and push it later, as Git keeps commits until `git push`. Until the push, nothing in the repository changes, apart from data files the working metadata wrote there. No version names those yet, so they are deleted after the grace period if the version is never pushed.
@@ -35,15 +35,15 @@ When freezing, a writer must:
 A writer should not make a version that holds what its parent holds, as Git makes no commit when the tree is the parent's. A version holds the same as its parent when:
 
 - the last snapshot is the parent's (`ducklake.snapshot_id`), or
-- the same tables and views are there with the same tags, each table with the same columns and types and the same rows, counted as a multiset (order does not matter)
+- the same tables and views are there, each table with the same columns and types and the same rows, counted as a multiset (order does not matter). The tables of `_fdl` are tables like any other
 
-Only tables, views and their `fdl.` tags are compared. Words kept outside them, such as a `comment` tag, make no version on their own; words kept as rows of a table make one when the rows change ([Tags](/spec/versions#tags)). A table rebuilt from the same input is written to new data files, so comparing files or metadata bytes is not enough. A writer compares the files first and reads the rows only of tables whose files differ. A writer that cannot read the rows makes the version. A writer may make one anyway when asked, as `git commit --allow-empty` does.
+Only tables and views are compared. A comment (`COMMENT ON`) makes no version on its own; what `_fdl` says makes one when its rows change ([The _fdl schema](/spec/fdl-schema)). A table rebuilt from the same input is written to new data files, so comparing files or metadata bytes is not enough. A writer compares the files first and reads the rows only of tables whose files differ. A writer that cannot read the rows makes the version. A writer may make one anyway when asked, as `git commit --allow-empty` does.
 
 ## Reverting
 
 A writer that brings back what an earlier version held makes a new version, as `git revert` makes a new commit. It does not move a branch back: a branch moves only forward by default (see [Refs](/spec/refs)), and readers may already hold the versions in between.
 
-The new version's parent is the version the working metadata was cloned at, so pushing it is refused if the branch has moved since, as for any commit. Its tables and views are those of the earlier version at its snapshot, with the same columns, rows and tags. The working metadata gets there in a new snapshot: tables the earlier version did not hold are dropped, and tables changed since are written again from their rows at the earlier snapshot. The writer reads the earlier version's tables from that version's own metadata, as it reads theirs when merging.
+The new version's parent is the version the working metadata was cloned at, so pushing it is refused if the branch has moved since, as for any commit. Its tables and views are those of the earlier version at its snapshot, with the same columns and rows, `_fdl` among them. The working metadata gets there in a new snapshot: tables the earlier version did not hold are dropped, and tables changed since are written again from their rows at the earlier snapshot. The writer reads the earlier version's tables from that version's own metadata, as it reads theirs when merging.
 
 ## Branches
 
@@ -61,7 +61,7 @@ When the base is theirs, there is nothing to merge. When the base is ours, the b
 
 ### Tables
 
-A table is the same table in two versions when it has the same `schema.table`. Each table is compared in the three versions, and two versions hold the same table when the columns, their types, the tags and the rows (counted as a multiset) are the same:
+A table is the same table in two versions when it has the same `schema.table`. Each table is compared in the three versions, and two versions hold the same table when the columns, their types and the rows (counted as a multiset) are the same. The tables of `_fdl` are merged the same way, by the primary keys [The _fdl schema](/spec/fdl-schema) gives them:
 
 | ours and theirs, against the base | The merge version holds |
 | --- | --- |
@@ -70,13 +70,13 @@ A table is the same table in two versions when it has the same `schema.table`. E
 | One dropped it and the other changed it | A conflict |
 | Both changed it, or both added it, differently | Rows merged by primary key, below, or a conflict |
 
-A view is compared by its SQL and its tags, as a table without a primary key.
+A view is compared by its SQL, as a table without a primary key.
 
 Comments (DuckLake's `comment`) are not compared, but the merge version keeps them. Each comment of a table, a view or a column is merged as a value: a comment only one side changed takes that side's change, wherever the table itself comes from. When both sides changed it differently, the merge version keeps ours and the writer warns.
 
 ### Rows merged by primary key
 
-Two changes to the same table are merged row by row when ours and theirs have the same tags for it, `fdl.primary_key` among them, and the base has the same `fdl.primary_key`, or did not hold the table. The columns and their types must be the same in ours and theirs; a table whose columns changed on both sides is a conflict. A base written before tags reads them from its `dataset.json` ([Files of earlier versions](/spec/versions#files-of-earlier-versions)).
+Two changes to the same table are merged row by row when ours and theirs give it the same primary key in `_fdl.tables` and the same asset columns in `_fdl.columns`, and the base gives it the same primary key, or did not hold the table. The columns and their types must be the same in ours and theirs; a table whose columns changed on both sides is a conflict. A version written before `_fdl` gives them by its tags or its `dataset.json` ([Tags of earlier versions](/spec/versions#tags-of-earlier-versions), [Files of earlier versions](/spec/versions#files-of-earlier-versions)).
 
 Each row is found by the values of its primary key, and each key is compared as a table is above: a row only one side added, changed or deleted takes that side's change, and a key both sides changed differently is a conflict. A table where a key holds `NULL` or appears more than once, in any of the three versions, is a conflict.
 
@@ -111,6 +111,6 @@ A push from stale working metadata is refused on two checks:
 
 A writer also refuses to commit or push when `fdl.json` names another `data_dir` than the one it checked out with ([Changing data_dir](/spec/layout#changing-data_dir)).
 
-A host may also refuse a push on rules of its own, such as a table without `fdl.primary_key`, or a dataset without a license or a description the host requires. The format does not define those rules; the host says why it refused. The writer changes what the host asked for, commits again and pushes.
+A host may also refuse a push on rules of its own, such as a table without a primary key in `_fdl.tables`, or a dataset without a license or a description the host requires. The format does not define those rules; the host says why it refused. The writer changes what the host asked for, commits again and pushes.
 
 In every case the writer checks out again, redoes the work and pushes again. After the first check, it may instead merge the branch into its work. Nothing in the repository needs to be cleaned up: the refused version is not named by any ref.
