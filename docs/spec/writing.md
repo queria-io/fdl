@@ -37,7 +37,7 @@ A writer should not make a version that holds what its parent holds, as Git make
 - the last snapshot is the parent's (`ducklake.snapshot_id`), or
 - the same tables and views are there with the same tags, each table with the same columns and types and the same rows, counted as a multiset (order does not matter)
 
-A version never holds only a change of words: what a table or a column means to people is not part of it ([Tags](/spec/versions#tags)). A table rebuilt from the same input is written to new data files, so comparing files or metadata bytes is not enough. A writer compares the files first and reads the rows only of tables whose files differ. A writer that cannot read the rows makes the version. A writer may make one anyway when asked, as `git commit --allow-empty` does.
+Only tables, views and their `fdl.` tags are compared. Words kept outside them, such as a `comment` tag, make no version on their own; words kept as rows of a table make one when the rows change ([Tags](/spec/versions#tags)). A table rebuilt from the same input is written to new data files, so comparing files or metadata bytes is not enough. A writer compares the files first and reads the rows only of tables whose files differ. A writer that cannot read the rows makes the version. A writer may make one anyway when asked, as `git commit --allow-empty` does.
 
 ## Reverting
 
@@ -71,6 +71,8 @@ A table is the same table in two versions when it has the same `schema.table`. E
 | Both changed it, or both added it, differently | Rows merged by primary key, below, or a conflict |
 
 A view is compared by its SQL and its tags, as a table without a primary key.
+
+Comments (DuckLake's `comment`) are not compared, but the merge version keeps them. Each comment of a table, a view or a column is merged as a value: a comment only one side changed takes that side's change, wherever the table itself comes from. When both sides changed it differently, the merge version keeps ours and the writer warns.
 
 ### Rows merged by primary key
 
@@ -109,6 +111,6 @@ A push from stale working metadata is refused on two checks:
 
 A writer also refuses to commit or push when `fdl.json` names another `data_dir` than the one it checked out with ([Changing data_dir](/spec/layout#changing-data_dir)).
 
-A host may also refuse a push on rules of its own, such as a table without `fdl.primary_key`, or a dataset whose license or description the host has not received by its own means. The format does not define those rules; the host says why it refused. The writer changes what the host asked for, commits again and pushes.
+A host may also refuse a push on rules of its own, such as a table without `fdl.primary_key`, or a dataset without a license or a description the host requires. The format does not define those rules; the host says why it refused. The writer changes what the host asked for, commits again and pushes.
 
 In every case the writer checks out again, redoes the work and pushes again. After the first check, it may instead merge the branch into its work. Nothing in the repository needs to be cleaned up: the refused version is not named by any ref.

@@ -335,3 +335,67 @@ def test_a_revert_refuses_a_version_only_a_merge_brought_in(branches) -> None:
 
     out = run("revert", theirs.id, main, "--author", "tester", code=1)
     assert "not in the first-parent history" in out
+
+
+def comments(working: Path, store: LocalStore) -> dict:
+    tables = sql(working, store, "SELECT table_name, comment FROM duckdb_tables() WHERE database_name = 'lake' AND table_name = 'towns'")
+    columns = sql(working, store, "SELECT column_name, comment FROM duckdb_columns() WHERE database_name = 'lake' AND table_name = 'towns'")
+    return {**dict(tables), **dict(columns)}
+
+
+def test_comments_of_ours_are_kept_when_the_table_is_taken_from_theirs(branches) -> None:
+    store, main, feature = branches
+    sql(feature, store, "UPDATE lake.main.towns SET name = 'B' WHERE id = 2; COMMENT ON COLUMN lake.main.towns.id IS 'Town ID'")
+    save(feature, "feature")
+    sql(main, store, "COMMENT ON TABLE lake.main.towns IS 'Towns'; COMMENT ON COLUMN lake.main.towns.name IS 'Town name'")
+    sql(main, store, "CREATE TABLE lake.main.extra AS SELECT 42 AS x")
+    save(main, "main")
+    run("merge", "refs/heads/feature", main, "--author", "tester")
+    assert towns(main, store) == [(1, "a"), (2, "B"), (3, "c")]
+    assert comments(main, store) == {"towns": "Towns", "id": "Town ID", "name": "Town name"}
+
+
+def test_comments_of_theirs_are_kept_when_rows_are_merged(branches) -> None:
+    store, main, feature = branches
+    sql(feature, store, "UPDATE lake.main.towns SET name = 'B' WHERE id = 2; COMMENT ON COLUMN lake.main.towns.name IS 'Town name'")
+    save(feature, "feature")
+    sql(main, store, "UPDATE lake.main.towns SET name = 'C' WHERE id = 3; COMMENT ON TABLE lake.main.towns IS 'Towns'")
+    save(main, "main")
+    run("merge", "refs/heads/feature", main, "--author", "tester")
+    assert towns(main, store) == [(1, "a"), (2, "B"), (3, "C")]
+    assert comments(main, store) == {"towns": "Towns", "id": None, "name": "Town name"}
+
+
+def test_a_comment_both_sides_changed_keeps_ours_with_a_warning(branches) -> None:
+    store, main, feature = branches
+    sql(feature, store, "UPDATE lake.main.towns SET name = 'B' WHERE id = 2; COMMENT ON TABLE lake.main.towns IS 'Theirs'")
+    save(feature, "feature")
+    sql(main, store, "UPDATE lake.main.towns SET name = 'C' WHERE id = 3; COMMENT ON TABLE lake.main.towns IS 'Ours'")
+    save(main, "main")
+    output = run("merge", "refs/heads/feature", main, "--author", "tester")
+    assert "comment of main.towns" in output
+    assert comments(main, store)["towns"] == "Ours"
+
+
+def test_a_comment_only_theirs_changed_comes_over_with_no_table_to_write(branches) -> None:
+    store, main, feature = branches
+    sql(feature, store, "CREATE TABLE lake.main.extra AS SELECT 42 AS x; COMMENT ON TABLE lake.main.towns IS 'Towns'")
+    save(feature, "feature")
+    sql(main, store, "CREATE TABLE lake.main.extra AS SELECT 42 AS x")
+    save(main, "main")
+    run("merge", "refs/heads/feature", main, "--author", "tester")
+    assert comments(main, store)["towns"] == "Towns"
+
+
+def test_a_comment_ours_changed_on_a_view_theirs_made_a_table(branches) -> None:
+    store, main, feature = branches
+    sql(main, store, "CREATE VIEW lake.main.named AS SELECT name FROM lake.main.towns")
+    save(main, "view")
+    run("merge", "refs/heads/main", feature, "--author", "tester")
+    run("push", feature)
+    sql(feature, store, "DROP VIEW lake.main.named; CREATE TABLE lake.main.named AS SELECT 'a' AS name; COMMENT ON TABLE lake.main.named IS 'Theirs'")
+    save(feature, "feature")
+    sql(main, store, "COMMENT ON VIEW lake.main.named IS 'Ours'; INSERT INTO lake.main.towns VALUES (4, 'd')")
+    save(main, "main")
+    output = run("merge", "refs/heads/feature", main, "--author", "tester")
+    assert "comment of main.named" in output
