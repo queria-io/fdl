@@ -375,3 +375,27 @@ def test_a_comment_both_sides_changed_keeps_ours_with_a_warning(branches) -> Non
     output = run("merge", "refs/heads/feature", main, "--author", "tester")
     assert "comment of main.towns" in output
     assert comments(main, store)["towns"] == "Ours"
+
+
+def test_a_comment_only_theirs_changed_comes_over_with_no_table_to_write(branches) -> None:
+    store, main, feature = branches
+    sql(feature, store, "CREATE TABLE lake.main.extra AS SELECT 42 AS x; COMMENT ON TABLE lake.main.towns IS 'Towns'")
+    save(feature, "feature")
+    sql(main, store, "CREATE TABLE lake.main.extra AS SELECT 42 AS x")
+    save(main, "main")
+    run("merge", "refs/heads/feature", main, "--author", "tester")
+    assert comments(main, store)["towns"] == "Towns"
+
+
+def test_a_comment_ours_changed_on_a_view_theirs_made_a_table(branches) -> None:
+    store, main, feature = branches
+    sql(main, store, "CREATE VIEW lake.main.named AS SELECT name FROM lake.main.towns")
+    save(main, "view")
+    run("merge", "refs/heads/main", feature, "--author", "tester")
+    run("push", feature)
+    sql(feature, store, "DROP VIEW lake.main.named; CREATE TABLE lake.main.named AS SELECT 'a' AS name; COMMENT ON TABLE lake.main.named IS 'Theirs'")
+    save(feature, "feature")
+    sql(main, store, "COMMENT ON VIEW lake.main.named IS 'Ours'; INSERT INTO lake.main.towns VALUES (4, 'd')")
+    save(main, "main")
+    output = run("merge", "refs/heads/feature", main, "--author", "tester")
+    assert "comment of main.named" in output

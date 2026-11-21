@@ -208,7 +208,7 @@ def tables(
                 con.execute(statement)
         merging = _Merging(con, keys, repository_data)
         plan = merging.plan()
-        if write and not plan.conflicts and (plan.taken or plan.dropped or plan.rows):
+        if write and not plan.conflicts and (plan.taken or plan.dropped or plan.rows or merging.theirs_commented()):
             merging.apply(plan)
         return plan
     except CatalogError:
@@ -390,6 +390,11 @@ class _Merging:
         held |= {(schema, name, column): text for schema, name, column, text in columns}
         return held
 
+    def theirs_commented(self) -> bool:
+        """Whether theirs changed a comment since the base, which a merge with no table to write still brings."""
+        base, theirs = self.comments["base"], self.comments["theirs"]
+        return any(base.get(slot) != text for slot, text in theirs.items())
+
     def _plan_rows(self, plan: Plan, key: tuple[str, str], *, has_base: bool) -> None:
         label = ".".join(key)
         columns = self.shape("lake", key)
@@ -484,6 +489,8 @@ class _Merging:
         """Merge each comment three ways, as a value: writing a table again would lose ours or theirs."""
         base, ours, theirs = (self.comments[alias] for alias in ("base", "lake", "theirs"))
         merged = self.comments_of("lake")
+        # Read inside the transaction: a view theirs replaced with a table is a table now.
+        views = {tuple(row) for row in self.con.execute("SELECT schema_name, view_name FROM duckdb_views() WHERE database_name = 'lake'").fetchall()}
         for slot in sorted(merged, key=lambda slot: (slot[0], slot[1], slot[2] or "")):
             old, mine, other = (side.get(slot) for side in (base, ours, theirs))
             if mine == old:
@@ -500,7 +507,7 @@ class _Merging:
             if column is not None:
                 target = f"COLUMN {self.name('lake', (schema, name))}.{_quoted(column)}"
             else:
-                target = f"{'VIEW' if (schema, name) in self.views['theirs'] or (schema, name) in self.views['lake'] else 'TABLE'} {self.name('lake', (schema, name))}"
+                target = f"{'VIEW' if (schema, name) in views else 'TABLE'} {self.name('lake', (schema, name))}"
             self.con.execute(f"COMMENT ON {target} IS {text}")
 
     def _take_table(self, key: tuple[str, str]) -> None:
