@@ -94,9 +94,9 @@ INSERT INTO lake._fdl.tables VALUES ('main', 'towns', ['code']);
 fdl meta list <working.sqlite> [<name>] [--json]
 fdl meta get <working.sqlite> <name> <key>
 fdl meta set <working.sqlite> <name> <key> <value>...
+fdl meta set <working.sqlite> (--stdin | -F <rows.json>) [--replace]
 fdl meta unset <working.sqlite> <name> <key>
 fdl meta dump <working.sqlite>
-fdl meta load <working.sqlite> <rows.json|-> [--merge]
 fdl meta objects <working.sqlite>
 ```
 
@@ -126,11 +126,11 @@ fdl meta set lake.sqlite main.population licenses '[{"spdx": "CC-BY-4.0"}]'
 }
 ```
 
-`load` は、書き手のファイルから `_fdl` を作るツールのために、この形のオブジェクトをファイルか標準入力（`-`）から受け取ります。既定では、`_fdl` はこの行だけを持つようになります。`_fdl` のテーブルは、仕様が定めるすべての列で作り直します。`--merge` を付けると、渡した行を主キーで照合して、行が持つ列で変更または追加し、ほかの行は残します。テーブル・列・値が `_fdl` に書けないものだったときや、結果が確認に通らないときは、何も書かずに終了コード 1 で終わります。問題ごとに場所を示します（例: `dataset: issued cannot be written as DATE (at the dataset.issued)`）。
+`set --stdin` は標準入力から、`set -F <rows.json>` はファイルから、この形のオブジェクトを受け取ります。書き手のファイルから `_fdl` を作るツールのためのものです。渡した行を主キーで照合して、行が持つ列で変更または追加し、ほかの行は残します。`--replace` を付けると、`_fdl` はこの行だけを持つようになります。`_fdl` のテーブルは、仕様が定めるすべての列で作り直します。テーブル・列・値が `_fdl` に書けないものだったときや、結果が確認に通らないときは、何も書かずに終了コード 1 で終わります。問題ごとに場所を示します（例: `dataset: issued cannot be written as DATE (at the dataset.issued)`）。
 
 `objects` は、作業メタデータのうち `_fdl` が説明できるテーブルとビューを JSON で表示します。`schema`・`name`・`kind`（`table` か `view`）と、テーブルなら `columns`（列と型）を持ちます。
 
-`_fdl` より前に書かれたバージョンからクローンした作業メタデータでは、`fdl meta` は最初に、そのバージョンが述べていたことを `fdl commit` と同じように `_fdl` に書きます。`get`・`list`・`dump`・`objects` はそれを表示するだけで残しません。`set`・`unset`・`load` はそれを残すので、消したキーはコミットでも消えたままです。
+`_fdl` より前に書かれたバージョンからクローンした作業メタデータでは、`fdl meta` は最初に、そのバージョンが述べていたことを `fdl commit` と同じように `_fdl` に書きます。`get`・`list`・`dump`・`objects` はそれを表示するだけで残しません。`set`・`unset` はそれを残すので、消したキーはコミットでも消えたままです。
 
 ## fdl push
 

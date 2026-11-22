@@ -93,9 +93,9 @@ Refused when:
 fdl meta list <working.sqlite> [<name>] [--json]
 fdl meta get <working.sqlite> <name> <key>
 fdl meta set <working.sqlite> <name> <key> <value>...
+fdl meta set <working.sqlite> (--stdin | -F <rows.json>) [--replace]
 fdl meta unset <working.sqlite> <name> <key>
 fdl meta dump <working.sqlite>
-fdl meta load <working.sqlite> <rows.json|-> [--merge]
 fdl meta objects <working.sqlite>
 ```
 
@@ -125,11 +125,11 @@ fdl meta set lake.sqlite main.population licenses '[{"spdx": "CC-BY-4.0"}]'
 }
 ```
 
-`load` takes an object of that form, from a file or from standard input (`-`), for a tool that builds `_fdl` from the writer's own files. By default `_fdl` then holds these rows and no others: every table of `_fdl` is made again with all the columns the specification gives. With `--merge`, each row given is changed or added by its primary key, with the columns it holds, and the other rows are kept. `load` writes nothing and exits 1 when a table, a column or a value is not one `_fdl` takes, or the result fails the checks; each problem names where it is, such as `dataset: issued cannot be written as DATE (at the dataset.issued)`.
+`set --stdin` takes an object of that form from standard input, and `set -F <rows.json>` from a file, for a tool that builds `_fdl` from the writer's own files. Each row given is changed or added by its primary key, with the columns it holds, and the other rows are kept. With `--replace`, `_fdl` then holds these rows and no others: every table of `_fdl` is made again with all the columns the specification gives. It writes nothing and exits 1 when a table, a column or a value is not one `_fdl` takes, or the result fails the checks; each problem names where it is, such as `dataset: issued cannot be written as DATE (at the dataset.issued)`.
 
 `objects` prints, as JSON, the tables and views of the working metadata that `_fdl` can describe: `schema`, `name`, `kind` (`table` or `view`), and a table's `columns` with their types.
 
-On a working metadata cloned from a version written before `_fdl`, `fdl meta` first writes into `_fdl` what that version said, as `fdl commit` does. `get`, `list`, `dump` and `objects` show it without keeping it; `set`, `unset` and `load` keep it, so a key cleared then stays cleared at the commit.
+On a working metadata cloned from a version written before `_fdl`, `fdl meta` first writes into `_fdl` what that version said, as `fdl commit` does. `get`, `list`, `dump` and `objects` show it without keeping it; `set` and `unset` keep it, so a key cleared then stays cleared at the commit.
 
 ## fdl push
 

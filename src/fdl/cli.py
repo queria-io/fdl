@@ -527,9 +527,18 @@ def _merge(store, working: Path, state: dict, ours, theirs, base, *, message: st
             frozen[name].write_bytes(store.get(layout.version_metadata(version)))
             repo.check_catalog(frozen[name], version)
         # What each side said before `_fdl`, written into `_fdl` where the merge does not say it.
-        fill = (repo.earlier_facts(store, ours, working) or fdl_schema.Facts()).union(
-            repo.earlier_facts(store, theirs, frozen["theirs"]) or fdl_schema.Facts()
-        )
+        said = {
+            "base": repo.earlier_facts(store, base, frozen["base"]),
+            "ours": repo.earlier_facts(store, ours, working),
+            "theirs": repo.earlier_facts(store, theirs, frozen["theirs"]),
+        }
+        conflicts: list[str] = []
+        if all(facts is not None for facts in said.values()):
+            # All three said it before `_fdl`: what one side changed since the base comes over.
+            fill, found = fdl_schema.merged(said["base"], said["ours"], said["theirs"])
+            conflicts = [f"_fdl: {item}" for item in found]
+        else:
+            fill = (said["ours"] or fdl_schema.Facts()).union(said["theirs"] or fdl_schema.Facts())
         plan = merging.tables(
             working,
             frozen["base"],
@@ -538,9 +547,12 @@ def _merge(store, working: Path, state: dict, ours, theirs, base, *, message: st
             data_path=_written(store, state),
             repository_data=repo.data_url(store),
             setup=_read_setup(store) + _storage_setup(state.get("storage")),
+            # Written only when a version can be committed from it.
+            write=not conflicts,
         )
-    if plan.conflicts:
-        raise merging.Conflicts(plan.conflicts)
+    conflicts += plan.conflicts
+    if conflicts:
+        raise merging.Conflicts(conflicts)
     try:
         version = _commit(
             store,
@@ -700,24 +712,64 @@ def meta_get(working: Path = Working, name: str = Name, key: str = Key) -> None:
     typer.echo(metas.show(value))
 
 
+def _rows_given(stdin: bool, rows_file: Path | None) -> dict | None:
+    """The rows of _fdl given as JSON on standard input or in a file, or None for neither."""
+    if stdin and rows_file:
+        raise metas.MetaError("give the rows on --stdin or with -F, not both")
+    if not stdin and rows_file is None:
+        return None
+    text = typer.get_text_stream("stdin").read() if stdin else rows_file.read_text(encoding="utf-8")
+    try:
+        rows = json.loads(text)
+    except ValueError as exc:
+        raise metas.MetaError(f"the rows are not JSON: {exc}") from exc
+    if not isinstance(rows, dict) or not all(
+        isinstance(v, list) and all(isinstance(r, dict) for r in v) for v in rows.values()
+    ):
+        raise metas.MetaError("give the rows as an object of {table: [row, ...]}")
+    return rows
+
+
 @meta_app.command("set")
 def meta_set(
     working: Path = Working,
-    name: str = Name,
-    key: str = Key,
-    values: list[str] = typer.Argument(
-        help="The value: one, several for a list (primary_key code year), JSON for a STRUCT or an attribute"
+    name: str | None = typer.Argument(None, help="., schema, schema.table or schema.table.column"),
+    key: str | None = typer.Argument(
+        None, help="A column of _fdl (title, description, primary_key, asset, ...), or <reader>-<name> for _fdl.attributes"
+    ),
+    values: list[str] | None = typer.Argument(
+        None, help="The value: one, several for a list (primary_key code year), JSON for a STRUCT or an attribute"
+    ),
+    stdin: bool = typer.Option(False, "--stdin", help="Read rows of _fdl as JSON, {table: [row, ...]}, from standard input"),
+    rows_file: Path | None = typer.Option(
+        None, "-F", exists=True, dir_okay=False, help="Read rows of _fdl as JSON, as --stdin does, from this file"
+    ),
+    replace: bool = typer.Option(
+        False, "--replace", help="With --stdin or -F: _fdl holds the rows given and no others"
     ),
 ) -> None:
-    """Set a key, making the _fdl table, column or row it needs.
+    """Set a key, or with --stdin or -F many rows at once, making the _fdl table, column or row it needs.
 
-    Refused when the name is not there, or the value is what the _fdl checks refuse
-    (a primary key on a view, an asset column that is not VARCHAR).
+    Rows given as JSON are changed or added by their primary key, with the columns
+    they hold; with --replace they take the place of every row of _fdl. Refused,
+    with nothing written, when a name is not there, a value is not one _fdl takes,
+    or the result fails the _fdl checks (a primary key on a view, an asset column
+    that is not VARCHAR).
     """
     try:
-        at = metas.target(name)
-        _meta(working, lambda con: metas.set_value(con, at, key, values), write=True)
-    except (*ERRORS, catalog.CatalogError) as exc:
+        rows = _rows_given(stdin, rows_file)
+        if rows is None:
+            if replace:
+                raise metas.MetaError("--replace takes the rows on --stdin or with -F")
+            if name is None or key is None or not values:
+                raise metas.MetaError("give a name, a key and a value, or rows on --stdin or with -F")
+            at = metas.target(name)
+            _meta(working, lambda con: metas.set_value(con, at, key, values), write=True)
+            return
+        if name is not None:
+            raise metas.MetaError("give a name and a key, or rows on --stdin or with -F, not both")
+        _meta(working, lambda con: metas.set_rows(con, rows, replace=replace), write=True)
+    except (*ERRORS, catalog.CatalogError, OSError) as exc:
         raise _fail(exc) from exc
 
 
@@ -735,7 +787,7 @@ def meta_unset(working: Path = Working, name: str = Name, key: str = Key) -> Non
 
 @meta_app.command("dump")
 def meta_dump(working: Path = Working) -> None:
-    """Print every row of _fdl as JSON: {table: [row, ...]}, the form meta load takes."""
+    """Print every row of _fdl as JSON: {table: [row, ...]}, the form meta set --stdin takes."""
     try:
         rows = _meta(working, fdl_schema.load, write=False)
     except (*ERRORS, catalog.CatalogError) as exc:
@@ -759,43 +811,6 @@ def meta_objects(working: Path = Working) -> None:
 
     try:
         typer.echo(json.dumps(_meta(working, listed, write=False), ensure_ascii=False, indent=2))
-    except (*ERRORS, catalog.CatalogError) as exc:
-        raise _fail(exc) from exc
-
-
-@meta_app.command("load")
-def meta_load(
-    working: Path = Working,
-    source: str = typer.Argument(help="A JSON file of {table: [row, ...]}, or - for standard input"),
-    merge: bool = typer.Option(
-        False, "--merge", help="Change or add the rows given, and keep the others (default: _fdl holds these rows and no others)"
-    ),
-) -> None:
-    """Write many rows of _fdl at once, in the form meta dump prints.
-
-    Refused, with nothing written, when a table, column or value is not one _fdl
-    takes, or the result fails the _fdl checks.
-    """
-    try:
-        text = typer.get_text_stream("stdin").read() if source == "-" else Path(source).read_text(encoding="utf-8")
-        rows = json.loads(text)
-        if not isinstance(rows, dict) or not all(isinstance(v, list) and all(isinstance(r, dict) for r in v) for v in rows.values()):
-            raise metas.MetaError("give an object of {table: [row, ...]}")
-
-        def write(con) -> None:
-            if not merge:
-                fdl_schema.replace(con, rows)
-                return
-            for table, items in rows.items():
-                for row in items:
-                    fdl_schema.upsert(con, table, row)
-            problems = fdl_schema.check(con)
-            if problems:
-                raise fdl_schema.SchemaError(problems)
-
-        _meta(working, write, write=True)
-    except (ValueError, OSError) as exc:
-        raise _fail(exc) from exc
     except (*ERRORS, catalog.CatalogError) as exc:
         raise _fail(exc) from exc
 

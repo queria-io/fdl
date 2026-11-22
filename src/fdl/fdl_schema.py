@@ -177,6 +177,50 @@ def from_index(index: dict | None) -> Facts:
     )
 
 
+def merged(base: Facts, ours: Facts, theirs: Facts) -> tuple[Facts, list[str]]:
+    """What ours and theirs say, merged three-way against the base: what one side
+    changed takes that side's change, and what both changed differently is a conflict.
+    Returns the merged facts and the conflicts."""
+    conflicts: list[str] = []
+
+    def pick(what: str, name: str, old: Any, mine: Any, other: Any) -> Any:
+        if mine == other or other == old:
+            return mine
+        if mine == old:
+            return other
+        conflicts.append(f"{what} of {name}: both sides changed it differently")
+        return mine
+
+    keys = {
+        name: list(value)
+        for name in sorted(set(base.primary_keys) | set(ours.primary_keys) | set(theirs.primary_keys))
+        if (value := pick(
+            "the primary key", name, base.primary_keys.get(name), ours.primary_keys.get(name), theirs.primary_keys.get(name)
+        ))
+    }
+
+    def asset_set(facts: Facts, name: str) -> tuple[str, ...] | None:
+        columns = facts.assets.get(name)
+        return tuple(sorted(columns)) if columns else None
+
+    assets: dict[str, list[str]] = {}
+    for name in sorted(set(base.assets) | set(ours.assets) | set(theirs.assets)):
+        value = pick("the asset columns", name, asset_set(base, name), asset_set(ours, name), asset_set(theirs, name))
+        if value:
+            assets[name] = ours.assets[name] if value == asset_set(ours, name) else theirs.assets[name]
+    catalogs = {
+        name: value
+        for name in sorted(set(base.catalogs) | set(ours.catalogs) | set(theirs.catalogs))
+        if (value := pick("the catalog", name, base.catalogs.get(name), ours.catalogs.get(name), theirs.catalogs.get(name)))
+    }
+    unprofiled = frozenset(
+        name
+        for name in base.unprofiled | ours.unprofiled | theirs.unprofiled
+        if pick("profile", name, name in base.unprofiled, name in ours.unprofiled, name in theirs.unprofiled)
+    )
+    return Facts(primary_keys=keys, assets=assets, catalogs=catalogs, unprofiled=unprofiled), conflicts
+
+
 def _names(value: Any) -> bool:
     return isinstance(value, list) and bool(value) and all(isinstance(v, str) for v in value)
 
@@ -268,7 +312,9 @@ def read(con, alias: str = "lake") -> Facts:
     if (SCHEMA, "files") in found.tables:
         assets.update(BUILT_IN_ASSETS)
     catalogs = {
-        row["name"]: row["url"] for row in _select(con, alias, found, "catalogs", ("name", "url")) if row["name"]
+        row["name"]: row["url"]
+        for row in _select(con, alias, found, "catalogs", ("name", "url"))
+        if row["name"] and row["url"]
     }
     return Facts(
         primary_keys=keys,
@@ -399,7 +445,7 @@ def check(con, alias: str = "lake", *, view_columns: dict[tuple[str, str], set[s
             problems.append(f"{SCHEMA}.attributes names the schema {schema}, which is not there")
         elif table and not has(schema, table):
             problems.append(f"{SCHEMA}.attributes names {schema}.{table}, which is not there")
-        elif column and table and not has_column(schema, table, column):
+        elif column and (not table or not has_column(schema, table, column)):
             problems.append(f"{SCHEMA}.attributes names {schema}.{table}.{column}, which is not there")
     return problems
 
@@ -479,11 +525,16 @@ def fill(con, facts: Facts, alias: str = "lake", *, begin: bool = True) -> bool:
                     f"INSERT INTO {target('columns')} (\"schema\", \"table\", \"name\", asset) "
                     f"VALUES ({values(schema, table, column, True)})"
                 )
+    held_catalogs = {r["name"] for r in _select(con, alias, found, "catalogs", ("name",))}
     for name, url in sorted(facts.catalogs.items()):
         if name in said.catalogs:
             continue
         ensure("catalogs", {"url": "VARCHAR"})
-        statements.append(f"INSERT INTO {target('catalogs')} (\"name\", url) VALUES ({values(name, url)})")
+        if name in held_catalogs:
+            # A row with the name and no url says nothing of it.
+            statements.append(f"UPDATE {target('catalogs')} SET url = {_lit(url)} WHERE \"name\" = {_lit(name)}")
+        else:
+            statements.append(f"INSERT INTO {target('catalogs')} (\"name\", url) VALUES ({values(name, url)})")
     if not statements:
         return False
     if begin:
@@ -527,9 +578,12 @@ def has_schema(con, alias: str = "lake") -> bool:
 
 
 def ensure(con, table: str, columns: Iterable[str] = (), alias: str = "lake") -> dict[str, str]:
-    """Make the schema `_fdl`, ``_fdl.<table>`` with its primary key, and ``columns``
-    where they are missing, with the types the specification gives. Returns each
+    """Make the schema `_fdl`, ``_fdl.<table>`` with every column the specification
+    gives it, and ``columns`` where a table already there lacks them. Returns each
     column the table has and its type.
+
+    A new table gets every column, so that two branches that set different keys
+    hold the same columns and their rows merge.
 
     Raises `SchemaError` for a table or column the specification does not define.
     """
@@ -542,8 +596,8 @@ def ensure(con, table: str, columns: Iterable[str] = (), alias: str = "lake") ->
         con.execute(f"CREATE SCHEMA {alias}.{_q(SCHEMA)}")
     held = objects(con, alias).tables.get((SCHEMA, table))
     if held is None:
-        con.execute(create_sql(table, columns, alias=alias))
-        return {c: TYPES[table][c] for c in dict.fromkeys([*KEYS[table], *columns])}
+        con.execute(create_sql(table, alias=alias))
+        return dict(TYPES[table])
     for column in columns:
         if column not in held:
             con.execute(f"ALTER TABLE {alias}.{_q(SCHEMA)}.{_q(table)} ADD COLUMN {_q(column)} {TYPES[table][column]}")
@@ -554,10 +608,10 @@ def ensure(con, table: str, columns: Iterable[str] = (), alias: str = "lake") ->
 def _expression(kind: str, value: Any) -> tuple[str, Any]:
     """The SQL expression and parameter that give ``value`` as a ``kind``."""
     upper = kind.upper()
-    if upper == "JSON":
-        return "CAST(? AS JSON)", json.dumps(value, ensure_ascii=False, default=str)
     if value is None:
         return "NULL", None
+    if upper == "JSON":
+        return "CAST(? AS JSON)", json.dumps(value, ensure_ascii=False, default=str)
     if isinstance(value, str) and "STRUCT" not in upper and not upper.endswith("[]"):
         return f"CAST(? AS {kind})", value
     return (
@@ -577,8 +631,11 @@ def _unwritable(con, table: str, row: dict[str, Any], types: dict[str, str]) -> 
             continue
         expression, parameter = _expression(types[column], value)
         try:
-            con.execute(f"SELECT {expression}", [parameter]).fetchone()
+            written = con.execute(f"SELECT {expression}", [parameter]).fetchone()[0]
         except duckdb.Error:
+            written = None
+        # `from_json` gives NULL for a value of another shape (text for a list, say).
+        if written is None:
             found.append(f"{table}: {column} cannot be written as {types[column]} (at {where}.{column})")
     return found
 

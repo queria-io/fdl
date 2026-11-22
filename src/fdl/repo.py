@@ -169,9 +169,35 @@ def commit(
     """
     setup = list(setup)
     reading = working_data or catalog.working_data_path(working)
-    described = fdl_schema.describe(
-        working, data_path=reading, setup=setup, earlier=fill if fill is not None else earlier
-    )
+    writing = fill if fill is not None else earlier
+
+    def unchanged() -> bool:
+        try:
+            return catalog.same_contents(
+                working,
+                parent.ducklake.snapshot_id,
+                data_path=working_data,
+                setup=setup,
+                ignore_schema=None if earlier is None else fdl_schema.SCHEMA,
+            )
+        except catalog.CatalogError as exc:
+            raise CannotCompare(str(exc)) from exc
+
+    compared: bool | None = None
+    if (
+        not allow_empty
+        and parent is not None
+        and earlier is not None
+        and writing
+        and fdl_schema.expected_rows(writing) == fdl_schema.expected_rows(earlier)
+        and not _read_fdl(working, data_path=reading, setup=setup, act=fdl_schema.rows)
+    ):
+        # Told before `_fdl` is written into the working metadata: a commit that makes
+        # no version leaves it at the parent's snapshot, where `fdl merge` needs it.
+        compared = unchanged()
+        if compared:
+            raise NothingToCommit(parent)
+    described = fdl_schema.describe(working, data_path=reading, setup=setup, earlier=writing)
     Path(out_dir).mkdir(parents=True, exist_ok=True)
     frozen = Path(out_dir) / f".freezing-{new_id()}.duckdb"
     try:
@@ -185,19 +211,9 @@ def commit(
                 f"{len(absolute)} file(s) are recorded with an absolute path "
                 f"(first: {absolute[0].path}); rebuild so they sit under the data path"
             )
-        if not allow_empty and parent is not None:
-            try:
-                unchanged = catalog.same_contents(
-                    working,
-                    parent.ducklake.snapshot_id,
-                    data_path=working_data,
-                    setup=setup,
-                    ignore_schema=None if earlier is None else fdl_schema.SCHEMA,
-                )
-            except catalog.CatalogError as exc:
-                raise CannotCompare(str(exc)) from exc
+        if not allow_empty and parent is not None and compared is not False:
             # `_fdl` holding only what an earlier parent said is the parent's.
-            if unchanged and (earlier is None or described.rows == fdl_schema.expected_rows(earlier)):
+            if unchanged() and (earlier is None or described.rows == fdl_schema.expected_rows(earlier)):
                 raise NothingToCommit(parent)
         return record(
             frozen,
@@ -742,6 +758,11 @@ def _tables_read(sql: str | None) -> set[tuple[str, str]] | None:
 
 def _read_facts(metadata: Path, *, data_path: str, setup: Iterable[str] = ()) -> fdl_schema.Facts:
     """What `_fdl` says in a metadata, read with its data files under ``data_path``."""
+    return _read_fdl(metadata, data_path=data_path, setup=setup, act=fdl_schema.read)
+
+
+def _read_fdl(metadata: Path, *, data_path: str, setup: Iterable[str] = (), act: Callable):
+    """``act`` on a connection with ``metadata`` attached read-only as ``lake``."""
     import duckdb
 
     con = duckdb.connect()
@@ -749,7 +770,7 @@ def _read_facts(metadata: Path, *, data_path: str, setup: Iterable[str] = ()) ->
         for statement in [*setup, *catalog.attach_sql(Path(metadata), alias="lake", data_path=data_path, read_only=True)]:
             if statement:
                 con.execute(statement)
-        return fdl_schema.read(con)
+        return act(con)
     finally:
         con.close()
 

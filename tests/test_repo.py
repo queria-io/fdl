@@ -857,7 +857,9 @@ def test_what_tags_said_is_written_into_fdl(tmp_path: Path, remote) -> None:
             working, tmp_path / "local", parent=first, data_path=data_path(remote), author=AUTHOR,
             message="m", allow_empty=False, earlier=earlier,
         )
-    assert diff.working(working, first)["tables"]["added"] == ["_fdl.columns", "_fdl.tables"]
+    # ... and is not written then: the working metadata stays at the parent's snapshot.
+    assert diff.working(working, first)["tables"]["added"] == []
+    assert catalog.last_snapshot(working) == first.ducklake.snapshot_id
 
     build(working, remote, "INSERT INTO lake.main.towns VALUES (2, NULL)")
     second = repo.commit(

@@ -15,6 +15,7 @@ import json
 from dataclasses import dataclass
 from typing import Any
 
+from . import fdl_schema
 from .fdl_schema import KEYS, SCHEMA, TYPES, SchemaError, _q, check, delete, objects, upsert
 
 #: The tables a name stands for, by how many parts it has.
@@ -141,6 +142,21 @@ def set_value(con, at: Target, key: str, values: list[str]) -> None:
     kind = held.get(to.column) or TYPES[to.table][to.column]
     upsert(con, to.table, {**to.where, to.column: _parse(kind, values)})
     problems = [p for p in check(con) if p not in before]
+    if problems:
+        raise SchemaError(problems)
+
+
+def set_rows(con, rows: dict[str, list[dict[str, Any]]], *, replace: bool = False) -> None:
+    """Write ``rows`` (``{table: [row, ...]}``, as `fdl_schema.load` gives them) into `_fdl`:
+    each changed or added by its primary key, or, with ``replace``, in the place of
+    every row (`fdl_schema.replace`). Raises `SchemaError` when `_fdl` then fails its checks."""
+    if replace:
+        fdl_schema.replace(con, rows)
+        return
+    for table, items in rows.items():
+        for row in items:
+            fdl_schema.upsert(con, table, row)
+    problems = check(con)
     if problems:
         raise SchemaError(problems)
 

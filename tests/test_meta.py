@@ -133,6 +133,19 @@ def test_what_an_earlier_version_said_can_be_changed(lake, tmp_path: Path) -> No
     assert "primary_key" not in files_json(store)["tables"]["main.towns"]
 
 
+def test_nothing_to_commit_leaves_what_an_earlier_version_said_unwritten(lake, tmp_path: Path) -> None:
+    working, store = lake
+    _tag(working, "towns", tags.PRIMARY_KEY, ["code"])
+    run("commit", working, "-m", "tagged", "--author", "tester")
+    run("push", working)
+    again = tmp_path / "again.sqlite"
+    run("clone", tmp_path / "remote", again)
+
+    assert "Nothing to commit" in run("commit", again, "-m", "nothing", "--author", "tester")
+    # Still at the version's snapshot, so `fdl merge` takes it.
+    assert catalog.last_snapshot(again) == repo.head(store).ducklake.snapshot_id
+
+
 def _attached(working: Path, store: LocalStore):
     con = duckdb.connect()
     for statement in catalog.attach_sql(working, alias="lake", data_path=repo.data_url(store)):
@@ -171,6 +184,7 @@ def test_replace_writes_the_rows_and_load_reads_them_back(lake) -> None:
     [
         ({"dataset": [{"issued": "someday"}]}, "dataset: issued cannot be written as DATE (at the dataset.issued)"),
         ({"columns": [{"schema": "main", "table": "towns", "name": "code", "asset": "maybe"}]}, "columns: asset cannot be written as BOOLEAN (at main.towns.code.asset)"),
+        ({"tables": [{"schema": "main", "name": "towns", "primary_key": "code"}]}, "tables: primary_key cannot be written as VARCHAR[] (at main.towns.primary_key)"),
         ({"tables": [{"schema": "main", "name": "towns", "colour": "red"}]}, "colour, which is not a column"),
         ({"topics": []}, "_fdl.topics is not a table"),
         ({"tables": [{"schema": "main", "name": "names", "primary_key": ["name"]}]}, "gives the view main.names a primary_key"),
@@ -189,15 +203,15 @@ def test_replace_refuses_what_it_cannot_write(lake, rows, said) -> None:
     con.close()
 
 
-def test_load_and_dump(lake, tmp_path: Path) -> None:
+def test_set_takes_rows_as_json_and_dump_prints_them(lake, tmp_path: Path) -> None:
     working, _ = lake
     rows = tmp_path / "rows.json"
     rows.write_text(json.dumps({"dataset": [{"title": "Towns"}], "tables": [{"schema": "main", "name": "towns", "title": "Towns"}]}))
-    run("meta", "load", working, rows)
+    run("meta", "set", working, "--replace", "-F", rows)
     assert json.loads(run("meta", "dump", working))["tables"] == [{"schema": "main", "name": "towns", "title": "Towns"}]
 
     merged = runner.invoke(
-        app, ["meta", "load", str(working), "-", "--merge"],
+        app, ["meta", "set", str(working), "--stdin"],
         input=json.dumps({"tables": [{"schema": "main", "name": "towns", "description": "One a year"}]}),
     )
     assert merged.exit_code == 0, merged.output
@@ -206,7 +220,7 @@ def test_load_and_dump(lake, tmp_path: Path) -> None:
         "tables": [{"schema": "main", "name": "towns", "title": "Towns", "description": "One a year"}],
     }
 
-    refused = runner.invoke(app, ["meta", "load", str(working), "-"], input=json.dumps({"tables": [{"schema": "main", "name": "gone"}]}))
+    refused = runner.invoke(app, ["meta", "set", str(working), "--replace", "--stdin"], input=json.dumps({"tables": [{"schema": "main", "name": "gone"}]}))
     assert refused.exit_code == 1
     assert "main.gone, which is not there" in refused.output
     assert json.loads(run("meta", "dump", working))["dataset"] == [{"title": "Towns"}]
@@ -218,3 +232,18 @@ def test_objects_lists_the_tables_and_views(lake) -> None:
     listed = json.loads(run("meta", "objects", working))
     assert [(o["schema"], o["name"], o["kind"]) for o in listed] == [("main", "names", "view"), ("main", "towns", "table")]
     assert listed[1]["columns"][0] == {"name": "code", "type": "INTEGER"}
+
+
+@pytest.mark.parametrize(
+    "args, said",
+    [
+        (["--replace", "main.towns", "title", "x"], "--replace takes the rows"),
+        (["main.towns"], "give a name, a key and a value"),
+        (["main.towns", "title", "--stdin"], "not both"),
+    ],
+)
+def test_set_refuses_mixed_arguments(lake, args, said) -> None:
+    working, _ = lake
+    result = runner.invoke(app, ["meta", "set", str(working), *args], input="{}")
+    assert result.exit_code == 1
+    assert said in result.output
