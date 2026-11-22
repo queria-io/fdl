@@ -430,7 +430,7 @@ def test_a_row_dropped_on_one_side_and_changed_on_the_other_is_a_conflict(branch
 
 def tables_json(store: LocalStore) -> dict:
     version = repo.head(store)
-    return json.loads(store.get(f"versions/{version.id}/{version.files.path}"))
+    return json.loads(store.get(f"versions/{version.id}/{version.tables.path}"))
 
 
 def test_columns_each_side_added_or_dropped_are_merged(branches) -> None:
@@ -473,3 +473,66 @@ def test_a_row_both_sides_added_differently_is_a_conflict(branches) -> None:
 
     out = run("merge", "refs/heads/feature", main, "--author", "tester", code=1)
     assert "main.towns: both sides changed 1 row(s) differently: id=4" in out
+
+
+def test_a_column_renamed_on_one_side_takes_cells_changed_on_the_other(branches) -> None:
+    store, main, feature = branches
+    sql(feature, store, "ALTER TABLE lake.main.towns RENAME COLUMN name TO title")
+    save(feature, "feature")
+    sql(main, store, "UPDATE lake.main.towns SET name = 'y' WHERE id = 2")
+    save(main, "main")
+
+    run("merge", "refs/heads/feature", main, "--author", "tester")
+    assert sql(main, store, "SELECT id, title FROM lake.main.towns ORDER BY id") == [(1, "a"), (2, "y"), (3, "c")]
+
+
+def test_cells_changed_on_one_side_are_cast_to_the_type_the_other_gave(branches) -> None:
+    store, main, feature = branches
+    sql(feature, store, "ALTER TABLE lake.main.towns ALTER COLUMN id SET DATA TYPE BIGINT")
+    sql(feature, store, "ALTER TABLE lake.main.towns ADD COLUMN size INTEGER; UPDATE lake.main.towns SET size = 1")
+    save(feature, "size")
+    run("merge", "refs/heads/feature", main, "--author", "tester")
+    run("push", main)
+    sql(feature, store, "ALTER TABLE lake.main.towns ALTER COLUMN size SET DATA TYPE BIGINT")
+    save(feature, "feature")
+    sql(main, store, "UPDATE lake.main.towns SET size = 2 WHERE id = 2")
+    save(main, "main")
+
+    run("merge", "refs/heads/feature", main, "--author", "tester")
+    assert sql(main, store, "SELECT id, size, typeof(size) FROM lake.main.towns ORDER BY id") == [
+        (1, 1, "BIGINT"),
+        (2, 2, "BIGINT"),
+        (3, 1, "BIGINT"),
+    ]
+
+
+def test_a_cell_that_does_not_cast_to_the_new_type_is_a_conflict(branches) -> None:
+    store, main, feature = branches
+    sql(feature, store, "ALTER TABLE lake.main.towns ADD COLUMN size VARCHAR; UPDATE lake.main.towns SET size = '1'")
+    save(feature, "size")
+    run("merge", "refs/heads/feature", main, "--author", "tester")
+    run("push", main)
+    # Made again, so the column is found by name, in a type its values do not all cast to.
+    sql(feature, store, "CREATE OR REPLACE TABLE lake.main.towns AS SELECT id, name, size::INTEGER AS size FROM lake.main.towns")
+    save(feature, "feature")
+    sql(main, store, "UPDATE lake.main.towns SET size = 'big' WHERE id = 2")
+    save(main, "main")
+
+    out = run("merge", "refs/heads/feature", main, "--author", "tester", code=1)
+    assert "main.towns: both sides changed 1 row(s) differently: id=2" in out
+
+
+def test_a_not_null_column_one_side_added_while_the_other_added_rows_is_a_conflict(branches) -> None:
+    store, main, feature = branches
+    sql(feature, store, "INSERT INTO lake.main.towns VALUES (4, 'd')")
+    save(feature, "feature")
+    sql(
+        main,
+        store,
+        "CREATE OR REPLACE TABLE lake.main.towns (id INTEGER, name VARCHAR, size INTEGER NOT NULL); "
+        "INSERT INTO lake.main.towns VALUES (1, 'a', 1), (2, 'b', 1), (3, 'c', 1)",
+    )
+    save(main, "main")
+
+    out = run("merge", "refs/heads/feature", main, "--author", "tester", code=1)
+    assert "main.towns: ours added the column size NOT NULL with no default, and theirs added rows" in out

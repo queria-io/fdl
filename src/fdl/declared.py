@@ -108,6 +108,13 @@ def changed(old: Facts, new: Facts, names: set[str]) -> list[str]:
     return sorted(name for name in names if old.of(name) != new.of(name))
 
 
+def dependencies_changed(old: Facts, new: Facts) -> list[str]:
+    """The names of ``dependencies`` only one holds, or whose ``url`` or ``version``
+    differs (the ``dependencies`` of a version's diff)."""
+    names = old.dependencies.keys() | new.dependencies.keys()
+    return sorted(name for name in names if old.dependencies.get(name) != new.dependencies.get(name))
+
+
 def merged(base: Facts, ours: Facts, theirs: Facts) -> tuple[Facts, list[str]]:
     """Ours and theirs merged three-way against the base: what one side changed
     takes that side's change, and what both changed differently is a conflict.

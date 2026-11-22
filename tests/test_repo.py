@@ -6,8 +6,10 @@ version that comes out the other side.
 
 from __future__ import annotations
 
+import dataclasses
 import datetime as dt
 import hashlib
+import importlib.util
 import json
 import re
 import uuid
@@ -17,9 +19,13 @@ import duckdb
 import pytest
 
 from fdl import catalog, declared, diff, layout, refs, repo
-from fdl import migrate as migrating
 from fdl.stores import LocalStore
 from fdl.version import is_id, new_id, parse
+
+_SCRIPT = Path(__file__).parents[1] / "scripts" / "migrate_to_tables_json.py"
+_spec = importlib.util.spec_from_file_location("migrate_to_tables_json", _SCRIPT)
+migrating = importlib.util.module_from_spec(_spec)
+_spec.loader.exec_module(migrating)
 
 REAL_READ = refs.read
 
@@ -202,6 +208,22 @@ def test_push_refuses_a_catalog_whose_data_files_are_gone(tmp_path: Path, remote
 
     with pytest.raises(repo.RepoError, match="not in the repository"):
         repo.push(remote, tmp_path / "local" / first.id, first)
+    assert remote.head(layout.version_record(first.id)) is None
+
+
+def test_push_refuses_a_tables_json_that_does_not_match(tmp_path: Path, remote) -> None:
+    build(tmp_path / "work.sqlite", remote, "CREATE TABLE lake.main.towns AS SELECT 1 AS id")
+    first = commit(tmp_path, remote)
+    written = tmp_path / "local" / first.id / layout.TABLES
+    index = json.loads(written.read_text())
+    index["tables"]["main.towns"]["files"] = []
+    written.write_text(json.dumps(index))
+    with pytest.raises(repo.RepoError, match="tables.json is not the one version.json names"):
+        repo.push(remote, tmp_path / "local" / first.id, first)
+    content = written.read_bytes()
+    tables = repo.File(path=layout.TABLES, bytes=len(content), sha256=hashlib.sha256(content).hexdigest())
+    with pytest.raises(repo.RepoError, match="tables.json and the metadata name different files"):
+        repo.push(remote, tmp_path / "local" / first.id, dataclasses.replace(first, tables=tables))
     assert remote.head(layout.version_record(first.id)) is None
 
 
@@ -633,6 +655,7 @@ def test_a_version_records_what_changed_since_its_parent(tmp_path: Path, remote)
         "columns": [],
         "data": ["main.towns"],
         "declarations": ["main.towns"],
+        "dependencies": [],
     }
     repo.push(remote, tmp_path / "local" / second.id, second)
     # fdl diff reads it from the record.
@@ -771,6 +794,29 @@ def test_declarations_the_tables_refuse_are_not_committed(tmp_path: Path, remote
     with pytest.raises(declared.DeclarationError, match=re.escape(refused)):
         commit(tmp_path, remote, facts=facts)
     assert not (tmp_path / "local").exists() or not any((tmp_path / "local").iterdir())
+
+
+def test_a_change_of_dependencies_is_in_the_diff(tmp_path: Path, remote) -> None:
+    build(tmp_path / "work.sqlite", remote, "CREATE TABLE lake.main.towns AS SELECT 1 AS id")
+    old = declared.Facts(dependencies={"a": {"url": "https://example.org/a/"}, "b": {"url": "https://example.org/b/"}})
+    first = commit(tmp_path, remote, facts=old)
+    repo.push(remote, tmp_path / "local" / first.id, first)
+    new = declared.Facts(dependencies={"a": {"url": "https://example.org/a/", "version": new_id()}, "c": {"url": "https://example.org/c/"}})
+    second = commit(tmp_path, remote, parent=first, allow_empty=False, facts=new, inherited=old)
+    repo.push(remote, tmp_path / "local" / second.id, second)
+    assert second.diff["dependencies"] == ["a", "b", "c"]
+    assert diff.versions(remote, first, second)["dependencies"] == ["a", "b", "c"]
+    assert "~ dependency b" in diff.lines(second.diff)
+
+
+@pytest.mark.parametrize(
+    ("pinned", "kept"),
+    [({"census"}, {"main.towns", "main.mine"}), (set(), {"main.mine"})],
+)
+def test_a_view_reading_another_dataset_keeps_its_profile_only_when_pinned(pinned, kept) -> None:
+    views = {"main.towns": "SELECT * FROM census.main.towns", "main.mine": "SELECT * FROM main.t"}
+    found = repo._unchanged_views(views, dict(views), {"main.t"}, set(), dependencies={"census"}, pinned=pinned)
+    assert found == kept
 
 
 def test_declarations_follow_a_renamed_column_and_leave_with_a_dropped_table(tmp_path: Path, remote) -> None:

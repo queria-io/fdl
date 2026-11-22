@@ -922,8 +922,7 @@ def status(
         now = _declared(store, state, working)
         named = {*committed.primary_keys, *committed.assets, *committed.unprofiled, *now.primary_keys, *now.assets, *now.unprofiled}
         result["declarations"] = declaring.changed(committed, now, named)
-        if committed.dependencies != now.dependencies:
-            result["dependencies"] = True
+        result["dependencies"] = declaring.dependencies_changed(committed, now)
     except (*ERRORS, catalog.CatalogError, OSError) as exc:
         raise _fail(exc) from exc
     if as_json:
@@ -936,25 +935,6 @@ def status(
         typer.echo(f"Fast-forwarded, not pushed: fdl push {working} moves {state['ref']} there")
     for line in diffs.lines(result) or ["Nothing to commit"]:
         typer.echo(line)
-
-
-@app.command()
-def migrate(remote: str = Remote) -> None:
-    """Bring every version written by fdl-cli 0.33 or earlier to the layout of tables.json.
-
-    A one-off step before this version of fdl can read the dataset: the
-    declarations kept in files.json, fdl. tags or dataset.json move to
-    tables.json, and the earlier files are deleted. Run it once per dataset,
-    with nobody pushing meanwhile. Running it again skips what is done.
-    """
-    from . import migrate as migrating
-
-    store = _store(remote)
-    try:
-        done = migrating.migrate(store, setup=_read_setup(store), echo=typer.echo)
-    except (*ERRORS, catalog.CatalogError) as exc:
-        raise _fail(exc) from exc
-    typer.echo(f"{len(done)} version(s) migrated" if done else "Nothing to migrate")
 
 
 @app.command()

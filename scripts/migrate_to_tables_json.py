@@ -1,10 +1,14 @@
-"""A one-off migration of a dataset to `tables.json`.
+"""A one-off migration of a dataset to `tables.json`, outside the fdl package.
+
+    uv run python scripts/migrate_to_tables_json.py REMOTE
 
 Versions written by fdl-cli 0.33 and earlier keep their declarations in
 `files.json` and the `fdl.` tags of their metadata, or, the earliest, in
 `dataset.json`; some name their metadata `ducklake.duckdb` or keep earlier
 snapshots in it, and some list other files in `tree.json`. `migrate` brings each
-live version to the current layout, in place and under the same ID:
+live version to the current layout, in place and under the same ID. Run it
+once per dataset, with nobody pushing meanwhile; running it again skips what
+is done:
 
 1. Read the declarations from the tags, `files.json` or `dataset.json`.
 2. Freeze the metadata again as `metadata.db` with one snapshot and no `fdl.` tags.
@@ -15,8 +19,7 @@ live version to the current layout, in place and under the same ID:
    once no version has a `tree.json`, `objects/`.
 
 A version past retention keeps only its record, which is written again in the
-same shape without `tables`. This module and the readers of those formats go
-once every dataset is migrated.
+same shape without `tables`. This script goes once every dataset is migrated.
 """
 
 from __future__ import annotations
@@ -24,14 +27,17 @@ from __future__ import annotations
 import hashlib
 import json
 import shutil
+import sys
 import tempfile
 from pathlib import Path
 from typing import Any, Iterable
 
-from . import catalog, declared, layout, repo
-from .catalog import _open
-from .store import Store, is_missing
-from .version import DuckLake, File, Metadata, Version
+from fdl import catalog, declared, layout, repo
+from fdl.catalog import _open
+from fdl.cli import _read_setup
+from fdl.store import Store, is_missing
+from fdl.stores import open_store
+from fdl.version import DuckLake, File, Metadata, Version
 
 #: What earlier versions kept beside the record, deleted once migrated.
 _EARLIER_FILES = ("files.json", "dataset.json", "tree.json", "version.json.sig", "ducklake.duckdb")
@@ -242,3 +248,11 @@ def _drop_tags(metadata: Path) -> None:
             con.execute("CHECKPOINT")
     finally:
         con.close()
+
+
+if __name__ == "__main__":
+    if len(sys.argv) != 2:
+        sys.exit("usage: migrate_to_tables_json.py REMOTE")
+    store = open_store(sys.argv[1])
+    done = migrate(store, setup=_read_setup(store))
+    print(f"{len(done)} version(s) migrated" if done else "Nothing to migrate")

@@ -10,7 +10,8 @@ two of its snapshots. Then one comparison lists the differences, in four kinds:
 - data files: a table whose files differ, even with the same rows
 
 Between two versions, and in a commit's own diff, ``declarations`` lists the
-tables and views whose declarations changed.
+tables and views whose declarations changed, and ``dependencies`` the other
+datasets the views read whose entry changed.
 """
 
 from __future__ import annotations
@@ -175,7 +176,7 @@ def lines(result: dict[str, Any]) -> list[str]:
         + [column(c) for c in result["columns"]]
         + [f"~ data {name}" for name in result["data"]]
         + [f"~ declarations {name}" for name in result.get("declarations", [])]
-        + (["~ dependencies"] if result.get("dependencies") else [])
+        + [f"~ dependency {name}" for name in result.get("dependencies", [])]
     )
 
 
@@ -208,9 +209,11 @@ def versions(store: Store, old: Version | None, new: Version) -> dict[str, Any]:
     before, after = (indexed(store, old) if old else None), indexed(store, new)
     from . import declared
 
+    old_facts, new_facts = declared.from_index(before), declared.from_index(after)
     return {
         **compare(from_version(before), from_version(after)),
-        "declarations": declared.changed(declared.from_index(before), declared.from_index(after), _names(before) & _names(after)),
+        "declarations": declared.changed(old_facts, new_facts, _names(before) & _names(after)),
+        "dependencies": declared.dependencies_changed(old_facts, new_facts),
     }
 
 

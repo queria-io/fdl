@@ -108,7 +108,7 @@ def test_the_round_trip_over_http(served, tmp_path: Path) -> None:
     frozen = tmp_path / "frozen.duckdb"
     frozen.write_bytes(local.get(layout.version_metadata(second)))
     assert catalog.absolute_paths(frozen) == []
-    assert len(catalog.data_files(frozen)) == 3
+    assert len(catalog.data_files(frozen)) == 2
     # Nothing was deleted or listed beyond what push needs.
     assert all(method != "DELETE" for method, _ in server.requests)
 

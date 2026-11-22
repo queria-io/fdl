@@ -43,7 +43,7 @@ For a repository over HTTP, new data files are written to `<working.sqlite>.data
 
 With `--storage`, the working metadata reads and writes the data files in the repository's own storage instead: `--storage` is the repository's root there, and new files go straight under its `data_dir`, so the push has none to upload. The keys come from the `AWS_*` variables (`AWS_ENDPOINT_URL` for R2 and other S3-compatible stores), or from a DuckDB secret of your own. The build that writes to the working metadata needs them too.
 
-The description of the dataset, its primary keys and its assets are tables of the schema `_fdl` in the working metadata ([The _fdl schema](/spec/fdl-schema)), so the clone holds them with the data. It writes no other file.
+`<working.sqlite>.fdl.json` also keeps the version's [declarations](/spec/versions#declarations) (primary keys, asset columns, profiles and dependencies), which `fdl declare` changes and the next commit writes. It writes no other file.
 
 Refused when the version is past retention, when its metadata's sha256 is not the one `version.json` records, or when the metadata names a data file outside the data folder.
 
@@ -65,71 +65,46 @@ fdl commit <working.sqlite> -m "What changed" [--author alice] [--allow-empty] [
 
 Freezes the working metadata into a new version whose parent is the version it was cloned at (or last pushed), and keeps it in `<working.sqlite>.pending/` until `fdl push` sends it. Nothing in the repository changes. It prints the new version ID and its `seq`. Committing again before pushing replaces the version not pushed yet.
 
-The command reads the schema `_fdl` of the working metadata (see [The _fdl schema](/spec/fdl-schema)) and checks it against the tables and views first. Write `_fdl` with SQL, as any other schema, or with `fdl meta`, before you commit:
+The command checks the declarations kept beside the working metadata (see `fdl declare`) against its tables and views first. A commit starts from its parent's declarations: a table made again under the same name, as dbt's `CREATE OR REPLACE` does, keeps them, a table dropped loses them, and a column renamed since it was declared is declared under its new name.
 
-```sql
-CREATE SCHEMA lake._fdl;
-CREATE TABLE lake._fdl.tables ("schema" VARCHAR, "name" VARCHAR, primary_key VARCHAR[]);
-INSERT INTO lake._fdl.tables VALUES ('main', 'towns', ['code']);
-```
+It writes the version's `tables.json` (see [tables.json](/spec/versions#tablesjson)): each table's data files and columns with its `primary_key`, `assets` and `profile`, each view's SQL and the columns its query returns, and `dependencies`. To find a view's columns, it attaches each dependency under its name, at the version it names or else the one its `main` holds; a view whose query it cannot bind is listed without columns. Comments in the metadata (`COMMENT ON`) are kept as they are and not read.
 
-It writes into the version's `files.json` each table's `primary_key` and asset columns, each view's SQL and the columns its query returns, and `_fdl.catalogs` (see [files.json](/spec/versions#filesjson)). To find a view's columns, it attaches each repository `_fdl.catalogs` names under its name, at the version its `HEAD` holds; a view whose query it cannot bind is listed without columns. Comments in the metadata (`COMMENT ON`) are kept as they are and not read. The version has no `dataset.json` and no `tree.json`, and the command writes no tags.
+The columns declared in `assets` hold the sha256 of files (see [Assets](/spec/versions#assets)). The command reads the values those columns hold, and the push uploads the files the repository lacks from the `--assets` folder to `assets/<sha256>`, by their content: file names in the folder do not matter. Keep the dataset's documents (a `README.md`, its images) in a table of your own whose `sha256` column is declared an asset column, and their files in the `--assets` folder (see `fdl assets`).
 
-When the version it builds on was written before `_fdl` (fdl-cli 0.33 and earlier), the command first writes into `_fdl` the primary keys, assets, catalogs and `"profile": false` that version's `dataset.json` or `fdl.` tags said, where `_fdl` does not already say them (see [Tags of earlier versions](/spec/versions#tags-of-earlier-versions)). This changes the working metadata. The tables of `_fdl` that hold only that are not a change: they make no version on their own and are not listed as added.
-
-Columns marked `asset` in `_fdl.columns`, and `sha256` of `_fdl.files`, hold the sha256 of files (see [Assets](/spec/versions#assets)). The command reads the values those columns hold, and the push uploads the files the repository lacks from the `--assets` folder to `assets/<sha256>`, by their content: file names in the folder do not matter. Keep the dataset's documents (a `README.md`, its images) in `_fdl.files` and their files in the `--assets` folder (see `fdl assets`).
-
-When the version would hold what its parent holds (see [When nothing changed](/spec/writing#when-nothing-changed)), it prints `Nothing to commit`, makes nothing and exits 0. A rebuild that writes the same rows to new files counts as unchanged. `--allow-empty` makes the version anyway. If the rows cannot be read to tell, it warns and makes the version.
+When the version would hold what its parent holds, with the same declarations (see [When nothing changed](/spec/writing#when-nothing-changed)), it prints `Nothing to commit`, makes nothing and exits 0. A rebuild that writes the same rows to new files counts as unchanged. `--allow-empty` makes the version anyway. If the rows cannot be read to tell, it warns and makes the version.
 
 Refused when:
 
-- `_fdl` fails one of its [checks](/spec/fdl-schema#checks): a row names a schema, table, view or column that is not there, a primary key names a column the table lacks or names one twice, an asset column is not `varchar`, a view is given a primary key or an asset column, `_fdl.dataset` has more than one row, or a table of `_fdl` lacks a column of its primary key
+- a declaration names a column the table lacks or names one twice, an asset column is not `varchar`, a view is given a primary key or asset columns, or a dependency's `url` is not an absolute URL ending in `/` or its `version` is not a version ID
 - the working metadata holds inlined rows
 - an asset column holds a value that is not a sha256
 
-## fdl meta
+## fdl declare
 
 ```bash
-fdl meta list <working.sqlite> [<name>] [--json]
-fdl meta get <working.sqlite> <name> <key>
-fdl meta set <working.sqlite> <name> <key> <value>...
-fdl meta set <working.sqlite> (--stdin | -F <rows.json>) [--replace]
-fdl meta unset <working.sqlite> <name> <key>
-fdl meta dump <working.sqlite>
-fdl meta objects <working.sqlite>
+fdl declare list <working.sqlite> [--json]
+fdl declare primary-key <working.sqlite> <schema.table> [<column>...]
+fdl declare assets <working.sqlite> <schema.table> [<column>...]
+fdl declare profile <working.sqlite> <schema.name> (true|false)
+fdl declare dependency <working.sqlite> <name> [<url>] [--version <ID>]
 ```
 
-Reads and writes the rows of `_fdl` in the working metadata (see [The _fdl schema](/spec/fdl-schema)), as `git config` reads and writes a config file. The next `fdl commit` takes the changes into the new version, as it takes any change to a table.
-
-`<name>` is `.` for the dataset, `schema`, `schema.table` for a table or a view, or `schema.table.column`. `<key>` is a column of the `_fdl` table for that name (`_fdl.dataset`, `_fdl.schemas`, `_fdl.tables` or `_fdl.columns`), such as `title`, `description`, `primary_key` or `asset`. A key with a `-` in it, such as `example-theme`, is the key of a row of `_fdl.attributes`.
+Changes what the next commit [declares](/spec/versions#declarations) of the tables and views. The declarations are kept in `<working.sqlite>.fdl.json`, starting from those of the version the working metadata was cloned from, and the commit writes them into `tables.json`.
 
 ```bash
-fdl meta set lake.sqlite . title "Population by town"
-fdl meta set lake.sqlite main.population primary_key code year
-fdl meta set lake.sqlite main.population.code title "Area code"
-fdl meta set lake.sqlite main.population example-theme '{"color": "blue"}'
-fdl meta set lake.sqlite main.population licenses '[{"spdx": "CC-BY-4.0"}]'
+fdl declare primary-key lake.sqlite main.population code year
+fdl declare assets lake.sqlite main.reports pdf_sha256
+fdl declare profile lake.sqlite main.stg_population false
+fdl declare dependency lake.sqlite census https://example.org/census/
 ```
 
-`set` makes the schema `_fdl`, the table, the column and the row it needs. A list (`primary_key`, `spatial_coverage`) takes one value or more; a STRUCT (`licenses`, `sources`, `temporal_coverage`) and an attribute take one value in JSON, and an attribute that is not JSON is taken as a string. `set` is refused when the result fails one of the [checks](/spec/fdl-schema#checks) that `_fdl` passed before, for example when the name is not there or a view is given a primary key. `unset` clears a key, and removes a row left with nothing but its names.
+- `primary-key` sets the columns that identify a row of a table, used to [merge it cell by cell](/spec/writing#cells-merged-by-primary-key). Without columns, it removes the primary key
+- `assets` sets the `varchar` columns of a table that hold the sha256 of files. Without columns, it removes them
+- `profile false` makes the push write no profile for a table or view, such as an intermediate table of a build; `profile true` removes that
+- `dependency` names another dataset the views' SQL reads, under the name the SQL uses. Without `--version`, the views read the version its `main` holds. Without `<url>`, it removes the dependency
+- `list` prints one declaration a line, and `--json` all of them as one object
 
-`list` prints one key a line as `name.key=value`, with the dataset's keys without a name. `get` prints the value. Both print text as it is when it fits on one line, and anything else as JSON. `get` and `unset` exit 1 when the key is not set. `_fdl.files` and `_fdl.catalogs` are not read or written here: write them with SQL.
-
-`dump` prints every row of `_fdl` as one JSON object: each table of `_fdl` (without the prefix) to its rows, each row with its non-null columns. A date is ISO text, and the `value` of `_fdl.attributes` is the JSON value itself.
-
-```json
-{
-  "dataset": [{ "title": "Population by town" }],
-  "tables": [{ "schema": "main", "name": "population", "primary_key": ["code", "year"] }],
-  "attributes": [{ "schema": "main", "table": "population", "column": "code", "key": "example-theme", "value": { "color": "blue" } }]
-}
-```
-
-`set --stdin` takes an object of that form from standard input, and `set -F <rows.json>` from a file, for a tool that builds `_fdl` from the writer's own files. Each row given is changed or added by its primary key, with the columns it holds, and the other rows are kept. With `--replace`, `_fdl` then holds these rows and no others: every table of `_fdl` is made again with all the columns the specification gives. It writes nothing and exits 1 when a table, a column or a value is not one `_fdl` takes, or the result fails the checks; each problem names where it is, such as `dataset: issued cannot be written as DATE (at the dataset.issued)`.
-
-`objects` prints, as JSON, the tables and views of the working metadata that `_fdl` can describe: `schema`, `name`, `kind` (`table` or `view`), and a table's `columns` with their types.
-
-On a working metadata cloned from a version written before `_fdl`, `fdl meta` first writes into `_fdl` what that version said, as `fdl commit` does. `get`, `list`, `dump` and `objects` show it without keeping it; `set` and `unset` keep it, so a key cleared then stays cleared at the commit.
+A change is refused when the tables and views refuse it: a table or column that is not there, a primary key or asset columns on a view, an asset column that is not `varchar`, or a dependency whose `url` is not an absolute URL ending in `/`.
 
 ## fdl push
 
@@ -139,7 +114,7 @@ fdl push <working.sqlite> [--no-profile]
 
 Uploads the version `fdl commit` made and moves the branch to it on condition (see [Order of writes](/spec/writing#order-of-writes)). It prints the branch, the version ID and its `seq`. After a fast-forward `fdl merge`, it moves the branch to the version merged, uploading nothing. With nothing committed, it prints `Nothing to push`.
 
-Before uploading, it writes a profile of each table and view (see [profiles/](/spec/versions#profiles)) and uploads the profiles before `version.json`, so they are there when the branch moves. It reads only the tables whose data files or columns changed since the parent; the others keep the parent's profile. A view is profiled again, by running its query, when its query or a table or view it reads changed. A table or view whose `profile` in `_fdl.tables` is `false` gets none, and neither do the tables of `_fdl`. A table it cannot read gets none, with a warning. When the working metadata changed after the commit, it profiles nothing and warns. `--no-profile` skips profiling; `fdl profile` adds the profiles later.
+Before uploading, it writes a profile of each table and view (see [profiles/](/spec/versions#profiles)) and uploads the profiles before `version.json`, so they are there when the branch moves. It reads only the tables whose data files or columns changed since the parent; the others keep the parent's profile. A view is profiled again, by running its query, when its query or a table or view it reads changed. A table or view declared with `profile` `false` gets none. A table it cannot read gets none, with a warning. When the working metadata changed after the commit, it profiles nothing and warns. `--no-profile` skips profiling; `fdl profile` adds the profiles later.
 
 Data files the working metadata wrote into the repository are there before the push, but no version names them until it. Files never pushed are deleted after the grace period.
 
@@ -158,11 +133,15 @@ A refused push leaves the committed version in place, so it can be sent again on
 fdl assets <folder> > files.csv
 ```
 
-Prints every file below the folder (hidden ones left out) as CSV, with `path`, `sha256`, `bytes` and `media_type`: the columns of `_fdl.files`. Read it into `_fdl.files` for the dataset's documents, or into a table of your own whose `sha256` column you mark `asset` in `_fdl.columns`, for example with DuckDB's `read_csv`, and commit with `--assets <folder>`. The files are hashed once here; nothing reads them in SQL.
+Prints every file below the folder (hidden ones left out) as CSV, with `path`, `sha256`, `bytes` and `media_type`. Read it into a table, for example with DuckDB's `read_csv`, declare its `sha256` column an asset column, and commit with `--assets <folder>`. The files are hashed once here; nothing reads them in SQL.
 
 ```sql
-CREATE TABLE lake._fdl.files AS
+CREATE TABLE lake.docs.files AS
 SELECT path, sha256, bytes::BIGINT AS bytes, media_type FROM read_csv('docs.csv', all_varchar = true);
+```
+
+```bash
+fdl declare assets lake.sqlite docs.files sha256
 ```
 
 ## fdl log
@@ -179,7 +158,7 @@ Versions from the one the ref holds back to the first, by first parent. Each sho
 fdl status <working.sqlite> [--json]
 ```
 
-What the working metadata changed since it was cloned, in the same kinds as `fdl diff`. `Nothing to commit` when it holds what the version it came from holds. The tables of `_fdl` are compared as any other. When a version is committed and not pushed yet, it is named first and the changes are counted from it; `--json` gives its ID as `pending`. After a fast-forward `fdl merge`, it says that `fdl push` will move the branch.
+What the working metadata changed since it was cloned, in the same kinds as `fdl diff`. `Nothing to commit` when it holds what the version it came from holds. `~ declarations <name>` means the declarations of a table or view differ from the version's, and `~ dependencies` that the dependencies do. When a version is committed and not pushed yet, it is named first and the changes are counted from it; `--json` gives its ID as `pending`. After a fast-forward `fdl merge`, it says that `fdl push` will move the branch.
 
 ## fdl diff
 
@@ -200,7 +179,7 @@ What changed in a version (default: the one `HEAD` holds) since its parent, or s
 ~ data main.towns
 ```
 
-Against its parent, the changes come from the version's `diff` (see [diff](/spec/versions#diff)). Otherwise, or for a version written without one, rows, data files and columns come from `files.json`, and columns are compared by name, which does not see a rename. `~ data` means the table's data files differ, even when the rows are the same. A change to `_fdl` shows as a change to its tables. `--json` prints the same as an object with `tables` (`added`, `dropped`), `rows`, `columns` and `data`. Versions written before `_fdl` also show `~ tags` (their [tags](/spec/versions#tags-of-earlier-versions) changed) and `~ dataset.json` lines, and those written by fdl-cli 0.31 and earlier `~ description` lines.
+Against its parent, the changes come from the version's `diff` (see [diff](/spec/versions#diff)). Otherwise, rows, data files, columns and declarations come from `tables.json`, and columns are compared by name, which does not see a rename. `~ data` means the table's data files differ, even when the rows are the same. `~ declarations` means the [declarations](/spec/versions#declarations) of a table or view changed. `--json` prints the same as an object with `tables` (`added`, `dropped`), `rows`, `columns`, `data` and `declarations`.
 
 ## fdl show
 
@@ -245,7 +224,7 @@ fdl revert <version> <working.sqlite> [--author <name>] [-m <message>]
 fdl push <working.sqlite>
 ```
 
-Writes the working metadata back to what `<version>` held (its tables and views, `_fdl` among them) and commits a new version, as `fdl commit` does. For a `<version>` written before `_fdl`, what its `dataset.json` or tags said is written into `_fdl`. Changes in the working metadata not committed are lost. `fdl push` then moves the branch forward, so the versions in between stay in its history and can still be read. A table unchanged since `<version>` keeps its data files; any other is written again from its rows there. `<version>` is a version ID or a ref, and must be in the first-parent history of the version the working metadata was cloned at (a version only a merge brought in is not), and in retention. When that version already holds what `<version>` held, nothing is made.
+Writes the working metadata back to what `<version>` held (its tables and views, and its declarations) and commits a new version, as `fdl commit` does. Changes in the working metadata not committed are lost. `fdl push` then moves the branch forward, so the versions in between stay in its history and can still be read. A table unchanged since `<version>` keeps its data files; any other is written again from its rows there. `<version>` is a version ID or a ref, and must be in the first-parent history of the version the working metadata was cloned at (a version only a merge brought in is not), and in retention. When that version already holds what `<version>` held, nothing is made.
 
 To take out data that must not be published, use `fdl withdraw`: a revert leaves the versions in between, and their data files, as they are.
 
@@ -262,15 +241,16 @@ Merges another branch into the branch the working metadata was cloned from (see 
 - When the working metadata's version is in the history of `<theirs>`, the working metadata is made again from `<theirs>` and no version is made. `fdl push` then moves the branch there (a fast-forward)
 - Otherwise it writes the merge into the working metadata and commits a merge version, whose `parents` are the working metadata's version and `<theirs>`. `fdl push` uploads it as it does a commit. The message defaults to `Merge <theirs>`
 
-A table only `<theirs>` changed, added or dropped since the base comes over as `<theirs>` holds it, written to new data files. Rows of a table both sides changed are merged by the `primary_key` both give it in `_fdl.tables`, when both give it the same asset columns too: a row only `<theirs>` added, changed or deleted takes that change. The tables of `_fdl` are merged the same way, by the keys [The _fdl schema](/spec/fdl-schema) gives them, so a description only one side changed comes over. The command lists the tables that came over and how many rows `<theirs>` added, changed or deleted.
+A table only `<theirs>` changed, added or dropped since the base comes over as `<theirs>` holds it, written to new data files. A table both sides changed is merged cell by cell, by the `primary_key` both declare for it (see [Cells merged by primary key](/spec/writing#cells-merged-by-primary-key)): a row only one side added or deleted, and a cell only one side changed, take that change, and a column only one side added, dropped or gave another type takes that change too. Declarations and dependencies only one side changed come over, as values. The command lists the tables that came over and how many rows it added, changed or deleted.
 
 When anything conflicts, the command lists each conflict, by table and, for rows, by the values of the primary key, exits with 1 and changes nothing. A conflict is:
 
 - a table both sides changed differently, without a primary key both declare (a view is compared by its SQL, as such a table)
 - a table one side dropped and the other changed
-- a table both sides changed whose columns or types differ between the two, or changed on both sides
-- a row both sides changed differently, or a primary key that holds `NULL` or repeats
-- a merge whose `_fdl` fails its [checks](/spec/fdl-schema#checks), such as one where one side dropped a table and the other described its columns
+- a column both sides added, dropped or retyped differently
+- a cell both sides changed differently, a row one side deleted and the other changed, a row both sides added with different values, a cell of a column one side dropped that the other changed, or a primary key that holds `NULL` or repeats
+- a declaration or dependency both sides changed differently
+- a merge whose declarations the merged tables refuse, such as one where one side dropped a column and the other made it part of the primary key
 
 Change one of the branches so that the two no longer conflict, and merge again.
 
@@ -284,7 +264,7 @@ fdl withdraw <remote> [<version>...] [--objects <file>] [--json] [--yes] [--by <
 
 Removes versions that hold data that must not be published, such as personal data published by mistake (see [Withdrawal](/spec/data-files#withdrawal)). First commit a version without the data, so that no branch points at an affected version. The command then deletes the tags that point at the versions, the data files and assets the versions reach that no kept version reaches, and their metadata files, and puts `expired.json` with `"reason": "withdrawn"` and the names of the deleted objects in `deleted`. `version.json` stays. When one of the versions is already past retention, its metadata is gone, so every data file and asset no live version reaches is deleted at once, without waiting for the grace period.
 
-A version reaches the assets its asset columns hold, `sha256` of `_fdl.files` among them, and, for a version written before `_fdl`, the files its `tree.json` lists.
+A version reaches the assets its asset columns hold.
 
 Without `--yes` it only prints what it would delete. Files a kept version still reaches are listed as kept; if they hold the data, withdraw that version too. Refused while a branch or a request points at one of the versions.
 
@@ -316,4 +296,4 @@ fdl gc <remote> [--grace 7d] [--yes]
 
 Deletes the data files and assets no live version reaches and that were written longer ago than `--grace` (`7d`, `24h` or `30m`), as [When a shared object may be deleted](/spec/data-files#when-a-shared-object-may-be-deleted) allows. These are the files only versions past retention reached, and files working metadata files wrote and never pushed. Without `--yes`, it only lists them.
 
-It reads `files.json` of every live version, and the metadata of a version whose rows hold assets. Refused for a repository over HTTP, where deleting is the host's, and when a live version has neither `files.json` nor a metadata file.
+It reads `tables.json` of every live version, and the metadata of a version with asset columns. Refused for a repository over HTTP, where deleting is the host's, and when a live version has no `tables.json`.

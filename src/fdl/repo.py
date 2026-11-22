@@ -360,6 +360,7 @@ def record(
         if difference is not None and after is not None:
             held = catalog.object_names(copied, after) & described.names
             difference["declarations"] = declared_.changed(inherited or declared_.Facts(), described.facts, held)
+            difference["dependencies"] = declared_.dependencies_changed(inherited or declared_.Facts(), described.facts)
         # After the diff, which reads the parent's snapshot: the version keeps only its own.
         catalog.keep_last_snapshot(copied)
         # Attaching it through DuckLake must not have moved it to another format.
@@ -459,6 +460,7 @@ def push(
             f"repository (first: {missing[0]}). Rebuild from the working "
             f"metadata and commit again."
         )
+    _check_tables_index(Path(local), version, frozen)
     _upload_objects(store, _needed_objects(assets), local_objects or {})
     upload(store, local, version)
     if not move_ref:
@@ -475,6 +477,20 @@ def push(
         # have stopped after the move.
         _write_ref_again(store, now)
     update_refs_index(store)
+
+
+def _check_tables_index(local: Path, version: Version, frozen: Path) -> None:
+    """Refuse a version whose `tables.json` is not the one `version.json` names, or
+    does not list every data file and delete file its metadata names."""
+    if version.tables is None:
+        raise RepoError(f"{version.id}: version.json names no tables.json")
+    written = (local / version.tables.path).read_bytes()
+    if (len(written), hashlib.sha256(written).hexdigest()) != (version.tables.bytes, version.tables.sha256):
+        raise RepoError(f"{version.id}: tables.json is not the one version.json names")
+    listed, named = _named_files(json.loads(written)), set(catalog.data_files(frozen))
+    if listed != named:
+        first = sorted(listed ^ named)[0]
+        raise RepoError(f"{version.id}: tables.json and the metadata name different files (first: {first})")
 
 
 def _write_ref_again(store: Store, ref: refs.Ref) -> None:
@@ -546,8 +562,9 @@ def write_profiles(
 
     A table whose data files and columns are the parent's keeps the parent's
     profile, so profiling reads only the tables that changed. A view keeps it
-    when no view's query and no table's data files changed. Returns
-    how many were made from the data.
+    when its query and everything it reads are unchanged; one that reads another
+    dataset also needs the parent's `dependencies` and a ``version`` in each entry
+    it reads. Returns how many were made from the data.
     """
     local = Path(local)
     setup = list(setup)
@@ -570,7 +587,15 @@ def write_profiles(
     changed_tables = {
         key for key in {*files_before, *files_now} if not _same_files(files_before.get(key), files_now.get(key))
     }
-    unchanged_views = _unchanged_views(views_now, views_before, set(files_now), changed_tables)
+    dependencies = index.get("dependencies", {})
+    pinned = {
+        name
+        for name, entry in dependencies.items()
+        if entry.get("version") and before_index is not None and before_index.get("dependencies", {}) == dependencies
+    }
+    unchanged_views = _unchanged_views(
+        views_now, views_before, set(files_now), changed_tables, dependencies=set(dependencies), pinned=pinned
+    )
     kept: dict[str, bytes] = {}
     pending = []
     for table in wanted:
@@ -612,12 +637,17 @@ def _unchanged_views(
     views_before: dict[str, str | None],
     tables: set[str],
     changed_tables: set[str],
+    *,
+    dependencies: set[str] = frozenset(),
+    pinned: set[str] = frozenset(),
 ) -> set[str]:
     """The views whose query is the parent's and whose tables and views read are unchanged.
 
     A view whose tables cannot be told from its query (it does not parse or reads a
     table function) keeps its profile only while no table and no view changed. One
-    that names a table this version does not hold counts as changed.
+    that names a table this version does not hold counts as changed. One that reads
+    another dataset (a name of ``dependencies``) counts as unchanged only when that
+    entry is in ``pinned``: the parent's, naming a version.
     """
     reads = {key: _tables_read(sql) for key, sql in views_now.items()}
     known = tables | set(views_now)
@@ -636,9 +666,14 @@ def _unchanged_views(
             unchanged[key] = not changed_tables and views_before == views_now
             return unchanged[key]
         result = key in views_before and views_before[key] == views_now[key]
-        for schema, name in reads[key]:
+        for held, schema, name in reads[key]:
             if not result:
                 break
+            # Another dataset: `name.schema.table`, or `name.table` when no schema here is called so.
+            other = held or (schema if schema in dependencies and not any(k.startswith(f"{schema}.") for k in known) else "")
+            if other:
+                result = other in pinned
+                continue
             found = resolve(key, schema, name)
             if found is None:
                 result = False
@@ -652,9 +687,9 @@ def _unchanged_views(
     return {key for key in views_now if check(key, frozenset({key}))}
 
 
-def _tables_read(sql: str | None) -> set[tuple[str, str]] | None:
-    """The tables and views a view's query reads, as (schema, name) with an empty schema when
-    unqualified, or None when that cannot be told."""
+def _tables_read(sql: str | None) -> set[tuple[str, str, str]] | None:
+    """The tables and views a view's query reads, as (catalog, schema, name) with an empty
+    catalog or schema when not written, or None when that cannot be told."""
     if not sql:
         return None
     import duckdb
@@ -666,7 +701,7 @@ def _tables_read(sql: str | None) -> set[tuple[str, str]] | None:
         con.close()
     if tree.get("error"):
         return None
-    found: list[tuple[str, str]] = []
+    found: list[tuple[str, str, str]] = []
     ctes: set[str] = set()
     functions = False
 
@@ -680,7 +715,7 @@ def _tables_read(sql: str | None) -> set[tuple[str, str]] | None:
             return
         kind = node.get("type")
         if kind == "BASE_TABLE":
-            found.append((node.get("schema_name") or "", node["table_name"]))
+            found.append((node.get("catalog_name") or "", node.get("schema_name") or "", node["table_name"]))
         elif kind == "TABLE_FUNCTION":
             functions = True
         for entry in (node.get("cte_map") or {}).get("map", []):
@@ -691,7 +726,7 @@ def _tables_read(sql: str | None) -> set[tuple[str, str]] | None:
     walk(tree.get("statements", []))
     if functions:
         return None
-    return {(name_schema, name) for name_schema, name in found if name_schema or name not in ctes}
+    return {(held, schema, name) for held, schema, name in found if held or schema or name not in ctes}
 
 
 def missing_profiles(store: Store, version: Version, *, setup: Iterable[str] = ()) -> list[dict]:
