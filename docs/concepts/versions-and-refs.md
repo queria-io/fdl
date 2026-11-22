@@ -10,8 +10,8 @@ A version is one frozen DuckLake metadata and a record of how it came to be. It 
 ```
 versions/019a3c4e-7b21-7f3a-9c55-2f0d8e1a4b6c/
   version.json         the record: parents, author, message, checksums
-  dataset.json         what it holds: tables, columns, license
-  metadata.db          the frozen metadata
+  metadata.db          the frozen metadata, with what it holds described in _fdl
+  files.json           its tables, data files and views
 ```
 
 The record says:
@@ -77,7 +77,7 @@ feature   C
            fdl merge refs/heads/feature on main makes M (parents B, C): main → M
 ```
 
-The merge compares each table in three versions: B, C and their common ancestor A. A table only one branch changed comes over as that branch holds it. When both changed the same table, the rows are matched by the `primary_key` both declare in `dataset.json`, and a row only one branch changed comes over. A row both changed differently, or a table without a primary key that both changed, is a conflict, and then no version is made. A row number added for the merge is not a primary key: it does not say which rows are the same row. See [Merging](/spec/writing#merging).
+The merge compares each table in three versions: B, C and their common ancestor A. A table only one branch changed comes over as that branch holds it. When both changed the same table, the rows are matched by the `primary_key` both declare in `_fdl.tables`, and a row only one branch changed comes over. A row both changed differently, or a table without a primary key that both changed, is a conflict, and then no version is made. A row number added for the merge is not a primary key: it does not say which rows are the same row. See [Merging](/spec/writing#merging).
 
 Moving a branch back, to undo a version, is allowed only when asked for explicitly. The version that was undone stays in the repository and in the history.
 

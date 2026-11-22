@@ -30,7 +30,7 @@ Three things differ on purpose:
 
 - A version's ID is a UUIDv7, not a hash of its content. Two DuckDB releases can write the same metadata as different bytes, so a content hash would change with the tool. The sha256 in `version.json` checks the content instead
 - There are no packfiles. Each file is its own object in the store, so a reader fetches only the parts of a Parquet file it needs
-- A merge matches rows by the primary key that `dataset.json` declares, not by lines or files. Two branches that changed the same table without one are a conflict (see [Merging](/spec/writing#merging))
+- A merge matches rows by the primary key that `_fdl.tables` declares, not by lines or files. Two branches that changed the same table without one are a conflict (see [Merging](/spec/writing#merging))
 
 ## Writing a version
 
@@ -49,7 +49,7 @@ The writer runs SQL on the working metadata with DuckDB, directly or through a t
 
 ### Commit
 
-`fdl commit` copies the working metadata into a DuckDB file, sets its `data_path` to the repository's data folder, makes `dataset.json` from it, and writes `version.json` with a new ID and the previous version as its parent. If the tables hold the same rows as the parent's, there is no commit. The new version exists only on the writer's machine until it is pushed.
+`fdl commit` copies the working metadata into a DuckDB file, sets its `data_path` to the repository's data folder, checks `_fdl` against its tables, writes `files.json` from it, and writes `version.json` with a new ID and the previous version as its parent. If the tables hold the same rows as the parent's, there is no commit. The new version exists only on the writer's machine until it is pushed.
 
 ### Push
 
@@ -57,7 +57,7 @@ A push writes files in the order that keeps readers safe: whatever a file points
 
 1. The new data files the repository lacks
 2. `versions/<ID>/metadata.db`
-3. `versions/<ID>/dataset.json` and `files.json`
+3. `versions/<ID>/files.json`
 4. `versions/<ID>/version.json`
 5. The ref, with `If-Match: <ETag read before step 1>`, or `If-None-Match: *` for the first version
 6. `refs.json`, rewritten from a fresh read of `HEAD` and every ref

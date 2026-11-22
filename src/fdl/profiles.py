@@ -81,12 +81,39 @@ def path(schema: str, table: str) -> str | None:
 
 
 def tables(described: dict[str, Any]) -> list[dict[str, Any]]:
-    """The tables and views of a `dataset.json` that get a profile.
+    """The tables and views of an earlier version's `dataset.json` that get a profile.
 
     All whose names a path can hold, but those with `"profile": false` (the tag
     `fdl.profile`), which a writer leaves out.
     """
     return [t for t in described.get("tables", []) if t.get("profile") is not False and path(t["schema"], t["name"])]
+
+
+def indexed(index: dict[str, Any], unprofiled: Iterable[str] = ()) -> list[dict[str, Any]]:
+    """The tables and views of a `files.json` that get a profile, in the shape `build` takes.
+
+    All but those `_fdl.tables` gives ``profile = false`` (``unprofiled``), the
+    tables of `_fdl`, and those whose names a path cannot hold.
+    """
+    skipped = set(unprofiled)
+
+    def kept(name: str) -> tuple[str, str] | None:
+        schema, table = name.split(".", 1)
+        if name in skipped or schema == "_fdl" or not path(schema, table):
+            return None
+        return schema, table
+
+    tables = [
+        {"schema": key[0], "name": key[1], "fields": [{"name": c["name"], "type": c["type"]} for c in table.get("columns", [])]}
+        for name, table in sorted(index.get("tables", {}).items())
+        if (key := kept(name))
+    ]
+    views = [
+        {"schema": key[0], "name": key[1], "kind": "view", "sql": view.get("sql")}
+        for name, view in sorted(index.get("views", {}).items())
+        if (key := kept(name))
+    ]
+    return tables + views
 
 
 def columns_of(table: dict[str, Any]) -> list[dict[str, str]]:

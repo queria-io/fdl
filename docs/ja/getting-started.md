@@ -65,17 +65,15 @@ SELECT * FROM '../towns.csv';
 
 ## 説明を書く
 
-バージョンにはそれぞれ、中身を説明する `dataset.json` を付けます。`fdl commit` を実行するフォルダに置いてください。
+バージョンがテーブルについて述べること（タイトル・主キー・公開するファイルなど）は、同じメタデータの `_fdl` スキーマに、FDL が定めるテーブルの行として書きます（[_fdl スキーマ](/ja/spec/fdl-schema)）。
 
-```json dataset.json
-{
-  "name": "towns",
-  "title": "Towns",
-  "tables": [{ "schema": "main", "name": "towns", "title": "Towns and their codes" }]
-}
+```sql
+CREATE SCHEMA lake._fdl;
+CREATE TABLE lake._fdl.tables ("schema" VARCHAR, name VARCHAR, title VARCHAR, primary_key VARCHAR[]);
+INSERT INTO lake._fdl.tables VALUES ('main', 'towns', 'Towns and their codes', ['code']);
 ```
 
-必須なのは `name` だけです。`fdl commit` がこのファイルをメタデータと照らし合わせ、表ごとの行数と列ごとの型を書き足します。フォルダにあるほかのファイル（`README.md` など）も、隠しファイルと、作業メタデータと `fdl` がその隣に置くファイルを除いて、すべてバージョンに入ります。
+`_fdl` は省略できます。`_fdl` のないバージョンはテーブルだけを持ちます。`fdl commit` はバージョンを作る前に `_fdl` をテーブルと照らし合わせて確認します。
 
 ## コミットして push する
 
@@ -93,7 +91,6 @@ towns/
   refs/heads/main                       019a3c4e-…
   versions/019a3c4e-…/
     metadata.db
-    dataset.json
     files.json
     profiles/main/towns.json
     version.json
@@ -140,8 +137,6 @@ INSERT INTO lake.main.towns SELECT * FROM '../towns-2026.csv';
 fdl commit lake.sqlite -m "Add 2026" --author alice
 fdl push lake.sqlite
 ```
-
-今のフォルダには `dataset.json` があるので、クローンはそれをそのままにします。空のフォルダでは、バージョンの `dataset.json` とバージョンが持つほかのファイルもそこに書き出すので、リポジトリをクローンした人はデータだけでなく説明も変えられます。
 
 新しいバージョンは、最初のバージョンを親として記録します。最初の Parquet ファイルは両方のメタデータが参照し、新しいファイルは 2 つめのメタデータだけが参照します。
 

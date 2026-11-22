@@ -44,11 +44,11 @@ No ref and no version names the file, so no reader can reach it. If the writer g
 
 1. Copy the working metadata from SQLite into a DuckDB file, keeping the snapshots up to the last one
 2. Set the metadata's `data_path` to the repository's data folder, and refuse if any file is recorded with an absolute path elsewhere
-3. Check `dataset.json` against the metadata and fill in row counts and column types
+3. Check `_fdl` against the tables and write `files.json`: each table's data files, primary key and asset columns, and each view's columns
 4. Write `version.json` next to them, with a new UUIDv7 as the ID
 5. Check that every data file the metadata names is in the repository
 6. Upload `versions/<ID>/metadata.db`
-7. Upload `versions/<ID>/dataset.json`
+7. Upload `versions/<ID>/files.json`
 8. Upload `versions/<ID>/version.json`
 9. Create `refs/heads/main` with `If-None-Match: *`
 
@@ -57,14 +57,14 @@ fdl.json
 HEAD
 refs/heads/main                                   019a2f10-…
 versions/019a2f10-…/metadata.db
-versions/019a2f10-…/dataset.json
+versions/019a2f10-…/files.json
 versions/019a2f10-…/version.json
 tables/main/towns/ducklake-0199f1….parquet
 ```
 
 The order is what keeps readers safe. A reader starts from a ref, and the ref is written last. If the push stops after step 6, 7 or 8, the repository holds a version folder no ref points at. Readers never see it, and it changes nothing.
 
-`version.json` is written after the metadata and `dataset.json` for the same reason: a tool that lists `versions/` can treat a folder without `version.json` as unfinished.
+`version.json` is written after the metadata and `files.json` for the same reason: a tool that lists `versions/` can treat a folder without `version.json` as unfinished.
 
 ## The second commit
 
@@ -74,7 +74,7 @@ Bob checks out `main`, adds a column and commits:
 refs/heads/main                                   019a3c4e-…
 versions/019a2f10-…/…
 versions/019a3c4e-…/metadata.db
-versions/019a3c4e-…/dataset.json
+versions/019a3c4e-…/files.json
 versions/019a3c4e-…/version.json
 tables/main/towns/ducklake-0199f1….parquet          named by both versions
 tables/main/towns/ducklake-019a3b….parquet          named by the second only
@@ -90,8 +90,8 @@ tables/main/towns/ducklake-019a3b….parquet          named by the second only
   "author": { "name": "bob" },
   "message": "Add a note column",
   "metadata": { "path": "metadata.db", "storage": "duckdb-v1.5.0", "bytes": 4194304, "sha256": "9f2c…" },
-  "dataset": { "path": "dataset.json", "bytes": 2048, "sha256": "4c1d…" },
-  "ducklake": { "format": "1.0", "snapshot_id": 12, "snapshots": [8, 12] }
+  "ducklake": { "format": "1.0", "snapshot_id": 12, "snapshots": [8, 12] },
+  "files": { "path": "files.json", "bytes": 2048, "sha256": "4c1d…" }
 }
 ```
 

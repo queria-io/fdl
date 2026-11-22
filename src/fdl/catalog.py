@@ -905,6 +905,20 @@ def keep_last_snapshot(catalog_path: Path) -> None:
 # -- whether anything changed --------------------------------------------------
 
 
+def recorded_data_path(catalog_path: Path) -> str:
+    """The data path a frozen catalog records."""
+    con = _open(Path(catalog_path))
+    try:
+        row = con.execute(
+            "SELECT value FROM ducklake_metadata WHERE key = ? AND scope IS NULL", [DATA_PATH_KEY]
+        ).fetchone()
+    finally:
+        con.close()
+    if not row:
+        raise CatalogError(f"{catalog_path} records no data path")
+    return row[0]
+
+
 def working_data_path(working: Path) -> str:
     import sqlite3
 
@@ -936,7 +950,14 @@ def last_snapshot(working: Path) -> int:
         con.close()
 
 
-def same_contents(working: Path, since: int, *, data_path: str | None = None) -> bool:
+def same_contents(
+    working: Path,
+    since: int,
+    *,
+    data_path: str | None = None,
+    setup: Iterable[str] = (),
+    ignore_schema: str | None = None,
+) -> bool:
     """Whether the working catalog's last snapshot holds what snapshot ``since`` held.
 
     ``data_path`` is where the working catalog's new data files are, when not
@@ -947,7 +968,9 @@ def same_contents(working: Path, since: int, *, data_path: str | None = None) ->
     rows, in any order. A table rebuilt from the same input is written to new
     files, so files are compared first and rows only where the files differ.
     Reading those rows needs the data files: one the writer cannot read raises
-    `CatalogError`.
+    `CatalogError`. ``setup`` runs first, for the keys reading them needs.
+
+    The tables and views of ``ignore_schema`` are left out of the comparison.
     """
     import duckdb
 
@@ -957,12 +980,15 @@ def same_contents(working: Path, since: int, *, data_path: str | None = None) ->
         return True
     con = duckdb.connect()
     try:
-        for statement in attach_sql(
-            working,
-            alias="lake",
-            data_path=data_path or working_data_path(working),
-            read_only=True,
-        ):
+        for statement in [
+            *setup,
+            *attach_sql(
+                working,
+                alias="lake",
+                data_path=data_path or working_data_path(working),
+                read_only=True,
+            ),
+        ]:
             if statement:
                 con.execute(statement)
         meta = "__ducklake_metadata_lake.main"
@@ -979,11 +1005,12 @@ def same_contents(working: Path, since: int, *, data_path: str | None = None) ->
                 """,
                 {"s": snapshot},
             ).fetchall()
-            return {(schema, name): table_id for schema, name, table_id in rows}
+            return {(schema, name): table_id for schema, name, table_id in rows if schema != ignore_schema}
 
         def views(snapshot: int) -> set[tuple]:
             return set(
-                con.execute(
+                row
+                for row in con.execute(
                     f"""
                     SELECT s.schema_name, v.view_name, v.dialect, v.sql
                     FROM {meta}.ducklake_view v JOIN {meta}.ducklake_schema s USING (schema_id)
@@ -991,6 +1018,7 @@ def same_contents(working: Path, since: int, *, data_path: str | None = None) ->
                     """,
                     {"s": snapshot},
                 ).fetchall()
+                if row[0] != ignore_schema
             )
 
         def files(table_id: int, snapshot: int) -> set[tuple]:

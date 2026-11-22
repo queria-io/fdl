@@ -1,9 +1,9 @@
-"""The `fdl.` tags a version keeps in its metadata (see the specification's Tags).
+"""The `fdl.` tags of versions written before the `_fdl` schema (see the specification's
+"Tags of earlier versions").
 
-Each is a row of DuckLake's ``ducklake_tag`` on a table or a view, with JSON
-text as its value. DuckDB writes only ``comment`` tags in SQL, so these rows
-are written here, straight into the frozen metadata. Never on a column: DuckDB
-does not open a table with a column tag other than ``comment``.
+Each is a row of DuckLake's ``ducklake_tag`` on a table or a view, with JSON text as
+its value. FDL no longer writes them: it reads them, and the `dataset.json` of
+versions older still, to write what they said into `_fdl` (see `fdl_schema`).
 
 Tags are keyed ``schema.name``, as in `files.json` and ``diff``.
 """
@@ -14,7 +14,7 @@ import json
 from pathlib import Path
 from typing import Any
 
-from .catalog import CatalogError, _open
+from .catalog import _open
 
 PRIMARY_KEY = "fdl.primary_key"
 ASSETS = "fdl.assets"
@@ -59,69 +59,39 @@ def _entries(described: dict) -> dict[str, dict]:
     }
 
 
-def write(frozen: Path, tags: Tags, *, after: int | None) -> None:
-    """Make ``tags`` the `fdl.` tags of the tables and views alive at the last snapshot.
+def read(metadata: Path, snapshot: int) -> Tags:
+    """The `fdl.` tags of the tables and views alive at ``snapshot``, in a frozen or working metadata.
 
-    ``after`` is the parent's snapshot. The new rows are valid from a snapshot
-    past it: when the last snapshot is the parent's, and the tags differ from
-    those it holds, a snapshot is made for them, so that the version does not
-    hold other tags under the parent's snapshot. Nothing is written when the
-    tags are already these. Tags of other keys, such as DuckLake's ``comment``,
-    are left as they are.
+    Empty for a metadata that has the schema `_fdl` at ``snapshot``: its tags are ignored there.
     """
-    con = _open(Path(frozen))
+    metadata = Path(metadata)
+    if metadata.suffix == ".sqlite":
+        import duckdb
+
+        con = duckdb.connect()
+        con.execute("INSTALL sqlite; LOAD sqlite;")
+        con.execute(f"ATTACH '{str(metadata).replace(chr(39), chr(39) * 2)}' AS w (TYPE sqlite, READ_ONLY)")
+        con.execute("USE w")
+    else:
+        con = _open(metadata)
     try:
-        snapshot = con.execute("SELECT max(snapshot_id) FROM ducklake_snapshot").fetchone()[0]
-        ids = _objects(con, snapshot)
-        missing = sorted(set(tags) - set(ids))
-        if missing:
-            raise CatalogError(f"tags name tables or views the metadata lacks: {', '.join(missing)}")
-        held = _read(con, snapshot)
-        altered = changed(held, tags, set(held) | set(tags))
-        if not altered:
-            return
-        if after is not None and snapshot <= after:
-            snapshot = _new_snapshot(con, snapshot, sorted(ids[name] for name in altered))
-        con.execute("DELETE FROM ducklake_tag WHERE key LIKE 'fdl.%' AND begin_snapshot >= ?", [snapshot])
-        con.execute(
-            "UPDATE ducklake_tag SET end_snapshot = ? WHERE key LIKE 'fdl.%' AND end_snapshot IS NULL",
-            [snapshot],
-        )
-        for name, values in sorted(tags.items()):
-            for key, value in sorted(values.items()):
-                con.execute(
-                    "INSERT INTO ducklake_tag VALUES (?, ?, NULL, ?, ?)",
-                    [ids[name], snapshot, key, json.dumps(value, ensure_ascii=False, separators=(",", ":"))],
-                )
-    finally:
-        con.close()
-
-
-def _new_snapshot(con, last: int, altered: list[int]) -> int:
-    """Add a snapshot after ``last`` that changes nothing but the tags, as `COMMENT ON` would."""
-    snapshot = last + 1
-    con.execute(
-        """
-        INSERT INTO ducklake_snapshot
-        SELECT ?, now(), schema_version + 1, next_catalog_id, next_file_id
-        FROM ducklake_snapshot WHERE snapshot_id = ?
-        """,
-        [snapshot, last],
-    )
-    con.execute(
-        "INSERT INTO ducklake_snapshot_changes (snapshot_id, changes_made) VALUES (?, ?)",
-        [snapshot, ",".join(f"altered_table:{object_id}" for object_id in altered)],
-    )
-    return snapshot
-
-
-def read(frozen: Path, snapshot: int) -> Tags:
-    """The `fdl.` tags of the tables and views alive at ``snapshot``."""
-    con = _open(Path(frozen))
-    try:
+        if _has_fdl_schema(con, snapshot):
+            return {}
         return _read(con, snapshot)
     finally:
         con.close()
+
+
+def _has_fdl_schema(con, snapshot: int) -> bool:
+    return bool(
+        con.execute(
+            """
+            SELECT count(*) FROM ducklake_schema
+            WHERE schema_name = '_fdl' AND begin_snapshot <= ? AND (end_snapshot IS NULL OR end_snapshot > ?)
+            """,
+            [snapshot, snapshot],
+        ).fetchone()[0]
+    )
 
 
 def _read(con, snapshot: int) -> Tags:

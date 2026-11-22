@@ -22,10 +22,9 @@ runner = CliRunner()
 
 
 @pytest.fixture(autouse=True)
-def described(tmp_path: Path, monkeypatch) -> None:
-    """Every commit reads `dataset.json` from where it runs."""
+def elsewhere(tmp_path: Path, monkeypatch) -> None:
+    """Commands run from a folder of their own."""
     (tmp_path / "about").mkdir()
-    (tmp_path / "about" / "dataset.json").write_text('{"name": "towns", "title": "Towns"}')
     monkeypatch.chdir(tmp_path / "about")
 
 
@@ -91,6 +90,11 @@ def test_the_round_trip_over_http(served, tmp_path: Path) -> None:
     working = tmp_path / "work" / "lake.sqlite"
     run("clone", url, working)
     write(working, "CREATE TABLE lake.main.towns AS SELECT 1 AS id")
+    write(
+        working,
+        "CREATE SCHEMA lake._fdl; "
+        'CREATE TABLE lake._fdl.tables AS SELECT \'main\' AS "schema", \'towns\' AS "name", [\'id\']::VARCHAR[] AS primary_key',
+    )
     commit(working, "-m", "first", "--author", "tester")
 
     # A second working catalog reads the published file where it is, and
@@ -101,13 +105,14 @@ def test_the_round_trip_over_http(served, tmp_path: Path) -> None:
     commit(again, "-m", "second", "--author", "tester")
 
     first, second = reversed(list(repo.log(local)))
-    described = json.loads(local.get(layout.version_dir(first.id) + "dataset.json"))
-    assert described["title"] == "Towns"
-    assert [t["name"] for t in described["tables"]] == ["towns"]
+    # `_fdl` is read where the published files are.
+    for version in (first, second):
+        index = json.loads(local.get(layout.version_dir(version.id) + layout.FILES))
+        assert index["tables"]["main.towns"]["primary_key"] == ["id"]
     frozen = tmp_path / "frozen.duckdb"
     frozen.write_bytes(local.get(layout.version_metadata(second)))
     assert catalog.absolute_paths(frozen) == []
-    assert len(catalog.data_files(frozen)) == 2
+    assert len(catalog.data_files(frozen)) == 3
     # Nothing was deleted or listed beyond what push needs.
     assert all(method != "DELETE" for method, _ in server.requests)
 

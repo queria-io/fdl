@@ -1,15 +1,17 @@
 """What changed between two versions, or in a working catalog since its clone.
 
 Both are brought to one shape first: each table's row count, data files and
-columns. A version gives them from its `dataset.json` and `files.json`; a
-catalog gives them from two of its snapshots. Then one comparison lists the
-differences, in five kinds:
+columns. A version gives them from its `files.json` (and the `dataset.json` of a
+version written before `_fdl`); a catalog gives them from two of its snapshots.
+Then one comparison lists the differences, in four kinds:
 
-- tables added and dropped
+- tables added and dropped, the tables of `_fdl` among them
 - row counts
 - columns added, dropped, renamed or given another type (``changes``)
 - data files: a table whose files differ, even with the same rows
-- dataset: whether what the writer wrote in `dataset.json` changed
+
+Versions written before `_fdl` also say whether their `dataset.json` (``dataset``)
+or their `fdl.` tags (``tags``) changed; those are compared only between two of them.
 """
 
 from __future__ import annotations
@@ -27,8 +29,17 @@ Table = dict[str, Any]
 
 
 def from_version(dataset: dict | None, files: dict | None) -> dict[str, Table]:
-    """Each table of a version, from its `dataset.json` and `files.json`."""
+    """Each table of a version, from its `files.json`, or with its `dataset.json` when it has one."""
     indexed = (files or {}).get("tables", {})
+    if dataset is None:
+        return {
+            name: {
+                "rows": sum(f["rows"] - f.get("deletes", {}).get("rows", 0) for f in table.get("files", [])),
+                "files": _file_set(table),
+                "columns": {c["name"]: c.get("type") for c in table["columns"]} if "columns" in table else None,
+            }
+            for name, table in indexed.items()
+        }
     described = {
         f"{table.get('schema')}.{table.get('name')}": table
         for table in (dataset or {}).get("tables", [])
@@ -72,8 +83,7 @@ def between(
 ) -> dict[str, Any] | None:
     """The differences between two snapshots of one catalog, ``before`` ``None`` for none.
 
-    What a commit records as its version's ``diff``, but for ``dataset``,
-    which the commit adds. ``None`` when the catalog no longer holds
+    What a commit records as its version's ``diff``. ``None`` when the catalog no longer holds
     ``before``: once expired, its tables and files cannot be read.
     """
     if before is not None and not catalog.has_snapshot(catalog_path, before):
@@ -206,9 +216,10 @@ def _get_json(store: Store, key: str) -> dict | None:
 
 
 def described(store: Store, version: Version) -> dict | None:
-    """A version's `dataset.json`, or ``None`` for one written without it or past retention."""
-    path = version.dataset.path if version.dataset else layout.DATASET
-    return _get_json(store, layout.version_dir(version.id) + path)
+    """The `dataset.json` of a version written before `_fdl`, or ``None`` for one without it or past retention."""
+    if version.dataset is None:
+        return None
+    return _get_json(store, layout.version_dir(version.id) + version.dataset.path)
 
 
 def listed(store: Store, version: Version) -> dict | None:

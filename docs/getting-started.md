@@ -65,17 +65,15 @@ SELECT * FROM '../towns.csv';
 
 ## Describe
 
-Every version carries a `dataset.json` that says what it holds. Write one in the folder where you run `fdl commit`:
+What a version says about its tables, such as its title, primary keys and the files it publishes, goes into the `_fdl` schema of the same metadata, as rows of tables FDL defines (see [The _fdl schema](/spec/fdl-schema)):
 
-```json dataset.json
-{
-  "name": "towns",
-  "title": "Towns",
-  "tables": [{ "schema": "main", "name": "towns", "title": "Towns and their codes" }]
-}
+```sql
+CREATE SCHEMA lake._fdl;
+CREATE TABLE lake._fdl.tables ("schema" VARCHAR, name VARCHAR, title VARCHAR, primary_key VARCHAR[]);
+INSERT INTO lake._fdl.tables VALUES ('main', 'towns', 'Towns and their codes', ['code']);
 ```
 
-Only `name` is required. `fdl commit` checks the file against the metadata and fills in each table's row count and each column's type. Every other file in the folder, such as a `README.md`, goes into the version beside it, apart from hidden files and the working metadata with the files `fdl` keeps beside it.
+`_fdl` is optional. A version without it holds the tables alone. `fdl commit` checks `_fdl` against the tables before it makes a version.
 
 ## Commit and push
 
@@ -93,7 +91,6 @@ towns/
   refs/heads/main                       019a3c4e-…
   versions/019a3c4e-…/
     metadata.db
-    dataset.json
     files.json
     profiles/main/towns.json
     version.json
@@ -140,8 +137,6 @@ INSERT INTO lake.main.towns SELECT * FROM '../towns-2026.csv';
 fdl commit lake.sqlite -m "Add 2026" --author alice
 fdl push lake.sqlite
 ```
-
-The current folder already holds `dataset.json`, so the clone leaves it as it is. In an empty folder, the clone also writes there the version's `dataset.json` and the other files it holds, so whoever clones the repository can change the description as well as the data.
 
 The new version lists the first as its parent. Both metadata files name the first Parquet file; only the second names the new one.
 

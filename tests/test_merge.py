@@ -1,4 +1,4 @@
-"""fdl branch and fdl merge: the three-way merge of tables, rows and descriptions."""
+"""fdl branch and fdl merge: the three-way merge of tables and rows, `_fdl` among them."""
 
 from __future__ import annotations
 
@@ -11,24 +11,21 @@ from typer.testing import CliRunner
 
 from fdl import catalog, merge, repo
 from fdl.cli import app
+from fdl.fdl_schema import Facts
 from fdl.stores import LocalStore
 
 runner = CliRunner()
 
-DESCRIBED = {
-    "name": "towns",
-    "title": "Towns",
-    "tables": [{"schema": "main", "name": "towns", "primary_key": ["id"]}],
-}
+#: `main.towns` keyed by `id`, and room for describing columns.
+KEYED = """
+CREATE SCHEMA lake._fdl;
+CREATE TABLE lake._fdl.tables AS SELECT 'main' AS "schema", 'towns' AS "name", ['id']::VARCHAR[] AS primary_key;
+CREATE TABLE lake._fdl.columns ("schema" VARCHAR, "table" VARCHAR, "name" VARCHAR, description VARCHAR);
+"""
 
 
-@pytest.fixture(autouse=True)
-def described(tmp_path: Path, monkeypatch) -> Path:
-    path = tmp_path / "about" / "dataset.json"
-    path.parent.mkdir()
-    path.write_text(json.dumps(DESCRIBED))
-    monkeypatch.chdir(path.parent)
-    return path
+def keyed(table: str) -> str:
+    return f"INSERT INTO lake._fdl.tables VALUES ('main', '{table}', ['id'])"
 
 
 def run(*args, code: int = 0) -> str:
@@ -62,6 +59,7 @@ def branches(tmp_path: Path):
     main, feature = tmp_path / "main.sqlite", tmp_path / "feature.sqlite"
     run("clone", remote, main)
     sql(main, store, "CREATE TABLE lake.main.towns AS SELECT * FROM (VALUES (1, 'a'), (2, 'b'), (3, 'c')) t(id, name)")
+    sql(main, store, KEYED)
     save(main, "first")
     run("branch", remote, "feature")
     run("clone", remote, feature, "--branch", "feature")
@@ -120,24 +118,21 @@ def test_the_same_change_on_both_sides_is_no_conflict(branches) -> None:
     assert towns(main, store) == [(2, "b"), (3, "c")]
 
 
-def test_a_table_without_a_primary_key_is_not_merged_by_rows(branches, described: Path) -> None:
+def test_a_table_without_a_primary_key_is_not_merged_by_rows(branches) -> None:
     store, main, feature = branches
-    described.write_text(json.dumps({"name": "towns", "title": "Towns"}))
-    sql(feature, store, "INSERT INTO lake.main.towns VALUES (5, 'e')")
+    sql(feature, store, "INSERT INTO lake.main.towns VALUES (5, 'e'); DELETE FROM lake._fdl.tables")
     save(feature, "feature")
-    sql(main, store, "INSERT INTO lake.main.towns VALUES (4, 'd')")
+    sql(main, store, "INSERT INTO lake.main.towns VALUES (4, 'd'); DELETE FROM lake._fdl.tables")
     save(main, "main")
 
     out = run("merge", "refs/heads/feature", main, "--author", "tester", code=1)
     assert "main.towns: both sides changed the table, and it has no primary key both declare" in out
 
 
-def test_a_dropped_table_the_other_side_changed_is_a_conflict(branches, described: Path) -> None:
+def test_a_dropped_table_the_other_side_changed_is_a_conflict(branches) -> None:
     store, main, feature = branches
-    described.write_text(json.dumps({"name": "towns", "title": "Towns"}))
-    sql(feature, store, "DROP TABLE lake.main.towns; CREATE TABLE lake.main.other AS SELECT 1 AS id")
+    sql(feature, store, "DROP TABLE lake.main.towns; DELETE FROM lake._fdl.tables; CREATE TABLE lake.main.other AS SELECT 1 AS id")
     save(feature, "feature")
-    described.write_text(json.dumps(DESCRIBED))
     sql(main, store, "INSERT INTO lake.main.towns VALUES (4, 'd')")
     save(main, "main")
 
@@ -157,22 +152,37 @@ def test_a_view_one_side_added_comes_over(branches) -> None:
     assert sql(main, store, "SELECT count(*) FROM lake.main.named") == [(4,)]
 
 
-def test_descriptions_are_merged_key_by_key(branches, described: Path) -> None:
+def test_rows_of_fdl_are_merged_by_their_keys(branches) -> None:
     store, main, feature = branches
-    described.write_text(json.dumps({**DESCRIBED, "description": "Towns of a city"}))
+    sql(feature, store, "INSERT INTO lake._fdl.columns VALUES ('main', 'towns', 'id', 'Town ID')")
     sql(feature, store, "INSERT INTO lake.main.towns VALUES (5, 'e')")
     save(feature, "feature")
-    described.write_text(json.dumps({**DESCRIBED, "title": "All towns"}))
+    sql(main, store, "INSERT INTO lake._fdl.columns VALUES ('main', 'towns', 'name', 'Town name')")
     sql(main, store, "INSERT INTO lake.main.towns VALUES (4, 'd')")
     save(main, "main")
 
     out = run("merge", "refs/heads/feature", main, "--author", "tester")
-    assert "warning: theirs changed dataset.json" in out
+    assert "rows merged  _fdl.columns" in out
     run("push", main)
-    merged = repo.head(store, "refs/heads/main")
-    written = json.loads(store.get(f"versions/{merged.id}/dataset.json"))
-    assert (written["title"], written["description"]) == ("All towns", "Towns of a city")
-    assert written["tables"][0]["rows"] == 5
+    assert sql(main, store, 'SELECT "name", description FROM lake._fdl.columns ORDER BY 1') == [
+        ("id", "Town ID"),
+        ("name", "Town name"),
+    ]
+
+
+def test_a_merge_whose_fdl_the_checks_refuse_is_a_conflict(branches) -> None:
+    store, main, feature = branches
+    sql(feature, store, "DROP TABLE lake.main.towns; DELETE FROM lake._fdl.tables; CREATE TABLE lake.main.other AS SELECT 1 AS id")
+    save(feature, "feature")
+    sql(main, store, "INSERT INTO lake._fdl.columns VALUES ('main', 'towns', 'name', 'Town name')")
+    save(main, "main")
+    before = repo.head(store, "refs/heads/main")
+
+    out = run("merge", "refs/heads/feature", main, "--author", "tester", code=1)
+    assert "_fdl.columns names main.towns.name, which is not there" in out
+    assert "Nothing to push" in run("push", main)
+    assert repo.head(store, "refs/heads/main") == before
+    assert towns(main, store) == [(1, "a"), (2, "b"), (3, "c")]
 
 
 def test_a_branch_behind_the_other_moves_forward_without_a_version(branches) -> None:
@@ -224,31 +234,21 @@ def test_branches_are_listed_created_and_deleted(branches, tmp_path: Path) -> No
 # -- the pieces ------------------------------------------------------------------------
 
 
-def test_values_one_side_changed_take_that_side() -> None:
-    base = {"title": "a", "tables": [{"schema": "s", "name": "t", "description": "x"}]}
-    ours = {"title": "b", "tables": [{"schema": "s", "name": "t", "description": "x"}]}
-    theirs = {"title": "a", "tables": [{"schema": "s", "name": "t", "description": "y"}, {"schema": "s", "name": "u"}]}
-    merged, conflicts = merge.values(base, ours, theirs)
-    assert conflicts == []
-    assert merged == {"title": "b", "tables": [{"schema": "s", "name": "t", "description": "y"}, {"schema": "s", "name": "u"}]}
-
-
-def test_values_both_sides_changed_differently_conflict() -> None:
-    base = {"keywords": ["a"], "tables": [{"schema": "s", "name": "t", "title": "x"}]}
-    ours = {"keywords": ["b"], "tables": [{"schema": "s", "name": "t", "title": "y"}]}
-    theirs = {"keywords": ["c"], "tables": []}
-    _, conflicts = merge.values(base, ours, theirs)
-    assert conflicts == ["keywords", "tables[s.t]"]
-
-
 def test_primary_keys_must_agree() -> None:
-    def described(*keys):
-        return {"tables": [{"schema": "s", "name": name, "primary_key": key} for name, key in keys]}
+    def declared(**keys):
+        return Facts(primary_keys={f"s.{name}": key for name, key in keys.items()}), {f"s.{name}" for name in keys}
 
-    base = described(("same", ["id"]), ("changed", ["id"]))
-    ours = described(("same", ["id"]), ("changed", ["code"]), ("new", ["id"]), ("differ", ["id"]))
-    theirs = described(("same", ["id"]), ("changed", ["code"]), ("new", ["id"]), ("differ", ["code"]))
-    assert merge.primary_keys(base, ours, theirs) == {("s", "same"): ["id"], ("s", "new"): ["id"]}
+    base = declared(same=["id"], changed=["id"])
+    ours = declared(same=["id"], changed=["code"], new=["id"], differ=["id"])
+    theirs = declared(same=["id"], changed=["code"], new=["id"], differ=["code"])
+    found = merge.primary_keys(base, ours, theirs)
+    assert {k: v for k, v in found.items() if k[0] == "s"} == {("s", "same"): ["id"], ("s", "new"): ["id"]}
+    assert found[("_fdl", "columns")] == ["schema", "table", "name"]
+    assert ("_fdl", "dataset") not in found
+    # The same asset columns too.
+    assets = Facts(primary_keys={"s.t": ["id"]}, assets={"s.t": ["pdf"]}), {"s.t"}
+    plain = Facts(primary_keys={"s.t": ["id"]}), {"s.t"}
+    assert ("s", "t") not in merge.primary_keys(plain, assets, plain)
 
 
 def test_a_merge_base_is_the_newest_common_ancestor(tmp_path: Path) -> None:
@@ -287,11 +287,10 @@ def test_a_merge_base_is_the_newest_common_ancestor(tmp_path: Path) -> None:
     assert {v.id for v in repo.merge_bases(store, x, y)} == {a1.id, b1.id}
 
 
-def test_conflicts_in_two_tables_merged_by_rows_are_both_listed(branches, described: Path) -> None:
+def test_conflicts_in_two_tables_merged_by_rows_are_both_listed(branches) -> None:
     store, main, feature = branches
-    two = {**DESCRIBED, "tables": [*DESCRIBED["tables"], {"schema": "main", "name": "s", "primary_key": ["id"]}]}
-    described.write_text(json.dumps(two))
     sql(main, store, "CREATE TABLE lake.main.s AS SELECT * FROM (VALUES (1, 'a'), (2, 'b')) t(id, name)")
+    sql(main, store, keyed("s"))
     save(main, "s")
     run("merge", "refs/heads/main", feature, "--author", "tester")
     run("push", feature)
@@ -305,11 +304,10 @@ def test_conflicts_in_two_tables_merged_by_rows_are_both_listed(branches, descri
     assert "main.towns: both sides changed 1 row(s) differently: id=2" in out
 
 
-def test_rows_of_a_table_named_s_are_merged_by_key(branches, described: Path) -> None:
+def test_rows_of_a_table_named_s_are_merged_by_key(branches) -> None:
     store, main, feature = branches
-    two = {**DESCRIBED, "tables": [*DESCRIBED["tables"], {"schema": "main", "name": "s", "primary_key": ["id"]}]}
-    described.write_text(json.dumps(two))
     sql(main, store, "CREATE TABLE lake.main.s AS SELECT * FROM (VALUES (1, 'a'), (2, 'b'), (3, 'c')) t(id, name)")
+    sql(main, store, keyed("s"))
     save(main, "s")
     run("merge", "refs/heads/main", feature, "--author", "tester")
     run("push", feature)

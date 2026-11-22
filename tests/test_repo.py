@@ -14,7 +14,7 @@ from pathlib import Path
 import duckdb
 import pytest
 
-from fdl import catalog, diff, layout, refs, repo, tags
+from fdl import catalog, diff, fdl_schema, layout, refs, repo, tags
 from fdl.stores import LocalStore
 from fdl.version import is_id, new_id, parse
 
@@ -624,44 +624,34 @@ def test_a_rebuilt_table_is_compared_by_column_name(tmp_path: Path, remote) -> N
 
 
 def test_a_version_records_what_changed_since_its_parent(tmp_path: Path, remote) -> None:
-    def described(title: str) -> dict:
-        return {
-            "name": "towns",
-            "title": "Towns",
-            "tables": [{"schema": "main", "name": "towns", "fields": [{"name": "id", "title": title}]}],
-        }
-
     build(tmp_path / "work.sqlite", remote, "CREATE TABLE lake.main.towns AS SELECT 1 AS id")
-    first = repo.commit(
-        tmp_path / "work.sqlite", tmp_path / "local", parent=None, data_path=data_path(remote),
-        author=AUTHOR, message="m", dataset=described("ID"),
-    )
+    first = commit(tmp_path, remote)
     repo.push(remote, tmp_path / "local" / first.id, first)
     assert first.diff["tables"] == {"added": ["main.towns"], "dropped": []}
+    assert first.dataset is None and first.tree is None
+    assert not (tmp_path / "local" / first.id / layout.DATASET).exists()
 
     build(
         tmp_path / "work.sqlite",
         remote,
-        "INSERT INTO lake.main.towns VALUES (2); CREATE TABLE lake.main.roads AS SELECT 1 AS id",
+        "INSERT INTO lake.main.towns VALUES (2); CREATE TABLE lake.main.roads AS SELECT 1 AS id;"
+        "CREATE SCHEMA lake._fdl; CREATE TABLE lake._fdl.dataset AS SELECT 'Towns' AS title",
     )
-    second = repo.commit(
-        tmp_path / "work.sqlite", tmp_path / "local", parent=first, data_path=data_path(remote),
-        author=AUTHOR, message="m", dataset={**described("Town ID"), "tables": described("Town ID")["tables"]
-        + [{"schema": "main", "name": "roads"}]},
-        parent_dataset=json.loads(remote.get(layout.version_dir(first.id) + layout.DATASET)),
-    )
+    second = commit(tmp_path, remote, parent=first)
     recorded = json.loads((tmp_path / "local" / second.id / layout.VERSION_RECORD).read_text())
     assert recorded["diff"] == {
-        "tables": {"added": ["main.roads"], "dropped": []},
+        "tables": {"added": ["_fdl.dataset", "main.roads"], "dropped": []},
         "rows": [{"table": "main.towns", "from": 1, "to": 2}],
         "columns": [],
         "data": ["main.towns"],
-        "tags": [],
-        "dataset": True,
     }
     repo.push(remote, tmp_path / "local" / second.id, second)
     # fdl diff reads it from the record.
     assert diff.versions(remote, first, repo.read_version(remote, second.id)) == recorded["diff"]
+    # And compares the files of two versions otherwise.
+    del recorded["diff"]
+    bare = parse(json.dumps(recorded).encode())
+    assert diff.versions(remote, first, bare)["tables"] == {"added": ["_fdl.dataset", "main.roads"], "dropped": []}
 
 
 def test_a_record_with_a_path_outside_its_folder_is_refused(tmp_path: Path, remote) -> None:
@@ -760,80 +750,141 @@ def test_dataset_in_diff_is_what_the_writer_wrote() -> None:
     assert diff.with_dataset({}, None, grown) == {}
 
 
-def test_a_version_keeps_primary_keys_assets_and_catalogs_as_tags(tmp_path: Path, remote) -> None:
-    def described(key: list[str]) -> dict:
-        return {
-            "name": "reports",
-            "catalogs": {"census": "https://example.org/census/"},
-            "tables": [
-                {
-                    "schema": "main",
-                    "name": "reports",
-                    "primary_key": key,
-                    "fields": [{"name": "pdf", "asset": True}],
-                },
-                {"schema": "main", "name": "latest"},
-            ],
-        }
+FDL_SCHEMA = """
+CREATE SCHEMA lake._fdl;
+CREATE TABLE lake._fdl.tables ("schema" VARCHAR, "name" VARCHAR, primary_key VARCHAR[], profile BOOLEAN);
+CREATE TABLE lake._fdl.columns ("schema" VARCHAR, "table" VARCHAR, "name" VARCHAR, asset BOOLEAN);
+CREATE TABLE lake._fdl.catalogs ("name" VARCHAR, url VARCHAR);
+"""
+
+
+def test_a_version_reads_primary_keys_assets_and_views_from_fdl(tmp_path: Path, remote) -> None:
+    # Another repository, which a view reads under the name `census`.
+    census = LocalStore(tmp_path / "census")
+    repo.init(census)
+    build(tmp_path / "census.sqlite", census, "CREATE TABLE lake.main.towns AS SELECT 'a' AS town")
+    made = repo.commit(
+        tmp_path / "census.sqlite", tmp_path / "census-local", parent=None, data_path=data_path(census),
+        author=AUTHOR, message="m",
+    )
+    repo.push(census, tmp_path / "census-local" / made.id, made)
 
     build(
         tmp_path / "work.sqlite",
         remote,
+        f"ATTACH 'ducklake:{census.root / layout.version_metadata(made)}' AS census (DATA_PATH '{data_path(census)}', READ_ONLY);"
+        "ATTACH ':memory:' AS gone; CREATE TABLE gone.main.x AS SELECT 1 AS y;"
         "CREATE TABLE lake.main.reports AS SELECT 1 AS id, 2 AS year, NULL::VARCHAR AS pdf;"
-        "COMMENT ON TABLE lake.main.reports IS 'kept';"
-        "CREATE VIEW lake.main.latest AS SELECT * FROM lake.main.reports",
+        "CREATE VIEW lake.main.latest AS SELECT id, year FROM lake.main.reports;"
+        "CREATE VIEW lake.main.towns AS SELECT town FROM census.main.towns;"
+        "CREATE VIEW lake.main.lost AS SELECT y FROM gone.main.x;"
+        + FDL_SCHEMA
+        + "INSERT INTO lake._fdl.tables VALUES ('main', 'reports', ['id'], NULL), ('main', 'latest', NULL, false);"
+        "INSERT INTO lake._fdl.columns VALUES ('main', 'reports', 'pdf', true);"
+        f"INSERT INTO lake._fdl.catalogs VALUES ('census', '{census.root}');"
+        "CREATE TABLE lake._fdl.files AS SELECT 'README.md' AS path, NULL::VARCHAR AS sha256",
     )
-    first = repo.commit(
-        tmp_path / "work.sqlite", tmp_path / "local", parent=None, data_path=data_path(remote),
-        author=AUTHOR, message="m", dataset=described(["id"]),
-    )
-    repo.push(remote, tmp_path / "local" / first.id, first)
+    first = commit(tmp_path, remote)
+    index = json.loads((tmp_path / "local" / first.id / layout.FILES).read_text())
+    reports = index["tables"]["main.reports"]
+    assert (reports["primary_key"], reports["assets"]) == (["id"], ["pdf"])
+    assert index["tables"]["_fdl.files"]["assets"] == ["sha256"]
+    assert index["views"]["main.latest"]["columns"] == [
+        {"name": "id", "type": "INTEGER"},
+        {"name": "year", "type": "INTEGER"},
+    ]
+    assert index["views"]["main.towns"]["columns"] == [{"name": "town", "type": "VARCHAR"}]
+    # A view that reads what no repository of `_fdl.catalogs` holds is listed without its columns.
+    assert "columns" not in index["views"]["main.lost"] and "gone" in index["views"]["main.lost"]["sql"]
+    assert index["catalogs"] == {"census": str(census.root)}
+    metadata = tmp_path / "local" / first.id / first.metadata.path
+    assert tags.read(metadata, first.ducklake.snapshot_id) == {}
 
-    con = duckdb.connect()
-    con.execute("INSTALL ducklake; LOAD ducklake;")
-    metadata = remote.root / layout.version_dir(first.id) / first.metadata.path
-    con.execute(f"ATTACH 'ducklake:{metadata}' AS lake (DATA_PATH '{data_path(remote)}', READ_ONLY)")
-    assert con.execute("SELECT count(*) FROM lake.main.latest").fetchone() == (1,)
-    assert con.execute("SELECT comment, tags FROM duckdb_tables() WHERE database_name = 'lake'").fetchall() == [
-        ("kept", {"fdl.assets": '["pdf"]', "fdl.primary_key": '["id"]'})
-    ]
-    assert con.execute("SELECT tags FROM duckdb_views() WHERE database_name = 'lake'").fetchall() == [
-        ({"fdl.catalogs": '{"census":"https://example.org/census/"}'},)
-    ]
+
+@pytest.mark.parametrize(
+    ("sql", "refused"),
+    [
+        ("INSERT INTO lake._fdl.tables VALUES ('main', 'reports', ['nope'], NULL)", "primary_key names columns it lacks"),
+        ("INSERT INTO lake._fdl.tables VALUES ('main', 'reports', ['id', 'id'], NULL)", "names a column twice"),
+        ("INSERT INTO lake._fdl.tables VALUES ('main', 'v', ['id'], NULL)", "gives the view main.v a primary_key"),
+        ("INSERT INTO lake._fdl.tables VALUES ('main', 'gone', NULL, NULL)", "names main.gone, which is not there"),
+        ("INSERT INTO lake._fdl.columns VALUES ('main', 'reports', 'year', true)", "has to be VARCHAR"),
+        ("INSERT INTO lake._fdl.columns VALUES ('main', 'v', 'id', true)", "of a view as an asset"),
+        ("INSERT INTO lake._fdl.columns VALUES ('main', 'v', 'nope', NULL)", "names main.v.nope"),
+        ("CREATE TABLE lake._fdl.dataset AS SELECT * FROM (VALUES ('a'), ('b')) v(title)", "2 rows"),
+        ("CREATE TABLE lake._fdl.schemas AS SELECT 'x' AS title", "lacks schema of its primary key"),
+    ],
+)
+def test_fdl_the_specification_refuses_is_not_committed(tmp_path: Path, remote, sql: str, refused: str) -> None:
+    build(
+        tmp_path / "work.sqlite",
+        remote,
+        "CREATE TABLE lake.main.reports AS SELECT 1 AS id, 2 AS year;"
+        "CREATE VIEW lake.main.v AS SELECT id FROM lake.main.reports;" + FDL_SCHEMA + sql,
+    )
+    with pytest.raises(fdl_schema.SchemaError, match=refused):
+        commit(tmp_path, remote)
+    assert not (tmp_path / "local").exists() or not any((tmp_path / "local").iterdir())
+
+
+def _tag(working: Path, name: str, key: str, value) -> None:
+    """Tag a table of the working metadata the way writers before `_fdl` did."""
+    import sqlite3
+
+    con = sqlite3.connect(working)
+    snapshot = con.execute("SELECT max(snapshot_id) FROM ducklake_snapshot").fetchone()[0]
+    (table_id,) = con.execute("SELECT table_id FROM ducklake_table WHERE table_name = ? AND end_snapshot IS NULL", [name]).fetchone()
+    con.execute("INSERT INTO ducklake_tag VALUES (?, ?, NULL, ?, ?)", [table_id, snapshot, key, json.dumps(value)])
+    con.commit()
     con.close()
-    indexed = files_index(remote, first)["main.reports"]
-    assert (indexed["primary_key"], indexed["assets"]) == (["id"], ["pdf"])
-
-    build(tmp_path / "work.sqlite", remote, "INSERT INTO lake.main.reports VALUES (1, 3, NULL)")
-    second = repo.commit(
-        tmp_path / "work.sqlite", tmp_path / "local", parent=first, data_path=data_path(remote),
-        author=AUTHOR, message="m", dataset=described(["id", "year"]),
-        parent_dataset=json.loads(remote.get(layout.version_dir(first.id) + layout.DATASET)),
-    )
-    assert second.diff["tags"] == ["main.reports"]
-    assert files_index_local(tmp_path, second)["main.reports"]["primary_key"] == ["id", "year"]
 
 
-def test_tags_changed_alone_get_a_snapshot_of_their_own(tmp_path: Path, remote) -> None:
-    def described(key: list[str]) -> dict:
-        return {"name": "towns", "tables": [{"schema": "main", "name": "towns", "primary_key": key}]}
-
-    build(tmp_path / "work.sqlite", remote, "CREATE TABLE lake.main.towns AS SELECT 1 AS id, 2 AS year")
-    first = repo.commit(
-        tmp_path / "work.sqlite", tmp_path / "local", parent=None, data_path=data_path(remote),
-        author=AUTHOR, message="m", dataset=described(["id"]),
-    )
+def test_what_tags_said_is_written_into_fdl(tmp_path: Path, remote) -> None:
+    working = tmp_path / "work.sqlite"
+    build(working, remote, "CREATE TABLE lake.main.towns AS SELECT 1 AS id, NULL::VARCHAR AS photo")
+    _tag(working, "towns", tags.PRIMARY_KEY, ["id"])
+    _tag(working, "towns", tags.ASSETS, ["photo"])
+    first = commit(tmp_path, remote)
     repo.push(remote, tmp_path / "local" / first.id, first)
-    repo.clone(remote, tmp_path / "again.sqlite", version=first)
-    second = repo.commit(
-        tmp_path / "again.sqlite", tmp_path / "local", parent=first, data_path=data_path(remote),
-        author=AUTHOR, message="m", dataset=described(["id", "year"]),
-        parent_dataset=json.loads(remote.get(layout.version_dir(first.id) + layout.DATASET)),
+    assert repo.earlier_facts(remote, first, working) == fdl_schema.Facts(
+        primary_keys={"main.towns": ["id"]}, assets={"main.towns": ["photo"]}
     )
-    assert second.ducklake.snapshot_id > first.ducklake.snapshot_id
-    assert second.diff["tags"] == ["main.towns"]
+
+    earlier = repo.earlier_facts(remote, first, working)
+    # Writing what the tags said into `_fdl` is no change on its own.
+    with pytest.raises(repo.NothingToCommit):
+        repo.commit(
+            working, tmp_path / "local", parent=first, data_path=data_path(remote), author=AUTHOR,
+            message="m", allow_empty=False, earlier=earlier,
+        )
+    assert diff.working(working, first)["tables"]["added"] == ["_fdl.columns", "_fdl.tables"]
+
+    build(working, remote, "INSERT INTO lake.main.towns VALUES (2, NULL)")
+    second = repo.commit(
+        working, tmp_path / "local", parent=first, data_path=data_path(remote), author=AUTHOR,
+        message="m", allow_empty=False, earlier=earlier,
+    )
+    assert second.diff["tables"]["added"] == []
+    indexed = files_index_local(tmp_path, second)["main.towns"]
+    assert (indexed["primary_key"], indexed["assets"]) == (["id"], ["photo"])
+    # The version has `_fdl`, so the tags it kept are not read.
     metadata = tmp_path / "local" / second.id / second.metadata.path
-    assert tags.read(metadata, second.ducklake.snapshot_id) == {"main.towns": {tags.PRIMARY_KEY: ["id", "year"]}}
+    assert tags.read(metadata, second.ducklake.snapshot_id) == {}
+
+
+def test_what_fdl_already_says_is_kept_over_the_tags(tmp_path: Path, remote) -> None:
+    working = tmp_path / "work.sqlite"
+    build(working, remote, "CREATE TABLE lake.main.towns AS SELECT 1 AS id, 2 AS year")
+    _tag(working, "towns", tags.PRIMARY_KEY, ["id"])
+    first = commit(tmp_path, remote)
+    repo.push(remote, tmp_path / "local" / first.id, first)
+    build(working, remote, FDL_SCHEMA + "INSERT INTO lake._fdl.tables VALUES ('main', 'towns', ['id', 'year'], NULL)")
+    second = repo.commit(
+        working, tmp_path / "local", parent=first, data_path=data_path(remote), author=AUTHOR,
+        message="m", allow_empty=False, earlier=repo.earlier_facts(remote, first, working),
+    )
+    assert files_index_local(tmp_path, second)["main.towns"]["primary_key"] == ["id", "year"]
+    assert "_fdl.tables" in second.diff["tables"]["added"]
 
 
 def files_index_local(tmp_path: Path, version) -> dict:

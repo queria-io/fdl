@@ -1,29 +1,22 @@
-"""Merging: the three-way comparison of tables and descriptions.
+"""Merging: the three-way comparison of tables.
 
 Ours is the version the working catalog was checked out at, theirs the version
 being merged, and the base their common ancestor (see `repo.merge_bases`). A
-table, a row or a value one side changed takes that side's change; one both
-sides changed differently is a conflict. Rows are matched only by a primary
-key that both sides declare.
+table or a row one side changed takes that side's change; one both sides
+changed differently is a conflict. Rows are matched only by a primary key that
+both sides give the table in `_fdl.tables`. The tables of `_fdl` are merged the
+same way, by the keys the specification fixes for them.
 """
 
 from __future__ import annotations
 
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Any, Callable, Iterable
+from typing import Iterable
 
+from . import fdl_schema
 from .catalog import CatalogError, attach_sql, working_data_path
 
-#: A value one version does not hold.
-MISSING: Any = type("Missing", (), {"__repr__": lambda self: "MISSING"})()
-
-#: Lists whose entries are matched by a key rather than taken whole.
-KEYED_LISTS: dict[str, Callable[[dict], Any]] = {
-    "tables": lambda entry: (entry.get("schema"), entry.get("name")),
-    "fields": lambda entry: entry.get("name"),
-    "entries": lambda entry: entry.get("path"),
-}
 
 class Conflicts(Exception):
     """The two sides changed the same thing differently, so no version is made."""
@@ -36,122 +29,30 @@ class Conflicts(Exception):
 #: How many keys of a conflicting table are listed.
 LISTED_KEYS = 10
 
-
-# -- descriptions ----------------------------------------------------------------
-
-
-def values(base: Any, ours: Any, theirs: Any, where: str = "") -> tuple[Any, list[str]]:
-    """Merge one value of `dataset.json` or `tree.json`: the result and the conflicts.
-
-    Objects are merged member by member, lists in `KEYED_LISTS` entry by
-    entry, and anything else is taken whole. `MISSING` stands for a value a
-    version does not hold, and comes back when the merge drops it.
-    """
-    if ours == theirs:
-        return ours, []
-    if ours == base:
-        return theirs, []
-    if theirs == base:
-        return ours, []
-    name = where.rsplit(".", 1)[-1]
-    if _all(dict, base, ours, theirs):
-        return _objects(base, ours, theirs, where)
-    if name in KEYED_LISTS and _all(list, base, ours, theirs) and _entries(base, ours, theirs):
-        return _lists(KEYED_LISTS[name], base, ours, theirs, where)
-    return ours, [where or "(the whole file)"]
+Declared = tuple[fdl_schema.Facts, set[str]]
 
 
-def _all(kind: type, base: Any, ours: Any, theirs: Any) -> bool:
-    return isinstance(ours, kind) and isinstance(theirs, kind) and (base is MISSING or isinstance(base, kind))
-
-
-def _entries(*lists: Any) -> bool:
-    return all(isinstance(entry, dict) for items in lists if items is not MISSING for entry in items)
-
-
-def _objects(base: Any, ours: dict, theirs: dict, where: str) -> tuple[dict, list[str]]:
-    base = base if isinstance(base, dict) else {}
-    merged = {
-        key: values(base.get(key, MISSING), ours.get(key, MISSING), theirs.get(key, MISSING), _at(where, key))
-        for key in dict.fromkeys([*ours, *theirs])
-    }
-    return (
-        {key: value for key, (value, _) in merged.items() if value is not MISSING},
-        [conflict for _, conflicts in merged.values() for conflict in conflicts],
-    )
-
-
-def _lists(key_of: Callable[[dict], Any], base: Any, ours: list, theirs: list, where: str) -> tuple[list, list[str]]:
-    def by_key(items: Any) -> dict:
-        return {key_of(entry): entry for entry in (items if isinstance(items, list) else [])}
-
-    old, mine, other = by_key(base), by_key(ours), by_key(theirs)
-    merged = {
-        key: values(old.get(key, MISSING), mine.get(key, MISSING), other.get(key, MISSING), f"{where}[{_label(key)}]")
-        for key in dict.fromkeys([*mine, *other])
-    }
-    return (
-        [value for value, _ in merged.values() if value is not MISSING],
-        [conflict for _, conflicts in merged.values() for conflict in conflicts],
-    )
-
-
-def _at(where: str, key: str) -> str:
-    return f"{where}.{key}" if where else key
-
-
-def _label(key: Any) -> str:
-    return ".".join(map(str, key)) if isinstance(key, tuple) else str(key)
-
-
-def declared(described: dict | None) -> Any:
-    """A `dataset.json` without what the catalog fills in (rows, types, nulls).
-
-    Those are written again from the merge version's catalog, not merged.
-    """
-    if described is None:
-        return MISSING
-    return {
-        **described,
-        "tables": [
-            {
-                **{key: value for key, value in table.items() if key not in ("rows", "kind")},
-                **(
-                    {"fields": [
-                        {key: value for key, value in column.items() if key not in ("type", "nullable")}
-                        for column in table["fields"]
-                    ]}
-                    if "fields" in table
-                    else {}
-                ),
-            }
-            for table in described.get("tables", [])
-        ],
-    }
-
-
-def primary_keys(base: dict | None, ours: dict | None, theirs: dict | None) -> dict[tuple[str, str], list[str]]:
+def primary_keys(base: Declared, ours: Declared, theirs: Declared) -> dict[tuple[str, str], list[str]]:
     """The tables whose rows may be merged, each with its primary key.
 
-    Ours and theirs declare the same key, and the base does as well or did not
-    hold the table.
+    Each side is what it declares and the tables it holds (`repo.declared`).
+    Ours and theirs give the table the same primary key and the same asset
+    columns, and the base gives it the same key as well or did not hold it. The
+    tables of `_fdl` have the keys the specification gives them; `_fdl.dataset` has none.
     """
-
-    def keys(described: dict | None) -> dict[tuple[str, str], Any]:
-        return {
-            (table.get("schema"), table.get("name")): table.get("primary_key")
-            for table in (described or {}).get("tables", [])
-        }
-
-    old, mine, other = keys(base), keys(ours), keys(theirs)
-    return {
-        table: list(key)
-        for table, key in mine.items()
-        if isinstance(key, list)
-        and key
-        and other.get(table) == key
-        and old.get(table, key) == key
+    (old, held), (mine, _), (other, _) = base, ours, theirs
+    found = {
+        (fdl_schema.SCHEMA, table): list(key) for table, key in fdl_schema.KEYS.items() if key
     }
+    for name, key in mine.primary_keys.items():
+        if (
+            other.primary_keys.get(name) == key
+            and sorted(mine.assets.get(name, [])) == sorted(other.assets.get(name, []))
+            and (name not in held or old.primary_keys.get(name) == key)
+        ):
+            schema, table = name.split(".", 1)
+            found[(schema, table)] = list(key)
+    return found
 
 
 # -- tables ------------------------------------------------------------------------
@@ -168,8 +69,6 @@ class Plan:
     dropped: list[tuple[str, str]] = field(default_factory=list)
     #: Tables whose rows were merged by primary key: the keys of rows from theirs.
     rows: dict[tuple[str, str], int] = field(default_factory=dict)
-    #: The description files theirs changed: the writer's own copies lack those changes.
-    described: list[str] = field(default_factory=list)
     #: Comments both sides changed differently: ours is kept.
     comments: list[str] = field(default_factory=list)
 

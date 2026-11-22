@@ -24,6 +24,7 @@ description: Test cases for deleting shared objects, which every implementation 
 | --- | --- |
 | `now`, `grace_seconds` | The time the process runs, and the grace period |
 | `files` | The repository's files other than shared objects, by key. Each value is the file's JSON |
+| `metadata` | Optional. Metadata files a case needs read, by key: for each table (`schema.name`), its `columns` (name to DuckDB type) and its `rows`. Before running the case, an implementation writes them as DuckLake metadata at that key, with the data files it writes left out of the case |
 | `objects` | The objects under the data directory, `assets/` and `objects/`, and files elsewhere a process must leave alone, by key, with the time each was placed. Their content does not matter |
 | `deleted` | The keys deleted |
 

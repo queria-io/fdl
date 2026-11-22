@@ -18,8 +18,8 @@ from pathlib import Path
 from typing import Callable, Iterable, Iterator, Mapping
 
 from . import catalog, layout, objects, profiles, refs
+from . import fdl_schema
 from . import tags as fdl_tags
-from . import dataset as dataset_json
 from . import diff as diffs
 from .store import Store, is_conflict, is_missing
 from .version import DuckLake, File, Metadata, Version, VersionError, new_id, parse, utc_now
@@ -135,23 +135,21 @@ def commit(
     author: dict,
     message: str,
     annotations: dict | None = None,
-    dataset: dict | None = None,
-    tree: list[dict] | None = None,
     allow_empty: bool = True,
     working_data: str | None = None,
-    parent_dataset: dict | None = None,
+    setup: Iterable[str] = (),
+    earlier: fdl_schema.Facts | None = None,
+    fill: fdl_schema.Facts | None = None,
     merged: Version | None = None,
 ) -> Version:
     """Freeze the working metadata into a version under ``out_dir/<ID>/``.
 
-    ``dataset`` is the writer's description (`dataset.json`), checked against
-    the frozen metadata and completed from it. ``tree`` lists the version's
-    other files (`tree.json`: path, sha256, bytes), such as its README.
+    `_fdl` is read from the working metadata and checked against its tables and
+    views first (`fdl_schema.describe`), which raises `fdl_schema.SchemaError`.
 
     ``allow_empty=False`` refuses a version that would hold what ``parent``
-    holds: the same tables, columns, rows and views, and the same
-    `dataset.json`. It raises `NothingToCommit`, or `CannotCompare` when the
-    rows could not be read to tell.
+    holds: the same tables, columns, rows and views. It raises
+    `NothingToCommit`, or `CannotCompare` when the rows could not be read to tell.
 
     ``data_path`` is where readers find the data files (the remote's root and
     data_dir), written into the frozen catalog. Every file reference must be
@@ -159,13 +157,21 @@ def commit(
     Nothing is uploaded: that is `push`.
 
     ``working_data`` is where the working metadata wrote its new data files,
-    when not where it records (see `clone`): comparing reads them there.
+    when not where it records (see `clone`): reading `_fdl` and comparing read
+    them there, after ``setup`` (the keys to read the repository's files).
 
-    ``parent_dataset`` is the parent's `dataset.json`, which the version's
-    ``diff`` compares with (see `record`).
+    ``earlier`` is what ``parent`` said, when it was written before `_fdl`
+    (`earlier_facts`): it is written into `_fdl` where `_fdl` does not say it,
+    and `_fdl` holding only that is no change. ``fill`` is what to write instead,
+    when the working metadata holds another version's tables (a revert or a merge).
 
     ``merged`` is the version a merge brought in: the second parent.
     """
+    setup = list(setup)
+    reading = working_data or catalog.working_data_path(working)
+    described = fdl_schema.describe(
+        working, data_path=reading, setup=setup, earlier=fill if fill is not None else earlier
+    )
     Path(out_dir).mkdir(parents=True, exist_ok=True)
     frozen = Path(out_dir) / f".freezing-{new_id()}.duckdb"
     try:
@@ -179,21 +185,19 @@ def commit(
                 f"{len(absolute)} file(s) are recorded with an absolute path "
                 f"(first: {absolute[0].path}); rebuild so they sit under the data path"
             )
-        # The description first: it reads the metadata alone, while comparing
-        # the contents can read every row of a rebuilt table.
-        if (
-            not allow_empty
-            and parent is not None
-            and _same_description(frozen, dataset, parent)
-            and _same_tree(tree, parent)
-        ):
+        if not allow_empty and parent is not None:
             try:
                 unchanged = catalog.same_contents(
-                    working, parent.ducklake.snapshot_id, data_path=working_data
+                    working,
+                    parent.ducklake.snapshot_id,
+                    data_path=working_data,
+                    setup=setup,
+                    ignore_schema=None if earlier is None else fdl_schema.SCHEMA,
                 )
             except catalog.CatalogError as exc:
                 raise CannotCompare(str(exc)) from exc
-            if unchanged:
+            # `_fdl` holding only what an earlier parent said is the parent's.
+            if unchanged and (earlier is None or described.rows == fdl_schema.expected_rows(earlier)):
                 raise NothingToCommit(parent)
         return record(
             frozen,
@@ -202,32 +206,35 @@ def commit(
             author=author,
             message=message,
             annotations=annotations,
-            dataset=dataset,
-            tree=tree,
-            parent_dataset=parent_dataset,
+            described=described,
+            earlier=earlier,
             merged=merged,
         )
     finally:
         frozen.unlink(missing_ok=True)
 
 
-def _same_description(frozen: Path, dataset: dict | None, parent: Version) -> bool:
-    if dataset is None or parent.dataset is None:
-        return dataset is None and parent.dataset is None
-    written = dataset_json.to_json(dataset_json.describe(dataset, frozen))
-    return hashlib.sha256(written).hexdigest() == parent.dataset.sha256
+def earlier_facts(store: Store, version: Version, metadata: Path) -> fdl_schema.Facts | None:
+    """What a version written before `_fdl` said by its `dataset.json` or its `fdl.` tags,
+    or None for a version that says it in `_fdl` (or says nothing).
+
+    ``metadata`` holds the version's snapshot: its frozen metadata, or a working
+    metadata cloned from it.
+    """
+    if version.dataset is not None:
+        return fdl_schema.from_dataset(diffs.described(store, version))
+    tagged = fdl_tags.read(metadata, version.ducklake.snapshot_id)
+    return fdl_schema.from_tags(tagged) if tagged else None
 
 
-def _same_tree(tree: list[dict] | None, parent: Version) -> bool:
-    if not tree or parent.tree is None:
-        return not tree and parent.tree is None
-    return hashlib.sha256(_tree_json(tree)).hexdigest() == parent.tree.sha256
-
-
-def _tree_json(tree: list[dict]) -> bytes:
-    objects.check_tree(tree)
-    entries = sorted(tree, key=lambda item: item["path"])
-    return (json.dumps({"entries": entries}, ensure_ascii=False, indent=2) + "\n").encode()
+def declared(store: Store, version: Version) -> tuple[fdl_schema.Facts, set[str]]:
+    """The primary keys, assets and catalogs a pushed version declares, and its tables
+    (``schema.name``): from `files.json`, or the `dataset.json` of a version written before `_fdl`."""
+    if version.dataset is not None:
+        described = diffs.described(store, version) or {}
+        return fdl_schema.from_dataset(described), fdl_tags.names(described)
+    index = diffs.indexed(store, version) or {}
+    return fdl_schema.from_index(index), set(index.get("tables", {})) | set(index.get("views", {}))
 
 
 def clone(
@@ -333,9 +340,8 @@ def record(
     author: dict,
     message: str,
     annotations: dict | None = None,
-    dataset: dict | None = None,
-    tree: list[dict] | None = None,
-    parent_dataset: dict | None = None,
+    described: fdl_schema.Described | None = None,
+    earlier: fdl_schema.Facts | None = None,
     merged: Version | None = None,
 ) -> Version:
     """Make a version out of a metadata file that is already frozen.
@@ -345,11 +351,9 @@ def record(
     the copy keeps only its last snapshot (see `catalog.keep_last_snapshot`).
 
     The version's ``diff`` compares the metadata at the parent's snapshot with
-    the frozen one, and says whether what the writer wrote in `dataset.json`
-    changed when both it and ``parent_dataset`` (the parent's) are given.
-
-    The primary keys, assets and catalogs ``dataset`` declares are written into
-    the metadata as `fdl.` tags (see `tags.write`).
+    the frozen one. ``described`` is what `fdl_schema.describe` read from it,
+    for `files.json`; without it, it is read from the frozen metadata. The tables
+    of `_fdl` that hold only what ``earlier`` (see `commit`) said are not listed as added.
 
     ``merged`` is the second parent of a merge version; ``seq`` follows the first.
     """
@@ -357,6 +361,8 @@ def record(
         raise RepoError("a merge version needs the version of its own branch as first parent")
     if not author.get("name"):
         raise RepoError("a version needs an author name")
+    if described is None:
+        described = fdl_schema.describe(frozen, data_path=catalog.recorded_data_path(frozen))
     version_id = new_id()
     target = Path(out_dir) / version_id
     target.mkdir(parents=True)
@@ -367,33 +373,16 @@ def record(
         if not recorded:
             raise RepoError(f"{frozen} records no DuckLake format")
         after = parent.ducklake.snapshot_id if parent else None
-        described = None
-        completed = None
-        if dataset is not None:
-            written = target / layout.DATASET
-            completed = dataset_json.describe(dataset, copied)
-            written.write_bytes(dataset_json.to_json(completed))
-            described = File(
-                path=layout.DATASET, bytes=written.stat().st_size, sha256=_sha256(written)
-            )
-            # The values FDL reads, kept in the metadata as `fdl.` tags beside `dataset.json`.
-            # Before the range: tags that change alone get a snapshot of their own.
-            fdl_tags.write(copied, fdl_tags.from_dataset(completed), after=after)
         first, last = catalog.snapshot_range(copied, after)
         difference = diffs.between(copied, after, last)
-        if difference is not None:
-            difference = diffs.with_dataset(difference, parent_dataset, completed)
+        if difference is not None and earlier is not None:
+            difference = _as_parents(difference, described.rows, fdl_schema.expected_rows(earlier))
         # After the diff, which reads the parent's snapshot: the version keeps only its own.
         catalog.keep_last_snapshot(copied)
         # Attaching it through DuckLake must not have moved it to another format.
         if catalog.recorded_format(copied) != recorded:
             raise RepoError(f"keeping the last snapshot changed the DuckLake format of {frozen}")
-        indexed = _write_files_index(target, copied, last)
-        listed = None
-        if tree:
-            written = target / layout.TREE
-            written.write_bytes(_tree_json(tree))
-            listed = File(path=layout.TREE, bytes=written.stat().st_size, sha256=_sha256(written))
+        indexed = _write_files_index(target, copied, last, described)
         version = Version(
             id=version_id,
             seq=parent.seq + 1 if parent else 1,
@@ -411,8 +400,6 @@ def record(
             files=indexed,
             diff=difference,
             annotations=dict(annotations or {}),
-            dataset=described,
-            tree=listed,
         )
         (target / layout.VERSION_RECORD).write_bytes(version.to_json())
     except BaseException:
@@ -423,28 +410,36 @@ def record(
     return version
 
 
-def _write_files_index(target: Path, frozen: Path, snapshot_id: int) -> File:
-    """Write `files.json`: each table's files at the frozen snapshot, and every file the metadata names."""
+def _as_parents(difference: dict, held: dict[str, list[str]], expected: dict[str, list[str]]) -> dict:
+    """``difference`` without the tables of `_fdl` added with only what the parent said before `_fdl`."""
+    prefix = fdl_schema.SCHEMA + "."
+    added = [
+        name
+        for name in difference["tables"]["added"]
+        if not (name.startswith(prefix) and held.get(name[len(prefix) :]) == expected.get(name[len(prefix) :]))
+    ]
+    return {**difference, "tables": {**difference["tables"], "added": added}}
+
+
+def _write_files_index(target: Path, frozen: Path, snapshot_id: int, described: fdl_schema.Described) -> File:
+    """Write `files.json`: each table's files at the frozen snapshot, each view's columns, and every file the metadata names."""
     written = target / layout.FILES
-    tagged = fdl_tags.read(frozen, snapshot_id)
+    facts = described.facts
     index = {
         "tables": {
-            name: {**table, **_index_tags(tagged.get(name, {}))}
+            name: {
+                **table,
+                **({"primary_key": facts.primary_keys[name]} if name in facts.primary_keys else {}),
+                **({"assets": facts.assets[name]} if name in facts.assets else {}),
+            }
             for name, table in catalog.table_files(frozen, snapshot_id).items()
         },
+        **({"views": described.views} if described.views else {}),
+        **({"catalogs": facts.catalogs} if facts.catalogs else {}),
         "named": catalog.data_files(frozen),
     }
     written.write_bytes((json.dumps(index, ensure_ascii=False, indent=2) + "\n").encode())
     return File(path=layout.FILES, bytes=written.stat().st_size, sha256=_sha256(written))
-
-
-def _index_tags(values: dict) -> dict:
-    """A table's `fdl.primary_key` and `fdl.assets`, as `files.json` keys them."""
-    return {
-        key: values[tag]
-        for key, tag in (("primary_key", fdl_tags.PRIMARY_KEY), ("assets", fdl_tags.ASSETS))
-        if tag in values
-    }
 
 
 def push(
@@ -589,33 +584,37 @@ def write_profiles(
     how many were made from the data.
     """
     local = Path(local)
-    described_path = local / layout.DATASET
-    if not described_path.is_file():
-        return 0
-    described = json.loads(described_path.read_text(encoding="utf-8"))
-    files_now = json.loads((local / layout.FILES).read_text(encoding="utf-8")).get("tables", {})
+    setup = list(setup)
+    index = json.loads((local / layout.FILES).read_text(encoding="utf-8"))
+    files_now = index.get("tables", {})
     files_before: dict = {}
+    before_index: dict | None = None
     if parent is not None and parent.files is not None:
         try:
-            files_before = json.loads(store.get(layout.version_dir(parent.id) + parent.files.path)).get("tables", {})
+            before_index = json.loads(store.get(layout.version_dir(parent.id) + parent.files.path))
         except Exception as exc:  # noqa: BLE001 - stores raise their own types
             if not is_missing(exc):
                 raise
-    views_now = _view_sql(described)
+        files_before = (before_index or {}).get("tables", {})
+    views_now = {name: view.get("sql") for name, view in index.get("views", {}).items()}
     views_before: dict[str, str | None] = {}
-    if views_now and parent is not None and parent.dataset is not None:
+    if views_now and before_index is not None and "views" in before_index:
+        views_before = {name: view.get("sql") for name, view in before_index["views"].items()}
+    elif views_now and parent is not None and parent.dataset is not None:
         try:
             views_before = _view_sql(json.loads(store.get(layout.version_dir(parent.id) + parent.dataset.path)))
         except Exception as exc:  # noqa: BLE001 - stores raise their own types
             if not is_missing(exc):
                 raise
+    unprofiled = _read_facts(working, data_path=data_path, setup=setup).unprofiled
+    wanted = profiles.indexed(index, unprofiled)
     changed_tables = {
         key for key in {*files_before, *files_now} if not _same_files(files_before.get(key), files_now.get(key))
     }
     unchanged_views = _unchanged_views(views_now, views_before, set(files_now), changed_tables)
     kept: dict[str, bytes] = {}
     pending = []
-    for table in profiles.tables(described):
+    for table in wanted:
         key = f"{table['schema']}.{table['name']}"
         relative = profiles.path(table["schema"], table["name"])
         previous = None
@@ -741,6 +740,20 @@ def _tables_read(sql: str | None) -> set[tuple[str, str]] | None:
     return {(name_schema, name) for name_schema, name in found if name_schema or name not in ctes}
 
 
+def _read_facts(metadata: Path, *, data_path: str, setup: Iterable[str] = ()) -> fdl_schema.Facts:
+    """What `_fdl` says in a metadata, read with its data files under ``data_path``."""
+    import duckdb
+
+    con = duckdb.connect()
+    try:
+        for statement in [*setup, *catalog.attach_sql(Path(metadata), alias="lake", data_path=data_path, read_only=True)]:
+            if statement:
+                con.execute(statement)
+        return fdl_schema.read(con)
+    finally:
+        con.close()
+
+
 def _view_sql(described: dict) -> dict[str, str | None]:
     """Each view of a `dataset.json` (``schema.name``) and its query."""
     return {
@@ -748,18 +761,23 @@ def _view_sql(described: dict) -> dict[str, str | None]:
     }
 
 
-def missing_profiles(store: Store, version: Version) -> list[dict]:
-    """The tables of ``version`` that get a profile and have none in the repository."""
-    if version.dataset is None:
-        return []
+def missing_profiles(store: Store, version: Version, *, setup: Iterable[str] = ()) -> list[dict]:
+    """The tables and views of ``version`` that get a profile and have none in the repository."""
     folder = layout.version_dir(version.id)
-    described = json.loads(store.get(folder + version.dataset.path))
+    if version.dataset is not None:
+        wanted = profiles.tables(json.loads(store.get(folder + version.dataset.path)))
+    else:
+        index = diffs.indexed(store, version)
+        if index is None:
+            return []
+        with tempfile.TemporaryDirectory(prefix=".fdl-profile-") as scratch:
+            frozen = Path(scratch) / "metadata.duckdb"
+            frozen.write_bytes(store.get(layout.version_metadata(version)))
+            check_catalog(frozen, version)
+            unprofiled = _read_facts(frozen, data_path=data_url(store), setup=setup).unprofiled
+        wanted = profiles.indexed(index, unprofiled)
     there = set(store.list(folder + layout.PROFILES_DIR))
-    return [
-        table
-        for table in profiles.tables(described)
-        if folder + profiles.path(table["schema"], table["name"]) not in there
-    ]
+    return [table for table in wanted if folder + profiles.path(table["schema"], table["name"]) not in there]
 
 
 def add_profiles(store: Store, version: Version, *, setup: Iterable[str] = ()) -> tuple[list[str], list[str]]:
@@ -770,7 +788,7 @@ def add_profiles(store: Store, version: Version, *, setup: Iterable[str] = ()) -
     under the version, and the tables (``schema.name``) that could not be read.
     Refused for a version past retention, which has no metadata to clone.
     """
-    wanted = missing_profiles(store, version)
+    wanted = missing_profiles(store, version, setup=setup)
     if not wanted:
         return [], []
     with tempfile.TemporaryDirectory(prefix=".fdl-profile-") as scratch:
@@ -1216,16 +1234,12 @@ def collect(store: Store, *, plan: Collection, setup: Iterable[str] = ()) -> lis
 
 
 def _asset_columns(store: Store, version: Version) -> list[tuple[str, str, str]]:
-    """The asset columns the version's `dataset.json` marks."""
-    if version.dataset is None:
-        return []
-    try:
-        described = json.loads(store.get(layout.version_dir(version.id) + version.dataset.path))
-    except Exception as exc:  # noqa: BLE001 - stores raise their own types
-        if is_missing(exc):
-            return []
-        raise
-    return objects.asset_columns(described)
+    """The asset columns of a version: those its `files.json` lists, or its `dataset.json`
+    marks in a version written before `_fdl`."""
+    if version.dataset is not None:
+        described = diffs.described(store, version)
+        return objects.asset_columns(described) if described else []
+    return objects.indexed_asset_columns(diffs.indexed(store, version))
 
 
 def _reached_assets(store: Store, version: Version, local: Path | None, setup: list[str]) -> set[str]:

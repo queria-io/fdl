@@ -15,6 +15,8 @@ for version in repo.log(store):
 | Module | Holds |
 | --- | --- |
 | `fdl.repo` | the operations: `init`, `clone`, `commit`, `push`, `log`, `expire`, `prune` |
+| `fdl.fdl_schema` | reading and checking the [_fdl schema](/spec/fdl-schema) of a metadata file (`fdl_schema.describe`) |
+| `fdl.meta` | the rows of `_fdl` read and written by name and key, as `fdl meta` does |
 | `fdl.diff` | what changed between two versions (`diff.versions`) or in a working metadata file (`diff.working`) |
 | `fdl.refs` | reading and moving refs under their conditions |
 | `fdl.version` | `Version`, the record in `version.json`, and new IDs |
@@ -51,13 +53,13 @@ repo.clone(store, working, *, ref="HEAD", local_data=None, version=None) -> Vers
 Make a working metadata file at `working` from the version `ref` holds, or from `version` when given. Returns that version, or `None` before the first one. A store over HTTP needs `local_data`, the folder new data files go to. Refuses a metadata file whose sha256 is not the one `version.json` records, or that names a data file outside the data folder.
 
 ```python
-repo.commit(working, out_dir, *, parent, data_path, author, message, annotations=None, dataset=None) -> Version
+repo.commit(working, out_dir, *, parent, data_path, author, message, annotations=None, allow_empty=True, setup=(), earlier=None) -> Version
 ```
 
-Freeze the working metadata into `out_dir/<ID>/`, with `dataset` (the parsed `dataset.json`) checked against the metadata and completed from it. `data_path` is `repo.data_url(store)`. Nothing is uploaded.
+Freeze the working metadata into `out_dir/<ID>/`, after checking its `_fdl` against its tables and views; raises `fdl_schema.SchemaError` with the problems found. `data_path` is `repo.data_url(store)`. `earlier` is what a parent written before `_fdl` said (`repo.earlier_facts(store, parent, working)`), written into `_fdl` first where `_fdl` does not say it. Nothing is uploaded.
 
 ```python
-repo.record(frozen, out_dir, *, parent, author, message, annotations=None, dataset=None) -> Version
+repo.record(frozen, out_dir, *, parent, author, message, annotations=None) -> Version
 ```
 
 Make a version around a metadata file that is already frozen, for a writer that freezes it itself.
@@ -84,12 +86,11 @@ repo.forward(store, ref, version) -> None
 The common ancestors of two versions that no other common ancestor descends from: a merge needs exactly one. `forward` moves a branch to a version already in the repository that descends from where it is, for a merge whose base is the branch's own version.
 
 ```python
-merge.values(base, ours, theirs) -> tuple[value, list[str]]
 merge.primary_keys(base, ours, theirs) -> dict[tuple[str, str], list[str]]
 merge.tables(working, base, theirs, *, keys, repository_data, data_path=None, setup=(), write=True) -> Plan
 ```
 
-The pieces of `fdl merge`. `values` merges `dataset.json` or `tree.json` key by key and returns the conflicts; `merge.MISSING` stands for a value a version does not hold. `primary_keys` gives the tables whose rows may be merged. `tables` writes into the working metadata, in one snapshot, what the frozen metadata `theirs` changed since `base`, or nothing when there is a conflict; `Plan` lists the conflicts and what came over. `repo.commit` and `repo.record` take `merged=<theirs>` to make the merge version.
+The pieces of `fdl merge`. `primary_keys` gives the tables whose rows may be merged, from what each version declares (`repo.declared(store, version)`), the tables of `_fdl` among them. `tables` writes into the working metadata, in one snapshot, what the frozen metadata `theirs` changed since `base`, or nothing when there is a conflict; `Plan` lists the conflicts and what came over. `repo.commit` and `repo.record` take `merged=<theirs>` to make the merge version.
 
 ```python
 repo.readable(store, name="HEAD") -> Version
@@ -142,7 +143,7 @@ diff.working(working, base) -> dict
 diff.lines(result) -> list[str]
 ```
 
-`versions` compares two versions (`old` is `None` before the first one) from the newer one's `diff` when the older is its parent, and from their `dataset.json` and `files.json` otherwise. `working` compares a working metadata file with `base`, the version it was cloned at. Both return `tables` (`added`, `dropped`), `rows`, `columns`, `data` and `descriptions`, as `fdl diff --json` prints them. `lines` gives the lines `fdl diff` prints.
+`versions` compares two versions (`old` is `None` before the first one) from the newer one's `diff` when the older is its parent, and from their `files.json` otherwise (and the `dataset.json` of a version written before `_fdl`). `working` compares a working metadata file with `base`, the version it was cloned at. Both return `tables` (`added`, `dropped`), `rows`, `columns` and `data`, as `fdl diff --json` prints them. `lines` gives the lines `fdl diff` prints.
 
 ## fdl.refs
 

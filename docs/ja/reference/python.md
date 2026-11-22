@@ -15,6 +15,8 @@ for version in repo.log(store):
 | モジュール | 中身 |
 | --- | --- |
 | `fdl.repo` | 操作: `init`、`clone`、`commit`、`push`、`log`、`expire`、`prune` |
+| `fdl.fdl_schema` | メタデータの [_fdl スキーマ](/ja/spec/fdl-schema)の読み取りと確認（`fdl_schema.describe`） |
+| `fdl.meta` | `fdl meta` と同じく、名前とキーで `_fdl` の行を読み書きする |
 | `fdl.diff` | 2 つのバージョンの違い（`diff.versions`）と作業メタデータの変更（`diff.working`） |
 | `fdl.refs` | ref を読み、条件付きで動かす |
 | `fdl.version` | `Version`（`version.json` の記録）と新しい ID |
@@ -51,13 +53,13 @@ repo.clone(store, working, *, ref="HEAD", local_data=None, version=None) -> Vers
 `ref` が指すバージョン、または `version` を渡したときはそのバージョンから、`working` に作業メタデータを作ります。そのバージョンを返し、最初のバージョンの前は `None` を返します。HTTP の置き場では、新しいデータファイルを書くフォルダ `local_data` が要ります。メタデータの sha256 が `version.json` の記録と違うときと、メタデータがデータフォルダの外のデータファイルを指しているときは断ります。
 
 ```python
-repo.commit(working, out_dir, *, parent, data_path, author, message, annotations=None, dataset=None) -> Version
+repo.commit(working, out_dir, *, parent, data_path, author, message, annotations=None, allow_empty=True, setup=(), earlier=None) -> Version
 ```
 
-作業メタデータを `out_dir/<ID>/` に固めます。`dataset`（読み込んだ `dataset.json`）をメタデータと照らし合わせ、メタデータから書き足します。`data_path` は `repo.data_url(store)` です。アップロードはしません。
+作業メタデータを `out_dir/<ID>/` に固めます。その前に `_fdl` をテーブル・ビューと照らし合わせて確認し、問題があれば `fdl_schema.SchemaError` を投げます。`earlier` は、`_fdl` より前に書かれた親が述べていたこと（`repo.earlier_facts(store, parent, working)`）で、`_fdl` が述べていなければ先に `_fdl` に書きます。`data_path` は `repo.data_url(store)` です。アップロードはしません。
 
 ```python
-repo.record(frozen, out_dir, *, parent, author, message, annotations=None, dataset=None) -> Version
+repo.record(frozen, out_dir, *, parent, author, message, annotations=None) -> Version
 ```
 
 固め終えたメタデータからバージョンを作ります。自分でメタデータを固める書き手向けです。
@@ -84,12 +86,11 @@ repo.forward(store, ref, version) -> None
 `merge_bases` は、2 つのバージョンの共通の祖先のうち、ほかの共通の祖先の祖先でないものを返します。マージにはちょうど 1 つ要ります。`forward` は、リポジトリにすでにあり、いまの位置の子孫であるバージョンへブランチを動かします。基点がブランチ自身のバージョンであるマージ向けです。
 
 ```python
-merge.values(base, ours, theirs) -> tuple[value, list[str]]
 merge.primary_keys(base, ours, theirs) -> dict[tuple[str, str], list[str]]
 merge.tables(working, base, theirs, *, keys, repository_data, data_path=None, setup=(), write=True) -> Plan
 ```
 
-`fdl merge` の部品です。`values` は `dataset.json` か `tree.json` をキーごとにマージし、衝突を返します。`merge.MISSING` は、そのバージョンに無い値を表します。`primary_keys` は、行をマージできるテーブルを返します。`tables` は、固めたメタデータ `theirs` が `base` から変えた内容を、作業メタデータに 1 つのスナップショットで書きます。衝突があるときは何も書きません。`Plan` は衝突と取り込んだものを持ちます。マージのバージョンは、`repo.commit` と `repo.record` に `merged=<theirs>` を渡して作ります。
+`fdl merge` の部品です。`primary_keys` は、それぞれのバージョンが宣言すること（`repo.declared(store, version)`）から、行をマージできるテーブルを返します。`_fdl` のテーブルも含みます。`tables` は、固めたメタデータ `theirs` が `base` から変えた内容を、作業メタデータに 1 つのスナップショットで書きます。衝突があるときは何も書きません。`Plan` は衝突と取り込んだものを持ちます。マージのバージョンは、`repo.commit` と `repo.record` に `merged=<theirs>` を渡して作ります。
 
 ```python
 repo.readable(store, name="HEAD") -> Version
@@ -142,7 +143,7 @@ diff.working(working, base) -> dict
 diff.lines(result) -> list[str]
 ```
 
-`versions` は 2 つのバージョンを、古い方が親なら新しい方の `diff` から、それ以外は `dataset.json`・`files.json` から比べます（最初のバージョンの前は `old` を `None` にします）。`working` は作業メタデータを、clone したときのバージョン `base` と比べます。どちらも `tables`（`added`・`dropped`）・`rows`・`columns`・`data`・`descriptions` を返し、`fdl diff --json` と同じ形です。`lines` は `fdl diff` が表示する行を返します。
+`versions` は 2 つのバージョンを、古い方が親なら新しい方の `diff` から、それ以外は `files.json`（`_fdl` より前に書かれたバージョンでは `dataset.json` も）から比べます（最初のバージョンの前は `old` を `None` にします）。`working` は作業メタデータを、clone したときのバージョン `base` と比べます。どちらも `tables`（`added`・`dropped`）・`rows`・`columns`・`data` を返し、`fdl diff --json` と同じ形です。`lines` は `fdl diff` が表示する行を返します。
 
 ## fdl.refs
 

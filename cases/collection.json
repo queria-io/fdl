@@ -539,6 +539,115 @@
         "datamain/t/ducklake-a.parquet": "2026-11-01T00:00:00Z"
       },
       "deleted": []
+    },
+    {
+      "name": "keeps the assets the rows of _fdl reach: sha256 of _fdl.files and the columns _fdl.columns marks",
+      "files": {
+        "fdl.json": {
+          "fdl": "0.1",
+          "data_dir": "data/"
+        },
+        "versions/019a3c4e-7b21-7f3a-9c55-2f0d8e1a4b6c/version.json": {
+          "fdl": "0.1",
+          "id": "019a3c4e-7b21-7f3a-9c55-2f0d8e1a4b6c",
+          "seq": 1,
+          "parents": [],
+          "created_at": "2026-11-01T00:00:00Z",
+          "author": {
+            "name": "example"
+          },
+          "message": "",
+          "metadata": {
+            "path": "metadata.db",
+            "storage": "duckdb-v1.5.0",
+            "bytes": 0,
+            "sha256": "0000000000000000000000000000000000000000000000000000000000000000"
+          },
+          "ducklake": {
+            "format": "1.0",
+            "snapshot_id": 1,
+            "snapshots": [
+              1
+            ]
+          },
+          "files": {
+            "path": "files.json",
+            "bytes": 0,
+            "sha256": "0000000000000000000000000000000000000000000000000000000000000000"
+          }
+        },
+        "versions/019a3c4e-7b21-7f3a-9c55-2f0d8e1a4b6c/files.json": {
+          "tables": {
+            "_fdl.columns": {
+              "files": []
+            },
+            "_fdl.files": {
+              "files": [],
+              "assets": [
+                "sha256"
+              ]
+            },
+            "main.reports": {
+              "files": [],
+              "assets": [
+                "pdf"
+              ]
+            }
+          }
+        }
+      },
+      "metadata": {
+        "versions/019a3c4e-7b21-7f3a-9c55-2f0d8e1a4b6c/metadata.db": {
+          "_fdl.files": {
+            "columns": {
+              "path": "VARCHAR",
+              "sha256": "VARCHAR"
+            },
+            "rows": [
+              {
+                "path": "README.md",
+                "sha256": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+              }
+            ]
+          },
+          "_fdl.columns": {
+            "columns": {
+              "schema": "VARCHAR",
+              "table": "VARCHAR",
+              "name": "VARCHAR",
+              "asset": "BOOLEAN"
+            },
+            "rows": [
+              {
+                "schema": "main",
+                "table": "reports",
+                "name": "pdf",
+                "asset": true
+              }
+            ]
+          },
+          "main.reports": {
+            "columns": {
+              "title": "VARCHAR",
+              "pdf": "VARCHAR"
+            },
+            "rows": [
+              {
+                "title": "2025",
+                "pdf": "cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc"
+              }
+            ]
+          }
+        }
+      },
+      "objects": {
+        "assets/aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa": "2026-11-01T00:00:00Z",
+        "assets/bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb": "2026-11-01T00:00:00Z",
+        "assets/cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc": "2026-11-01T00:00:00Z"
+      },
+      "deleted": [
+        "assets/bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"
+      ]
     }
   ]
 }

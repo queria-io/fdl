@@ -9,7 +9,7 @@ import duckdb
 import pytest
 from typer.testing import CliRunner
 
-from fdl import catalog, layout, profiles, repo, tags
+from fdl import catalog, layout, profiles, repo
 from fdl.cli import app
 from fdl.stores import LocalStore
 
@@ -42,7 +42,6 @@ def repository(tmp_path: Path, monkeypatch):
     remote, working = tmp_path / "remote", tmp_path / "lake.sqlite"
     run("init", remote)
     run("clone", remote, working)
-    (tmp_path / "about" / "dataset.json").write_text('{"name": "towns"}')
     return LocalStore(remote), working
 
 
@@ -369,26 +368,19 @@ def test_a_wide_table_is_measured_a_few_columns_at_a_time(repository, monkeypatc
 
 def test_a_table_or_view_with_profile_false_gets_no_profile(repository, monkeypatch) -> None:
     store, working = repository
-    Path("dataset.json").write_text(
-        json.dumps(
-            {
-                "name": "towns",
-                "tables": [
-                    {"schema": "main", "name": "raw_towns", "profile": False},
-                    {"schema": "main", "name": "stg_towns", "profile": False},
-                ],
-            }
-        )
-    )
     write(working, store, "CREATE TABLE lake.main.raw_towns AS SELECT 1 AS id")
     write(working, store, "CREATE VIEW lake.main.stg_towns AS SELECT id FROM lake.main.raw_towns")
     write(working, store, "CREATE TABLE lake.main.towns AS SELECT 1 AS id")
+    write(
+        working,
+        store,
+        'CREATE SCHEMA lake._fdl; CREATE TABLE lake._fdl.tables ("schema" VARCHAR, "name" VARCHAR, profile BOOLEAN);'
+        "INSERT INTO lake._fdl.tables VALUES ('main', 'raw_towns', false), ('main', 'stg_towns', false)",
+    )
     built = _spy_builds(monkeypatch)
     commit(working, "-m", "m", "--author", "t")
     assert built == ["towns"]
     head = repo.head(store)
     assert store.list(f"{layout.version_dir(head.id)}profiles/") == [f"{layout.version_dir(head.id)}profiles/main/towns.json"]
+    # Neither do the tables of `_fdl`.
     assert repo.missing_profiles(store, head) == []
-    frozen = tags.read(Path(store.root) / layout.version_metadata(head), head.ducklake.snapshot_id)
-    assert frozen["main.raw_towns"] == {tags.PROFILE: False}
-    assert frozen["main.stg_towns"] == {tags.PROFILE: False}

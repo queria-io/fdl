@@ -1,9 +1,11 @@
 """Files stored by their sha256 beside the data.
 
-The rows of a table point at assets through a column marked ``asset``; they
-sit at ``assets/<sha256>``. A version's `tree.json` names its other files by
-path (its README, say); they sit at ``objects/<sha256>``. Both are written once
-and shared by versions, as Git LFS stores the files its pointers name.
+The rows of a table point at assets through a column marked ``asset`` in
+`_fdl.columns`, and `_fdl.files` points at the dataset's documents by its
+``sha256``; they sit at ``assets/<sha256>``. Versions written before `_fdl`
+name their other files in a `tree.json`; those sit at ``objects/<sha256>``.
+Both are written once and shared by versions, as Git LFS stores the files its
+pointers name.
 """
 
 from __future__ import annotations
@@ -71,58 +73,6 @@ def entry(root: Path, path: str) -> dict[str, Any]:
     }
 
 
-def check_path(path: Any) -> str:
-    """``path`` if it is relative, separated by ``/``, with no empty, `.` or `..` part."""
-    if not isinstance(path, str) or not path or path.startswith("/") or "\\" in path:
-        raise ObjectError(f"not a relative path: {path!r}")
-    if any(part in ("", ".", "..") for part in path.split("/")):
-        raise ObjectError(f"not a relative path: {path!r}")
-    return path
-
-
-def tree(root: Path, *, leave_out: Iterable[Path] = ()) -> list[dict[str, Any]]:
-    """The files `fdl commit` publishes beside the data: every file below ``root``.
-
-    ``root`` is the folder of the description. Each file is an entry of
-    `tree.json` (path, sha256, bytes), with its path from ``root``. Hidden
-    files and folders are left out, and so is each path of ``leave_out`` (the
-    description itself, say) with the files named after it (``<path>.…``,
-    ``<path>-…``), such as those fdl and SQLite keep beside the working
-    metadata. Links between files stay as written: a reader resolves them
-    through the tree, as Git does.
-    """
-    root = Path(root).resolve()
-    skipped = [
-        Path(path).resolve().relative_to(root).as_posix()
-        for path in leave_out
-        if Path(path).resolve().is_relative_to(root)
-    ]
-    # Left out before hashing: the working metadata and its data can be large.
-    paths = [path for path in _files(root) if not any(is_beside(path, skip) for skip in skipped)]
-    return [{key: value for key, value in entry(root, path).items() if key != "media_type"} for path in paths]
-
-
-def is_beside(path: str, skip: str) -> bool:
-    """Whether ``path`` is ``skip`` or a file named after it (``lake.sqlite.fdl.json``, ``lake.sqlite-wal``)."""
-    return path == skip or path.startswith((f"{skip}.", f"{skip}-", f"{skip}/"))
-
-
-def check_tree(entries: Any) -> None:
-    """Refuse a `tree.json` the format does not take."""
-    if not isinstance(entries, list):
-        raise ObjectError("tree.json lists its files under entries")
-    seen = set()
-    for item in entries:
-        if not isinstance(item, dict) or set(item) != {"path", "sha256", "bytes"}:
-            raise ObjectError("each entry of tree.json has path, sha256 and bytes")
-        check_path(item["path"])
-        if not SHA256.fullmatch(str(item["sha256"])):
-            raise ObjectError(f"{item['path']}: sha256 has to be 64 lower-case hex digits")
-        if item["path"] in seen:
-            raise ObjectError(f"{item['path']} is in the tree twice")
-        seen.add(item["path"])
-
-
 def manifest(folder: Path) -> list[dict[str, Any]]:
     """Every file below ``folder`` (hidden ones left out), as entries, by path."""
     folder = Path(folder)
@@ -174,13 +124,22 @@ class ByContent(Mapping[str, Path]):
 
 
 def asset_columns(described: dict[str, Any]) -> list[tuple[str, str, str]]:
-    """The columns `dataset.json` marks as ``asset``: (schema, table, column)."""
+    """The columns the `dataset.json` of an earlier version marks as ``asset``: (schema, table, column)."""
     return [
         (table["schema"], table["name"], field["name"])
         for table in described.get("tables", [])
         if table.get("kind") != "view"
         for field in table.get("fields", [])
         if field.get("asset") is True
+    ]
+
+
+def indexed_asset_columns(index: dict[str, Any] | None) -> list[tuple[str, str, str]]:
+    """The asset columns a `files.json` lists: (schema, table, column)."""
+    return [
+        (*name.split(".", 1), column)
+        for name, table in (index or {}).get("tables", {}).items()
+        for column in table.get("assets", [])
     ]
 
 
