@@ -48,7 +48,7 @@ A deleted shared object cannot be brought back, and every version that reaches i
 1. Delete nothing it cannot account for. When it cannot tell what a live version reaches, because its `version.json` or `tables.json` is missing or cannot be read or parsed, or the metadata that holds its assets cannot be opened, it deletes none of that kind: no data file when it cannot tell which data files the version reaches, and no asset when it cannot tell which assets. Stopping without deleting anything also meets this. An object kept too long only costs storage; an object deleted too early breaks a version
 2. Read the versions again right before deleting. A writer may make a version while the process decides. Objects a version it did not see when deciding reaches are kept
 3. Delete the objects it decided on, one key at a time. It never deletes by prefix or a whole directory
-4. Implementations of this page agree on the cases in [Collection cases](/spec/collection-cases): for each dataset there, the objects to delete are the same
+4. Implementations of this page agree on the cases in [GC cases](/spec/gc-cases): for each dataset there, the objects to delete are the same
 
 A process may move an object to a place readers never read from, such as a separate bucket, and delete it there after a set time, so that a mistake can be undone. A writer does not count an object there as present.
 
@@ -82,7 +82,7 @@ How long to keep versions is the host's choice: the newest `keep` on each branch
 
 The others are taken out. A dataset without `refs/heads/main` has nothing taken out. This also takes out versions on no branch's first-parent line once nothing above keeps them: the parents a merge brought in other than its first, the versions of a deleted branch, and the head of a request the host closed and deleted. A version counts as made at its `created_at`.
 
-Implementations of this choice agree on the cases in [Retention cases](/spec/retention-cases).
+Implementations of this choice agree on the cases in [Expire cases](/spec/expire-cases).
 
 ## Withdrawal
 

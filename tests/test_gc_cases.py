@@ -1,4 +1,4 @@
-"""Run the collection cases every implementation of the spec agrees on (cases/collection.json)."""
+"""Run the gc cases every implementation of the spec agrees on (cases/gc.json)."""
 
 from __future__ import annotations
 
@@ -12,7 +12,7 @@ import pytest
 from fdl import repo
 from fdl.stores import LocalStore
 
-CASES = json.loads((Path(__file__).parent.parent / "cases" / "collection.json").read_text())
+CASES = json.loads((Path(__file__).parent.parent / "cases" / "gc.json").read_text())
 
 
 def _time(text: str) -> dt.datetime:
