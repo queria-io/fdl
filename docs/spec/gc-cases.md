@@ -1,9 +1,9 @@
 ---
-title: Collection cases
+title: GC cases
 description: Test cases for deleting shared objects, which every implementation runs and agrees on.
 ---
 
-[`cases/collection.json`](https://github.com/queria-io/fdl/blob/main/cases/collection.json) holds datasets and, for each, the shared objects a process that deletes them ([Data files](/spec/data-files#when-a-shared-object-may-be-deleted)) deletes. An implementation that deletes shared objects runs every case and deletes exactly those. Stopping with an error counts as deleting nothing, so it meets a case only when that case deletes nothing.
+[`cases/gc.json`](https://github.com/queria-io/fdl/blob/main/cases/gc.json) holds datasets and, for each, the shared objects a process that deletes them ([Data files](/spec/data-files#when-a-shared-object-may-be-deleted)) deletes. An implementation that deletes shared objects runs every case and deletes exactly those. Stopping with an error counts as deleting nothing, so it meets a case only when that case deletes nothing.
 
 ```json
 {

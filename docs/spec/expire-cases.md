@@ -1,9 +1,9 @@
 ---
-title: Retention cases
+title: Expire cases
 description: Test cases for choosing the versions to take out of retention, which every implementation runs and agrees on.
 ---
 
-[`cases/retention.json`](https://github.com/queria-io/fdl/blob/main/cases/retention.json) holds datasets and, for each, the versions a process that takes versions out of retention by `keep` and `since` ([Data files](/spec/data-files#choosing-the-versions-to-take-out)) takes out. An implementation of that choice runs every case and takes out exactly those.
+[`cases/expire.json`](https://github.com/queria-io/fdl/blob/main/cases/expire.json) holds datasets and, for each, the versions a process that takes versions out of retention by `keep` and `since` ([Data files](/spec/data-files#choosing-the-versions-to-take-out)) takes out. An implementation of that choice runs every case and takes out exactly those.
 
 ```json
 {
