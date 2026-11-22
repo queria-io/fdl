@@ -68,7 +68,7 @@ A version is the files under `versions/<version ID>/`. They must not change once
 | `message` | must | What changed |
 | `metadata` | must | The metadata's file name (`metadata.db`), size, sha256, and storage format (`storage`) |
 | `ducklake` | must | The DuckLake format, the snapshot frozen, and the range of snapshots the working metadata made for this version after its parent (first and last). Only the snapshot frozen is in the metadata |
-| `tables` | must | The `tables.json` beside the metadata: its file name, size and sha256 ([tables.json](#tablesjson)) |
+| `tables` | must | The `tables.json` beside the metadata: its file name, size and sha256 ([tables.json](#tablesjson)). The record of a version past retention may have none |
 | `diff` | may | What changed since the first parent, or in the first version ([diff](#diff)) |
 | `annotations` | may | What the format does not interpret, keyed by the name of whoever reads it (a host, a tool), such as the source files a version was made from |
 
@@ -91,6 +91,7 @@ The description and SQL of the snapshot frozen stay in the metadata, in DuckLake
 | `columns` | The column differences, below |
 | `data` | The tables both hold whose data files differ, even with the same rows |
 | `declarations` | The tables and views both hold whose [declarations](#declarations) differ |
+| `dependencies` | The names in `dependencies` that only one of the two holds, or whose `url` or `version` differs |
 
 A writer compares the working metadata at the parent's snapshot with its last snapshot, before freezing. The working metadata is cloned from the parent's metadata, so it holds the parent's snapshot. The writer leaves `diff` out when it does not. A reader compares the two versions' `tables.json` for a version without `diff`, or against a version other than its first parent.
 
@@ -224,7 +225,7 @@ Each table's profile is at `versions/<ID>/profiles/<schema>/<table>.json`. A vie
 - `head` holds the first rows the table returns, as JSON objects, leaving out geometry and columns whose values have no JSON form
 - `geometry` describes the first geometry column, when the writer could read it: how many rows have a shape, the `bbox` of all of them (`[xmin, ymin, xmax, ymax]` in the column's coordinates), the geometry types present, and a GeoJSON `FeatureCollection` of a random sample of simplified shapes for drawing a map
 - A writer may leave out any key it cannot compute. A reader ignores keys it does not know
-- A writer reuses its parent's profile for a table whose data files (in `tables.json`) and columns are the parent's, so profiling reads only the tables that changed. It reuses a view's when the view's `sql` is the parent's and every table and view its query reads is unchanged: a table by its data files, a view by the same rule. A view whose tables cannot be told from its query (one that reads a table function, say) reuses its parent's only when every view's `sql` is the parent's and no table's data files changed. It makes the profile again when the parent's `values` follow another limit than its own
+- A writer reuses its parent's profile for a table whose data files (in `tables.json`) and columns are the parent's, so profiling reads only the tables that changed. It reuses a view's when the view's `sql` is the parent's and every table and view its query reads is unchanged: a table by its data files, a view by the same rule. A view that reads another dataset reuses its parent's only when `dependencies` is the parent's and every entry the view reads names a `version`. A view whose tables cannot be told from its query (one that reads a table function, say) reuses its parent's only when every view's `sql` is the parent's and no table's data files changed. It makes the profile again when the parent's `values` follow another limit than its own
 - A writer makes no profile for a table or view whose `profile` declaration is `false`. A writer's tool sets it for the tables people are not meant to read, such as the intermediate tables a build makes, so that profiling does not read them. A host may also make profiles only of what it shows
 - Profiles are part of the version and do not change with it. They are deleted with the metadata files when the version is taken out of retention
 
@@ -251,8 +252,8 @@ What FDL needs to know about a table, a view or the dataset beyond what DuckLake
 
 - A writer's tool sets declarations between the clone and the commit. How it keeps them until the commit is up to it
 - A commit starts from the parent's declarations, so a declaration stays until a tool changes or removes it. A table or view is found by `schema.table`, so a table made again under the same name, as dbt's `CREATE OR REPLACE` does, keeps its declarations. A table or view that is dropped loses them
-- A column renamed after a declaration named it keeps its old name in the parent's declaration. The writer follows the column's `id` and writes the new name
-- Every column a declaration names must be in the table at the snapshot, once. A column of `assets` must be `varchar`. A view has no `primary_key` or `assets`. `url` of `dependencies` is an absolute URL ending in `/`, and `version` is a [version ID](#version-id). A writer refuses to freeze otherwise
+- A column renamed after a declaration named it keeps its old name in the parent's declaration. The writer follows the column's `id` and writes the new name. It follows `id` only while the table keeps its DuckLake table ID: a table made again under the same name gets new column IDs, and its declarations are matched by column name
+- Every column a declaration names must be in the table at the snapshot, once. A column of `assets` must be `varchar`. A view has no `primary_key` or `assets`. A name in `dependencies` matches `[a-z_][a-z0-9_]*` and is not one DuckDB reserves (`memory`, `system`, `temp`); a reader attaches the version's own metadata under a name that is none of them. `url` of `dependencies` is an absolute URL ending in `/`, and `version` is a [version ID](#version-id). A writer refuses to freeze otherwise
 - Declarations are part of the table: a table or view whose declarations changed has changed ([When nothing changed](/spec/writing#when-nothing-changed), [Merging](/spec/writing#tables))
 
 FDL defines no declaration for what a dataset, a table or a column means to people, such as a title, a description, a license, a source or a guide. A writer may keep it as rows of ordinary tables in the metadata, such as in a schema of its own, and declare the columns that hold the sha256 of a document or an image as `assets`. FDL treats those tables as any other: a change to their rows makes a version, and they are merged like any table. A host may also keep it by its own means, and may refuse a push without it ([When a push is refused](/spec/writing#when-a-push-is-refused)).

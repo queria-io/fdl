@@ -35,15 +35,15 @@ When freezing, a writer must:
 A writer should not make a version that holds what its parent holds, as Git makes no commit when the tree is the parent's. A version holds the same as its parent when:
 
 - the last snapshot is the parent's (`ducklake.snapshot_id`), or
-- the same tables and views are there with the same declarations, each table with the same columns and types and the same rows, counted as a multiset (order does not matter)
+- the same tables and views are there with the same declarations, `dependencies` is the same, and each table is there with the same columns and types and the same rows, counted as a multiset (order does not matter)
 
-Only tables, views and their declarations are compared. Words kept outside them, such as DuckLake's `comment`, make no version on their own; words kept as rows of a table make one when the rows change ([Declarations](/spec/versions#declarations)). A table rebuilt from the same input is written to new data files, so comparing files or metadata bytes is not enough. A writer compares the files first and reads the rows only of tables whose files differ. A writer that cannot read the rows makes the version. A writer may make one anyway when asked, as `git commit --allow-empty` does.
+Only tables, views, their declarations and `dependencies` are compared. Words kept outside them, such as DuckLake's `comment`, make no version on their own; words kept as rows of a table make one when the rows change ([Declarations](/spec/versions#declarations)). A table rebuilt from the same input is written to new data files, so comparing files or metadata bytes is not enough. A writer compares the files first and reads the rows only of tables whose files differ. A writer that cannot read the rows makes the version. A writer may make one anyway when asked, as `git commit --allow-empty` does.
 
 ## Reverting
 
 A writer that brings back what an earlier version held makes a new version, as `git revert` makes a new commit. It does not move a branch back: a branch moves only forward by default (see [Refs](/spec/refs)), and readers may already hold the versions in between.
 
-The new version's parent is the version the working metadata was cloned at, so pushing it is refused if the branch has moved since, as for any commit. Its tables and views are those of the earlier version at its snapshot, with the same columns, rows and declarations. The working metadata gets there in a new snapshot: tables the earlier version did not hold are dropped, and tables changed since are written again from their rows at the earlier snapshot. The writer reads the earlier version's tables from that version's own metadata, as it reads theirs when merging.
+The new version's parent is the version the working metadata was cloned at, so pushing it is refused if the branch has moved since, as for any commit. Its tables and views are those of the earlier version at its snapshot, with the same columns, rows and declarations, and its `dependencies` are the earlier version's. The working metadata gets there in a new snapshot: tables the earlier version did not hold are dropped, and tables changed since are written again from their rows at the earlier snapshot. The writer reads the earlier version's tables from that version's own metadata, as it reads theirs when merging.
 
 ## Branches
 
@@ -68,7 +68,7 @@ A table is the same table in two versions when it has the same `schema.table`. E
 | Neither changed it, or both changed it the same way | That table |
 | Only one changed it, added it or dropped it | That side's table, or none if it dropped it |
 | One dropped it and the other changed it | A conflict |
-| Both changed it, or both added it, differently | Cells merged by primary key, below, or a conflict |
+| Both changed it, or both added it, differently | Cells merged by primary key or rows merged without one, below, or a conflict |
 
 A view is compared by its SQL and its declarations. When both sides changed a view differently, its SQL and each declaration are merged as values: one only one side changed takes that side's change, and one both changed differently is a conflict.
 
@@ -78,15 +78,26 @@ Comments (DuckLake's `comment`) are not compared, but the merge version keeps th
 
 ### Cells merged by primary key
 
-When both sides changed a table differently, the writer merges it cell by cell. A cell is the value one row holds in one column, and the row is found by the values of its primary key. The table must have the same `primary_key` in ours, theirs and the base, or the base must not hold the table.
+When both sides changed a table differently, the writer merges it cell by cell. A cell is the value one row holds in one column, and the row is found by the values of its primary key. The table must have the same `primary_key` in ours, theirs and the base, or the base must not hold the table. A table whose `primary_key` differs between them, or that has one on only some of them, is a conflict.
 
 - Each declaration other than `primary_key` is merged as a value, as for a view
-- Columns are found by name. A column only one side added, dropped or changed the type of takes that side's change. A column both sides changed differently, or one side dropped and the other changed a cell of, is a conflict
+- Columns the base holds are found by their `id` in `tables.json`, so a rename is a change to that column. This holds only while the table has the same DuckLake table ID in the base and the side; a table made again under the same name is matched by column name. Columns added since the base are found by name. A column only one side added, renamed, dropped or changed the type of takes that side's change. A column both sides changed differently, or one side dropped and the other changed a cell of, is a conflict
+- A cell one side changed in a column the other side changed the type of is cast to the new type. A cell whose value does not cast is a conflict
 - A row only one side added or deleted takes that side's change. A row one side deleted and the other changed a cell of is a conflict. A row both sides added is kept when the two hold the same values, and is a conflict otherwise
 - In a row both sides kept, a cell only one side changed takes that side's value, and a cell both changed to different values is a conflict. Two `NULL`s are the same value
-- In a column only one side added, the rows only the other side added hold the column's default, or `NULL`
+- In a column only one side added, the rows only the other side added hold the column's default, or `NULL`. When the column is `NOT NULL` and has no default, the table is a conflict
 
-A table where a key holds `NULL` or appears more than once, in any of the three versions, is a conflict. A table without a primary key that both sides changed differently is a conflict, even when they changed different rows. A writer may warn when a table has no primary key. A key made up for the merge (a row number, say) is not a primary key: it does not say which rows are the same row.
+A table where a key holds `NULL` or appears more than once, in any of the three versions, is a conflict. A key made up for the merge (a row number, say) is not a primary key: it does not say which rows are the same row.
+
+### Rows merged without a primary key
+
+When both sides changed a table that has no `primary_key` in ours, theirs or the base differently, the writer merges its rows as a multiset. A row is the values of all its columns, and the writer counts how many times each row appears in the base, ours and theirs.
+
+- Each declaration is merged as a value, as for a view. The columns and their types must be the same in ours and theirs; a table whose columns differ between the two is a conflict
+- For each row, when only one side's count differs from the base, the merge version holds that side's count. When both differ from the base by the same count, it holds that count. When both differ and the counts are not the same, the row is a conflict
+- A changed value is a row deleted and a row added. When both sides change the same row differently, both delete the old row and each adds its own, so the merge version holds both new rows
+
+A writer may warn when it merges a table without a primary key this way.
 
 ### Conflicts
 
@@ -114,6 +125,8 @@ A push from stale working metadata is refused on two checks:
 
 1. The new version does not descend from the version the branch holds now. Someone else pushed first
 2. A data file the metadata names is missing from the dataset. A host may check the assets the rows hold as well. A file that no live version named for longer than the grace period may have been deleted, even if the writer found it there
+
+A host also refuses a push whose `tables.json` does not match `version.json`, or does not list the data files and delete files the metadata names ([Pushing over HTTP](/spec/http#requests)).
 
 A writer also refuses to commit or push when `fdl.json` names another `data_dir` than the one it checked out with ([Changing data_dir](/spec/layout#changing-data_dir)).
 
