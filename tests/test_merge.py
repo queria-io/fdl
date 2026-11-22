@@ -314,7 +314,8 @@ def test_primary_keys_must_agree() -> None:
     ours = declared(same=["id"], changed=["code"], new=["id"], differ=["id"])
     theirs = declared(same=["id"], changed=["code"], new=["id"], differ=["code"])
     found = merge.primary_keys(base, ours, theirs)
-    assert found == {("s", "same"): ["id"], ("s", "new"): ["id"]}
+    # A primary key that differs between the three is None: a conflict.
+    assert found == {("s", "same"): ["id"], ("s", "new"): ["id"], ("s", "changed"): None, ("s", "differ"): None}
 
 
 def test_a_merge_base_is_the_newest_common_ancestor(tmp_path: Path) -> None:
