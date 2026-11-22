@@ -1,9 +1,9 @@
 ---
 title: Building a host
-description: Using the fdl Python package in a service that stores repositories for others, approves changes and moves refs itself.
+description: Using the fdl Python package in a service that stores datasets for others, approves changes and moves refs itself.
 ---
 
-A host is a service that keeps repositories for other people: it decides who can read and write them, and often reviews a change before readers see it. The `fdl` package is written for this. A host calls it the way a code hosting service calls Git. Nothing in the package knows about any host.
+A host is a service that keeps datasets for other people: it decides who can read and write them, and often reviews a change before readers see it. The `fdl` package is written for this. A host calls it the way a code hosting service calls Git. Nothing in the package knows about any host.
 
 ## Writers that cannot move refs
 
@@ -19,7 +19,7 @@ version = repo.commit(working, out, parent=base, data_path=repo.data_url(store),
 repo.push(store, out / version.id, version, move_ref=False)
 ```
 
-The version is in the repository but no ref points at it, so readers do not see it. The host can hold it under `refs/requests/<number>` while it waits for approval. A request ref is an ordinary ref: it holds a version ID and a newline.
+The version is in the dataset but no ref points at it, so readers do not see it. The host can hold it under `refs/requests/<number>` while it waits for approval. A request ref is an ordinary ref: it holds a version ID and a newline.
 
 ## Approving
 
@@ -46,8 +46,8 @@ What a host adds goes outside the fields FDL defines:
 - `annotations` in `version.json`, keyed by the host's name
 - its own ID for the dataset in `fdl.json`'s `id`, written at `init` and never changed
 
-Access rules, approvals and billing stay in the host's own database. A repository copied off the host still reads correctly, with nothing in it that only the host understands.
+Access rules, approvals and billing stay in the host's own database. A dataset copied off the host still reads correctly, with nothing in it that only the host understands.
 
 ## Retention
 
-`repo.prune` takes versions out of retention and `repo.expire` takes out one. Deleting data files that no live version names is left to the host, which can list the whole repository and read every live metadata. See [Data files](/spec/data-files) for when a file may be deleted.
+`repo.prune` takes versions out of retention and `repo.expire` takes out one. Deleting data files that no live version names is left to the host, which can list the whole dataset and read every live metadata. See [Data files](/spec/data-files) for when a file may be deleted.

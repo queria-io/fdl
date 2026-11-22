@@ -38,7 +38,7 @@ FDL keeps a metadata file's versions the way Git keeps a project's commits. If y
 
 | Git | FDL |
 | --- | --- |
-| A bare repository on a server | A repository: a prefix of a bucket, or a folder |
+| A bare repository on a server | A dataset: a prefix of a bucket, or a folder |
 | Commit | Version (`versions/<ID>/version.json`) |
 | Tree | The frozen metadata (`metadata.db`) |
 | Blob | Data file (Parquet), asset |
@@ -53,9 +53,9 @@ A version has one parent, or two when it merges another branch. [From write to r
 
 ## How the documentation is organized
 
-- [Getting started](/getting-started) makes a repository, writes a first version and reads it back
-- [Concepts](/concepts/repositories) explains repositories, versions, refs and working metadata files
-- [How it works](/internals/inside-a-repository) follows the files in a repository through a few commits
+- [Getting started](/getting-started) makes a dataset, writes a first version and reads it back
+- [Concepts](/concepts/datasets) explains datasets, versions, refs and working metadata files
+- [How it works](/internals/inside-a-dataset) follows the files in a dataset through a few commits
 - [Guides](/guides/stores) cover stores, serving over HTTP, mirrors and building a host
 - The [specification](/spec) is the normative description of the format. Tools are written against it
 - The [reference](/reference/cli) lists the commands and the Python API

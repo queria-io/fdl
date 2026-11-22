@@ -91,7 +91,7 @@ class ByContent(Mapping[str, Path]):
     """Files by their sha256: those in ``known``, then those below ``folder``.
 
     The folder is hashed the first time a sha256 ``known`` lacks is looked up,
-    so a push that finds everything in the repository reads none of it.
+    so a push that finds everything in the dataset reads none of it.
     """
 
     def __init__(self, known: Mapping[str, Path], folder: Path | None = None) -> None:
@@ -172,7 +172,7 @@ def asset_values(
                 found.add(value)
     except duckdb.Error as exc:
         # A data file the working catalog reads may be where DuckDB cannot reach
-        # (a private repository over HTTP, say): an error, not a traceback.
+        # (a private dataset over HTTP, say): an error, not a traceback.
         raise ObjectError(f"could not read the asset columns: {exc}") from exc
     finally:
         con.close()

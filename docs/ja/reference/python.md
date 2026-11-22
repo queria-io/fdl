@@ -1,6 +1,6 @@
 ---
 title: Python API
-description: fdl パッケージの置き場、ref、端末を使わないリポジトリの操作。
+description: fdl パッケージの置き場、ref、端末を使わないデータセットの操作。
 ---
 
 ```python
@@ -20,7 +20,7 @@ for version in repo.log(store):
 | `fdl.refs` | ref を読み、条件付きで動かす |
 | `fdl.version` | `Version`（`version.json` の記録）と新しい ID |
 | `fdl.catalog` | DuckDB と SQLite の DuckLake メタデータと、その間の写し |
-| `fdl.layout` | リポジトリの各ファイルの場所 |
+| `fdl.layout` | データセットの各ファイルの場所 |
 | `fdl.store`、`fdl.stores` | 置き場に求めることと、フォルダ・S3 の置き場 |
 
 ## 置き場
@@ -43,7 +43,7 @@ for version in repo.log(store):
 repo.init(store, *, data_dir="data/") -> Config
 ```
 
-リポジトリを作ります。既にあればそのままにして、設定を返します。
+データセットを作ります。既にあればそのままにして、設定を返します。
 
 ```python
 repo.clone(store, working, *, ref="HEAD", local_data=None, version=None) -> Version | None
@@ -89,11 +89,11 @@ repo.merge_bases(store, ours, theirs) -> list[Version]
 repo.forward(store, ref, version) -> None
 ```
 
-`merge_bases` は、2 つのバージョンの共通の祖先のうち、ほかの共通の祖先の祖先でないものを返します。マージにはちょうど 1 つ要ります。`forward` は、リポジトリにすでにあり、いまの位置の子孫であるバージョンへブランチを動かします。基点がブランチ自身のバージョンであるマージ向けです。
+`merge_bases` は、2 つのバージョンの共通の祖先のうち、ほかの共通の祖先の祖先でないものを返します。マージにはちょうど 1 つ要ります。`forward` は、データセットにすでにあり、いまの位置の子孫であるバージョンへブランチを動かします。基点がブランチ自身のバージョンであるマージ向けです。
 
 ```python
 merge.primary_keys(base, ours, theirs) -> dict[tuple[str, str], list[str] | None]
-merge.tables(working, base, theirs, *, keys, repository_data, data_path=None, setup=(), write=True) -> Plan
+merge.tables(working, base, theirs, *, keys, dataset_data, data_path=None, setup=(), write=True) -> Plan
 ```
 
 `fdl merge` の部品です。`primary_keys` は、それぞれのバージョンが宣言することと持つテーブル（`(repo.declarations(store, version), repo.tables_of(store, version))`）から、テーブルごとの主キーを返します。主キーが 3 つで違うテーブルは `None` で、衝突になります。返さないテーブルには主キーが無く、行を多重集合としてマージします。`tables` は、固めたメタデータ `theirs` が `base` から変えた内容を、作業メタデータに 1 つのスナップショットで書きます。衝突があるときは何も書きません。`Plan` は衝突と取り込んだものを持ちます。マージのバージョンは、`repo.commit` と `repo.record` に `merged=<theirs>` を渡して作ります。
@@ -139,7 +139,7 @@ repo.plan_withdrawal(store, version_ids, *, objects=None, refuse_refs=True) -> W
 repo.withdraw(store, version_ids, *, plan=None) -> Withdrawal
 ```
 
-公開してはいけないデータを持つバージョンを取り下げます。`plan_withdrawal` は何も変えずに、消すタグ、消すデータファイル、残すバージョンが読むので残すファイルを返します。`withdraw` はタグ、データファイル、メタデータの順に消します。ブランチかリクエストが該当するバージョンを指しているあいだは、どちらも `RepoError` を出します。`refuse_refs=False` のときは、`plan_withdrawal` はそれらを `blocked` に並べ、`withdraw` が `RepoError` を出します。`objects`（`expired.json` の `deleted` と同じ `{"data": [...], "assets": [...]}`）は、写し元のリポジトリで行った取り下げを適用します。それらを参照する有効なバージョンも該当するバージョンになります。
+公開してはいけないデータを持つバージョンを取り下げます。`plan_withdrawal` は何も変えずに、消すタグ、消すデータファイル、残すバージョンが読むので残すファイルを返します。`withdraw` はタグ、データファイル、メタデータの順に消します。ブランチかリクエストが該当するバージョンを指しているあいだは、どちらも `RepoError` を出します。`refuse_refs=False` のときは、`plan_withdrawal` はそれらを `blocked` に並べ、`withdraw` が `RepoError` を出します。`objects`（`expired.json` の `deleted` と同じ `{"data": [...], "assets": [...]}`）は、写し元のデータセットで行った取り下げを適用します。それらを参照する有効なバージョンも該当するバージョンになります。
 
 ## fdl.declared
 

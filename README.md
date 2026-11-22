@@ -32,7 +32,7 @@ fdl clone s3://my-bucket/towns/ work/lake.sqlite
 
 The package is `fdl-cli` on PyPI. It installs the `fdl` command and the `fdl` Python package (`import fdl`).
 
-`fdl init` makes the repository in the store itself, as `git init --bare` does on a server. Your own copy to write to is the working metadata that `clone` makes, a SQLite file.
+`fdl init` makes the dataset in the store itself, as `git init --bare` does on a server. Your own copy to write to is the working metadata that `clone` makes, a SQLite file.
 
 Write to the working metadata with DuckDB, attached the way `clone` prints:
 
@@ -72,13 +72,13 @@ ATTACH 'ducklake:s3://my-bucket/towns/versions/019a3c4e-…/metadata.db' AS town
 );
 ```
 
-Credentials and the endpoint come from boto3's usual places (`AWS_*` environment variables, `AWS_ENDPOINT_URL` for R2 and other S3-compatible stores). A folder works as a repository too: pass its path instead of an `s3://` URL.
+Credentials and the endpoint come from boto3's usual places (`AWS_*` environment variables, `AWS_ENDPOINT_URL` for R2 and other S3-compatible stores). A folder works as a dataset too: pass its path instead of an `s3://` URL.
 
 ## Commands
 
 | Command | What it does |
 | --- | --- |
-| `fdl init <remote>` | Start a repository (`fdl.json` and `HEAD`) |
+| `fdl init <remote>` | Start a dataset (`fdl.json` and `HEAD`) |
 | `fdl clone <remote> <working>` | Make a working metadata file from the version `main` holds |
 | `fdl declare <kind> <working> …` | Declare a primary key, asset columns, a profile or another dataset the views read |
 | `fdl commit <working> -m … --author …` | Freeze the working metadata into a version |

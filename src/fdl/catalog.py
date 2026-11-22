@@ -546,7 +546,7 @@ def table_files(catalog_path: Path, snapshot_id: int, *, absolute: bool = False)
     For readers without DuckDB: what to read for a table, the rows each data
     file has deleted, and whether a column was ever renamed. Paths are
     relative to the data path, as in `data_files`. A working catalog reads
-    files already in a repository over HTTP by their URL: ``absolute`` keeps
+    files already in a dataset over HTTP by their URL: ``absolute`` keeps
     those as they are rather than refusing them.
     """
     con = _open(Path(catalog_path))
@@ -886,7 +886,7 @@ def keep_last_snapshot(catalog_path: Path) -> None:
     try:
         if len(snapshots) > 1:
             con = duckdb.connect()
-            # An empty folder, not the repository's: nothing here may touch a
+            # An empty folder, not the dataset's: nothing here may touch a
             # data file that other versions still read.
             with tempfile.TemporaryDirectory(prefix="fdl-expire-") as nowhere:
                 try:
@@ -985,7 +985,7 @@ def same_contents(
     """Whether the working catalog's last snapshot holds what snapshot ``since`` held.
 
     ``data_path`` is where the working catalog's new data files are, when not
-    where it records (a working catalog of a repository over HTTP writes them
+    where it records (a working catalog of a dataset over HTTP writes them
     to a folder on this machine).
 
     The same tables and views, each table with the same columns and the same
@@ -1105,17 +1105,17 @@ def restore(
     source: Path,
     *,
     data_path: str | None = None,
-    repository_data: str,
+    dataset_data: str,
     setup: Iterable[str] = (),
 ) -> list[str]:
     """Make the working catalog hold, in a new snapshot, what ``source`` holds.
 
     ``source`` is the frozen metadata of an earlier version, whose data files
-    are under ``repository_data``. Its tables and views come back as they are
+    are under ``dataset_data``. Its tables and views come back as they are
     there, and the others are dropped. A table with the same ID, columns and
     files in both is left as it is; any other is written again from its rows
     in ``source``, so its data files are new ones and those of the later
-    versions stay in the repository. Returns the tables and views it changed,
+    versions stay in the dataset. Returns the tables and views it changed,
     as ``schema.name``. ``setup`` runs first, for the keys reading the files needs.
     """
     import duckdb
@@ -1126,7 +1126,7 @@ def restore(
         for statement in [
             *setup,
             *attach_sql(working, alias="lake", data_path=data_path or working_data_path(working)),
-            *attach_sql(Path(source), alias="old", data_path=repository_data, read_only=True)[2:],
+            *attach_sql(Path(source), alias="old", data_path=dataset_data, read_only=True)[2:],
         ]:
             if statement:
                 con.execute(statement)
@@ -1135,7 +1135,7 @@ def restore(
         # The same reading of a catalog's tables, views and files as a merge.
         from .merge import _Merging
 
-        held = _Merging(con, {}, repository_data)
+        held = _Merging(con, {}, dataset_data)
         meta = held._meta
         name = held.name
 

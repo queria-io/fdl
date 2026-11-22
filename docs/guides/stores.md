@@ -1,9 +1,9 @@
 ---
 title: Stores
-description: Using a local folder, S3, R2 or another S3-compatible store as a repository, and what credentials the fdl command reads.
+description: Using a local folder, S3, R2 or another S3-compatible store as a dataset, and what credentials the fdl command reads.
 ---
 
-A repository's URL picks the store. `s3://bucket/prefix/` is S3 or anything that speaks its API. `https://host/path/` is a host that takes [pushes over HTTP](/spec/http), with a token from `FDL_TOKEN` or a credential helper ([Tokens for HTTP](/reference/cli#tokens-for-http)). Anything else is a folder on disk.
+A dataset's URL picks the store. `s3://bucket/prefix/` is S3 or anything that speaks its API. `https://host/path/` is a host that takes [pushes over HTTP](/spec/http), with a token from `FDL_TOKEN` or a credential helper ([Tokens for HTTP](/reference/cli#tokens-for-http)). Anything else is a folder on disk.
 
 ## A folder
 
@@ -11,7 +11,7 @@ A repository's URL picks the store. `s3://bucket/prefix/` is S3 or anything that
 fdl init ./towns/
 ```
 
-A folder is the quickest way to try FDL, and a good way to keep a repository next to the code that builds it. The folder store checks a ref's content before replacing it, but it does not lock the file, so two writers pushing at the same moment can both pass the check. Use a folder for one writer at a time, and object storage when several people or jobs push.
+A folder is the quickest way to try FDL, and a good way to keep a dataset next to the code that builds it. The folder store checks a ref's content before replacing it, but it does not lock the file, so two writers pushing at the same moment can both pass the check. Use a folder for one writer at a time, and object storage when several people or jobs push.
 
 ## S3
 

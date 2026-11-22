@@ -1,9 +1,9 @@
 ---
-title: Inside a repository
-description: The files a repository holds after each step, from init to a tag and a retention run, and the order they are written in.
+title: Inside a dataset
+description: The files a dataset holds after each step, from init to a tag and a retention run, and the order they are written in.
 ---
 
-This page follows one repository through its life and shows which files appear at each step and in what order they are written. The rules behind each step are in the [specification](/spec); this page shows them at work.
+This page follows one dataset through its life and shows which files appear at each step and in what order they are written. The rules behind each step are in the [specification](/spec); this page shows them at work.
 
 ## After init
 
@@ -24,11 +24,11 @@ HEAD
 ref: refs/heads/main
 ```
 
-`fdl.json` is written with `If-None-Match: *`, so running `init` twice cannot replace the `id` of a repository that already exists. `HEAD` points at `main`, which does not exist yet. A reader that follows `HEAD` now finds no version, and says so.
+`fdl.json` is written with `If-None-Match: *`, so running `init` twice cannot replace the `id` of a dataset that already exists. `HEAD` points at `main`, which does not exist yet. A reader that follows `HEAD` now finds no version, and says so.
 
 ## While writing
 
-After `fdl clone` and a `CREATE TABLE`, DuckLake has written Parquet into the repository:
+After `fdl clone` and a `CREATE TABLE`, DuckLake has written Parquet into the dataset:
 
 ```
 fdl.json
@@ -43,10 +43,10 @@ No ref and no version names the file, so no reader can reach it. If the writer g
 `fdl commit` does steps 1 to 4 on the writer's disk, and `fdl push` does the rest, in this order:
 
 1. Copy the working metadata from SQLite into a DuckDB file, keeping the snapshots up to the last one
-2. Set the metadata's `data_path` to the repository's data folder, and refuse if any file is recorded with an absolute path elsewhere
+2. Set the metadata's `data_path` to the dataset's data folder, and refuse if any file is recorded with an absolute path elsewhere
 3. Check the declarations against the tables and write `tables.json`: each table's data files and columns, each view's SQL and columns, and the declarations (primary key, asset columns, profile, other datasets the views read)
 4. Write `version.json` next to them, with a new UUIDv7 as the ID
-5. Check that `tables.json` lists the data files the metadata names, and that every one is in the repository
+5. Check that `tables.json` lists the data files the metadata names, and that every one is in the dataset
 6. Upload `versions/<ID>/metadata.db`
 7. Upload `versions/<ID>/tables.json`
 8. Upload `versions/<ID>/version.json`
@@ -62,7 +62,7 @@ versions/019a2f10-…/version.json
 tables/main/towns/ducklake-0199f1….parquet
 ```
 
-The order is what keeps readers safe. A reader starts from a ref, and the ref is written last. If the push stops after step 6, 7 or 8, the repository holds a version folder no ref points at. Readers never see it, and it changes nothing.
+The order is what keeps readers safe. A reader starts from a ref, and the ref is written last. If the push stops after step 6, 7 or 8, the dataset holds a version folder no ref points at. Readers never see it, and it changes nothing.
 
 `version.json` is written after the metadata and `tables.json` for the same reason: a tool that lists `versions/` can treat a folder without `version.json` as unfinished.
 
@@ -124,4 +124,4 @@ versions/019a2f10-…/expired.json      {"expired_at": "2026-12-01T00:00:00Z", "
 
 The mark is written first so that a reader never finds a version with no metadata and no explanation. Data files go last, and only after the grace period, because a writer may have placed a file and be about to commit a version that names it.
 
-`fdl expire` does the first two steps, and `fdl gc` the third. Deleting data files needs a process that can list the repository and read the `tables.json` of every live version, since one file can be named by many versions.
+`fdl expire` does the first two steps, and `fdl gc` the third. Deleting data files needs a process that can list the dataset and read the `tables.json` of every live version, since one file can be named by many versions.

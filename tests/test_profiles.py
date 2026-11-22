@@ -36,7 +36,7 @@ def write(working: Path, store: LocalStore, sql: str) -> None:
 
 
 @pytest.fixture
-def repository(tmp_path: Path, monkeypatch):
+def dataset(tmp_path: Path, monkeypatch):
     (tmp_path / "about").mkdir()
     monkeypatch.chdir(tmp_path / "about")
     remote, working = tmp_path / "remote", tmp_path / "lake.sqlite"
@@ -50,8 +50,8 @@ def profile_of(store: LocalStore, table: str = "towns") -> dict:
     return json.loads(store.get(f"{layout.version_dir(head.id)}profiles/main/{table}.json"))
 
 
-def test_a_commit_profiles_each_table(repository) -> None:
-    store, working = repository
+def test_a_commit_profiles_each_table(dataset) -> None:
+    store, working = dataset
     write(
         working,
         store,
@@ -71,8 +71,8 @@ def test_a_commit_profiles_each_table(repository) -> None:
     assert by_name["even"]["true_count"] == 10
 
 
-def test_many_values_list_only_the_most_common(repository) -> None:
-    store, working = repository
+def test_many_values_list_only_the_most_common(dataset) -> None:
+    store, working = dataset
     write(working, store, f"CREATE TABLE lake.main.towns AS SELECT 'v' || i AS code FROM range({profiles.ALL_VALUES + 5}) t(i)")
     commit(working, "-m", "m", "--author", "t")
     code = profile_of(store)["columns"][0]
@@ -80,8 +80,8 @@ def test_many_values_list_only_the_most_common(repository) -> None:
     assert code["distinct_count"] > profiles.ALL_VALUES
 
 
-def test_a_column_at_the_limit_lists_every_value(repository) -> None:
-    store, working = repository
+def test_a_column_at_the_limit_lists_every_value(dataset) -> None:
+    store, working = dataset
     write(working, store, f"CREATE TABLE lake.main.towns AS SELECT 'v' || i AS code FROM range({profiles.ALL_VALUES}) t(i)")
     commit(working, "-m", "m", "--author", "t")
     code = profile_of(store)["columns"][0]
@@ -107,8 +107,8 @@ def test_a_profile_written_under_another_limit_is_made_again(values: int, distin
     assert profiles.reusable(previous, table) is kept
 
 
-def test_an_unchanged_table_keeps_its_parents_profile(repository, monkeypatch) -> None:
-    store, working = repository
+def test_an_unchanged_table_keeps_its_parents_profile(dataset, monkeypatch) -> None:
+    store, working = dataset
     write(working, store, "CREATE TABLE lake.main.towns AS SELECT 1 AS id")
     write(working, store, "CREATE TABLE lake.main.other AS SELECT 1 AS id")
     commit(working, "-m", "m", "--author", "t")
@@ -129,8 +129,8 @@ def test_an_unchanged_table_keeps_its_parents_profile(repository, monkeypatch) -
     assert profile_of(store, "other")["rows"] == 2
 
 
-def test_a_column_dropped_and_added_again_is_profiled_again(repository) -> None:
-    store, working = repository
+def test_a_column_dropped_and_added_again_is_profiled_again(dataset) -> None:
+    store, working = dataset
     write(working, store, "CREATE TABLE lake.main.towns AS SELECT i AS id, i AS c FROM range(5) t(i)")
     write(working, store, "CREATE TABLE lake.main.other AS SELECT 1 AS id")
     commit(working, "-m", "m", "--author", "t")
@@ -143,8 +143,8 @@ def test_a_column_dropped_and_added_again_is_profiled_again(repository) -> None:
     assert c.get("max") is None
 
 
-def test_expiry_deletes_the_profiles(repository) -> None:
-    store, working = repository
+def test_expiry_deletes_the_profiles(dataset) -> None:
+    store, working = dataset
     write(working, store, "CREATE TABLE lake.main.towns AS SELECT 1 AS id")
     commit(working, "-m", "m", "--author", "t")
     first = repo.head(store).id
@@ -154,8 +154,8 @@ def test_expiry_deletes_the_profiles(repository) -> None:
     assert store.list(f"{layout.version_dir(first)}profiles/") == []
 
 
-def test_a_geometry_column_gets_its_extent_and_a_sample(repository) -> None:
-    store, working = repository
+def test_a_geometry_column_gets_its_extent_and_a_sample(dataset) -> None:
+    store, working = dataset
     try:
         duckdb.connect().execute("INSTALL spatial; LOAD spatial")
     except duckdb.Error:
@@ -176,8 +176,8 @@ def test_a_geometry_column_gets_its_extent_and_a_sample(repository) -> None:
     assert [r.keys() for r in got["head"]][0] == {"id"}
 
 
-def test_profile_adds_the_profiles_a_pushed_version_lacks(repository) -> None:
-    store, working = repository
+def test_profile_adds_the_profiles_a_pushed_version_lacks(dataset) -> None:
+    store, working = dataset
     write(working, store, "CREATE TABLE lake.main.towns AS SELECT i AS id FROM range(4) t(i)")
     write(working, store, "CREATE TABLE lake.main.other AS SELECT 1 AS id")
     commit(working, "-m", "m", "--author", "t")
@@ -194,8 +194,8 @@ def test_profile_adds_the_profiles_a_pushed_version_lacks(repository) -> None:
     assert "Profiled 0 table(s)" in run("profile", store.url)
 
 
-def test_push_no_profile_uploads_none(repository) -> None:
-    store, working = repository
+def test_push_no_profile_uploads_none(dataset) -> None:
+    store, working = dataset
     write(working, store, "CREATE TABLE lake.main.towns AS SELECT 1 AS id")
     run("commit", working, "-m", "m", "--author", "t")
     run("push", working, "--no-profile")
@@ -204,8 +204,8 @@ def test_push_no_profile_uploads_none(repository) -> None:
     assert profile_of(store)["rows"] == 1
 
 
-def test_push_skips_profiles_when_the_working_catalog_changed_after_the_commit(repository) -> None:
-    store, working = repository
+def test_push_skips_profiles_when_the_working_catalog_changed_after_the_commit(dataset) -> None:
+    store, working = dataset
     write(working, store, "CREATE TABLE lake.main.towns AS SELECT 1 AS id")
     run("commit", working, "-m", "m", "--author", "t")
     write(working, store, "INSERT INTO lake.main.towns VALUES (2)")
@@ -215,8 +215,8 @@ def test_push_skips_profiles_when_the_working_catalog_changed_after_the_commit(r
     assert store.list(f"{layout.version_dir(repo.head(store).id)}profiles/") == []
 
 
-def test_push_goes_without_profiles_when_the_working_catalog_is_gone(repository) -> None:
-    store, working = repository
+def test_push_goes_without_profiles_when_the_working_catalog_is_gone(dataset) -> None:
+    store, working = dataset
     write(working, store, "CREATE TABLE lake.main.towns AS SELECT 1 AS id")
     run("commit", working, "-m", "m", "--author", "t")
     working.unlink()
@@ -226,8 +226,8 @@ def test_push_goes_without_profiles_when_the_working_catalog_is_gone(repository)
     assert store.list(f"{layout.version_dir(repo.head(store).id)}profiles/") == []
 
 
-def test_push_profiles_the_tables_a_stopped_push_left_without(repository) -> None:
-    store, working = repository
+def test_push_profiles_the_tables_a_stopped_push_left_without(dataset) -> None:
+    store, working = dataset
     write(working, store, "CREATE TABLE lake.main.towns AS SELECT 1 AS id")
     write(working, store, "CREATE TABLE lake.main.roads AS SELECT 1 AS id")
     run("commit", working, "-m", "m", "--author", "t")
@@ -239,8 +239,8 @@ def test_push_profiles_the_tables_a_stopped_push_left_without(repository) -> Non
     assert profile_of(store, "roads")["rows"] == 1
 
 
-def test_a_view_is_profiled(repository) -> None:
-    store, working = repository
+def test_a_view_is_profiled(dataset) -> None:
+    store, working = dataset
     write(working, store, "CREATE TABLE lake.main.towns AS SELECT i AS id FROM range(5) t(i)")
     write(working, store, "CREATE VIEW lake.main.big AS SELECT id FROM lake.main.towns WHERE id >= 2")
     commit(working, "-m", "m", "--author", "t")
@@ -262,8 +262,8 @@ def _spy_builds(monkeypatch) -> list[str]:
     return built
 
 
-def test_a_view_keeps_its_profile_only_while_no_table_changes(repository, monkeypatch) -> None:
-    store, working = repository
+def test_a_view_keeps_its_profile_only_while_no_table_changes(dataset, monkeypatch) -> None:
+    store, working = dataset
     write(working, store, "CREATE TABLE lake.main.towns AS SELECT 1 AS id")
     write(working, store, "CREATE VIEW lake.main.big AS SELECT id FROM lake.main.towns")
     commit(working, "-m", "m", "--author", "t")
@@ -279,8 +279,8 @@ def test_a_view_keeps_its_profile_only_while_no_table_changes(repository, monkey
     assert profile_of(store, "big")["rows"] == 2
 
 
-def test_a_view_keeps_its_profile_when_only_a_table_it_does_not_read_changes(repository, monkeypatch) -> None:
-    store, working = repository
+def test_a_view_keeps_its_profile_when_only_a_table_it_does_not_read_changes(dataset, monkeypatch) -> None:
+    store, working = dataset
     write(working, store, "CREATE TABLE lake.main.towns AS SELECT 1 AS id")
     write(working, store, "CREATE TABLE lake.main.roads AS SELECT 1 AS id")
     write(working, store, "CREATE VIEW lake.main.big AS SELECT id FROM lake.main.towns")
@@ -298,8 +298,8 @@ def test_a_view_keeps_its_profile_when_only_a_table_it_does_not_read_changes(rep
     assert profile_of(store, "top")["rows"] == 2
 
 
-def test_a_view_over_a_table_function_is_profiled_again_when_any_table_changes(repository, monkeypatch) -> None:
-    store, working = repository
+def test_a_view_over_a_table_function_is_profiled_again_when_any_table_changes(dataset, monkeypatch) -> None:
+    store, working = dataset
     write(working, store, "CREATE TABLE lake.main.towns AS SELECT 1 AS id")
     write(working, store, "CREATE VIEW lake.main.numbers AS SELECT * FROM range(3)")
     commit(working, "-m", "m", "--author", "t")
@@ -314,8 +314,8 @@ def test_a_view_over_a_table_function_is_profiled_again_when_any_table_changes(r
     assert sorted(built) == ["numbers", "towns"]
 
 
-def test_a_view_over_a_view_is_profiled_again_when_that_view_changes(repository, monkeypatch) -> None:
-    store, working = repository
+def test_a_view_over_a_view_is_profiled_again_when_that_view_changes(dataset, monkeypatch) -> None:
+    store, working = dataset
     write(working, store, "CREATE TABLE lake.main.towns AS SELECT i AS id FROM range(5) t(i)")
     write(working, store, "CREATE VIEW lake.main.big AS SELECT id FROM lake.main.towns WHERE id >= 2")
     write(working, store, "CREATE VIEW lake.main.top AS SELECT id FROM lake.main.big")
@@ -327,8 +327,8 @@ def test_a_view_over_a_view_is_profiled_again_when_that_view_changes(repository,
     assert profile_of(store, "top")["rows"] == 1
 
 
-def test_a_wide_table_is_measured_a_few_columns_at_a_time(repository, monkeypatch) -> None:
-    store, working = repository
+def test_a_wide_table_is_measured_a_few_columns_at_a_time(dataset, monkeypatch) -> None:
+    store, working = dataset
     monkeypatch.setattr(profiles, "COLUMNS_PER_QUERY", 2)
     write(working, store, "CREATE TABLE lake.main.towns AS SELECT i AS a, i + 1 AS b, i + 2 AS c FROM range(3) t(i)")
     commit(working, "-m", "m", "--author", "t")
@@ -339,8 +339,8 @@ def test_a_wide_table_is_measured_a_few_columns_at_a_time(repository, monkeypatc
     ]
 
 
-def test_a_table_or_view_with_profile_false_gets_no_profile(repository, monkeypatch) -> None:
-    store, working = repository
+def test_a_table_or_view_with_profile_false_gets_no_profile(dataset, monkeypatch) -> None:
+    store, working = dataset
     write(working, store, "CREATE TABLE lake.main.raw_towns AS SELECT 1 AS id")
     write(working, store, "CREATE VIEW lake.main.stg_towns AS SELECT id FROM lake.main.raw_towns")
     write(working, store, "CREATE TABLE lake.main.towns AS SELECT 1 AS id")

@@ -1,4 +1,4 @@
-"""What FDL needs from the storage a repository lives in.
+"""What FDL needs from the storage a dataset lives in.
 
 Read, write, and write on condition. A store without the last one can be read
 from but not pushed to, because the last writer would silently replace someone

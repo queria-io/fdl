@@ -1,4 +1,4 @@
-"""Where each file of a repository sits, relative to its root.
+"""Where each file of a dataset sits, relative to its root.
 
 The same names are used on the remote and in a local `.fdl/`, so syncing the
 two is copying files.

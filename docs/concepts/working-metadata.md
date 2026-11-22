@@ -10,7 +10,7 @@ A working metadata file is a DuckLake metadata file in a SQLite file, on the wri
 | Step | Command | What happens |
 | --- | --- | --- |
 | clone | `fdl clone` | Copy the metadata of the branch's version into SQLite, and remember that version |
-| write | any DuckDB client | DuckLake writes Parquet into the repository and bookkeeping into SQLite |
+| write | any DuckDB client | DuckLake writes Parquet into the dataset and bookkeeping into SQLite |
 | commit | `fdl commit` | Freeze the last snapshot into a new version, kept beside the working metadata |
 | push | `fdl push` | Upload the version and move the branch to it |
 
@@ -34,16 +34,16 @@ ATTACH 'ducklake:work/lake.sqlite' AS lake (
 );
 ```
 
-- `DATA_PATH` is the repository's data folder, so new Parquet files land where readers will look for them. For a repository over HTTP it is a folder beside the working metadata instead, and `fdl push` uploads the new files (see [Pushing over HTTP](/spec/http#writing-to-it))
+- `DATA_PATH` is the dataset's data folder, so new Parquet files land where readers will look for them. For a dataset over HTTP it is a folder beside the working metadata instead, and `fdl push` uploads the new files (see [Pushing over HTTP](/spec/http#writing-to-it))
 - `DATA_INLINING_ROW_LIMIT 0` keeps every row out of the metadata. A version must not carry inlined rows, and `fdl commit` refuses a working metadata file that holds some
 - `META_TYPE 'sqlite'` has to be stated. Left to guess from the file, DuckDB passes an option to SQLite that SQLite rejects
 
 ## Data files written before a push
 
-DuckLake writes Parquet as you go, so data files reach the repository before any version names them. Readers never see them: a reader only opens metadata files of versions, and no version names those files yet.
+DuckLake writes Parquet as you go, so data files reach the dataset before any version names them. Readers never see them: a reader only opens metadata files of versions, and no version names those files yet.
 
 A file that stays unnamed for longer than the grace period (7 days by default) may be deleted by maintenance. Push within that time. If a push is refused because a file it names is missing, rebuild the table in the working metadata, commit and push again. A version committed and never pushed names its files only on your disk, so they are deleted in the same way.
 
 ## Snapshots in the working metadata
 
-Do not run `ducklake_expire_snapshots` or `ducklake_cleanup_old_files` on a working metadata file. They only see the working metadata, not the repository, and would delete files that other versions still name. Removing old versions and files is done on the repository as a whole (see [Retention](/internals/inside-a-repository#taking-versions-out-of-retention)).
+Do not run `ducklake_expire_snapshots` or `ducklake_cleanup_old_files` on a working metadata file. They only see the working metadata, not the dataset, and would delete files that other versions still name. Removing old versions and files is done on the dataset as a whole (see [Retention](/internals/inside-a-dataset#taking-versions-out-of-retention)).

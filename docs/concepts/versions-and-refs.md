@@ -53,7 +53,7 @@ HEAD                     ref: refs/heads/main
 
 `main` is the branch readers get unless they ask for another. `HEAD` names it, as in Git. A tag pins a version that readers can rely on, such as the final figures of a year. `refs/requests/` is for hosts: a version waiting for approval can be held there without being on `main`.
 
-Refs are the only files in a repository that change. Everything else is written once.
+Refs are the only files in a dataset that change. Everything else is written once.
 
 ## Moving a branch
 
@@ -80,7 +80,7 @@ feature   C
 
 The merge compares each table in three versions: B, C and their common ancestor A. A table only one branch changed comes over as that branch holds it. When both changed the same table, the rows are matched by the `primary_key` it declares in all three, and each cell only one branch changed comes over. A cell both changed differently is a conflict, and then no version is made. A table without a primary key is merged as a multiset of rows: a row only one branch added or deleted comes over. A table whose primary key differs between the three is a conflict. A row number added for the merge is not a primary key: it does not say which rows are the same row. See [Merging](/spec/writing#merging).
 
-Moving a branch back, to undo a version, is allowed only when asked for explicitly. The version that was undone stays in the repository and in the history.
+Moving a branch back, to undo a version, is allowed only when asked for explicitly. The version that was undone stays in the dataset and in the history.
 
 ## History
 
@@ -95,4 +95,4 @@ Moving a branch back, to undo a version, is allowed only when asked for explicit
       First towns
 ```
 
-Versions that were taken out of retention stay in the history. Their record is kept, only their metadata is gone. See [Retention](/internals/inside-a-repository#taking-versions-out-of-retention).
+Versions that were taken out of retention stay in the history. Their record is kept, only their metadata is gone. See [Retention](/internals/inside-a-dataset#taking-versions-out-of-retention).

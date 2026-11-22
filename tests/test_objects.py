@@ -49,7 +49,7 @@ def declare_assets(working: Path, table: str, column: str) -> None:
 
 
 @pytest.fixture
-def repository(tmp_path: Path, monkeypatch):
+def dataset(tmp_path: Path, monkeypatch):
     (tmp_path / "about").mkdir()
     monkeypatch.chdir(tmp_path / "about")
     remote, working = tmp_path / "remote", tmp_path / "lake.sqlite"
@@ -58,8 +58,8 @@ def repository(tmp_path: Path, monkeypatch):
     return LocalStore(remote), working
 
 
-def test_a_table_of_documents_points_at_assets(tmp_path: Path, repository) -> None:
-    store, working = repository
+def test_a_table_of_documents_points_at_assets(tmp_path: Path, dataset) -> None:
+    store, working = dataset
     folder = tmp_path / "docs"
     (folder / "img").mkdir(parents=True)
     readme = "# Towns\n\n![map](img/map.png)\n"
@@ -86,8 +86,8 @@ def test_a_table_of_documents_points_at_assets(tmp_path: Path, repository) -> No
     assert store.get(objects.asset_key(paths["img/map.png"])) == b"\x89PNG"
 
 
-def test_assets_are_uploaded_from_the_folder_and_checked(tmp_path: Path, repository) -> None:
-    store, working = repository
+def test_assets_are_uploaded_from_the_folder_and_checked(tmp_path: Path, dataset) -> None:
+    store, working = dataset
     folder = tmp_path / "files"
     folder.mkdir()
     (folder / "a.pdf").write_bytes(b"%PDF-a")
@@ -105,26 +105,26 @@ def test_assets_are_uploaded_from_the_folder_and_checked(tmp_path: Path, reposit
 
     # Without the folder, the files are nowhere to be had.
     run("commit", working, "-m", "m", "--author", "t")
-    assert "neither in the repository" in fails("push", working)
+    assert "neither in the dataset" in fails("push", working)
     commit(working, "-m", "m", "--author", "t", "--assets", folder)
 
     for row in listed:
         assert store.get(objects.asset_key(row["sha256"])) == (folder / row["path"]).read_bytes()
 
-    # The next version finds them in the repository and needs no folder.
+    # The next version finds them in the dataset and needs no folder.
     write(working, store, "INSERT INTO lake.main.reports SELECT * FROM lake.main.reports LIMIT 1")
     commit(working, "-m", "again", "--author", "t")
 
 
-def test_an_asset_column_holds_only_sha256(tmp_path: Path, repository) -> None:
-    store, working = repository
+def test_an_asset_column_holds_only_sha256(tmp_path: Path, dataset) -> None:
+    store, working = dataset
     write(working, store, "CREATE TABLE lake.main.reports AS SELECT 'report.pdf' AS sha256")
     declare_assets(working, "reports", "sha256")
     assert "64 lower-case hex" in fails("commit", working, "-m", "m", "--author", "t")
 
 
-def test_an_asset_column_is_varchar(tmp_path: Path, repository) -> None:
-    store, working = repository
+def test_an_asset_column_is_varchar(tmp_path: Path, dataset) -> None:
+    store, working = dataset
     write(working, store, "CREATE TABLE lake.main.reports AS SELECT 1 AS n")
     assert "has to be VARCHAR" in fails("declare", "assets", working, "main.reports", "n")
 
@@ -153,8 +153,8 @@ def test_asset_columns_that_cannot_be_read_are_an_object_error(tmp_path: Path) -
         objects.asset_values(tmp_path / "missing.ducklake", [("main", "t", "c")], data_path=str(tmp_path) + "/")
 
 
-def test_withdrawal_deletes_the_assets_only_the_withdrawn_versions_reach(tmp_path: Path, repository) -> None:
-    store, working = repository
+def test_withdrawal_deletes_the_assets_only_the_withdrawn_versions_reach(tmp_path: Path, dataset) -> None:
+    store, working = dataset
     folder = tmp_path / "files"
     folder.mkdir()
     (folder / "kept.pdf").write_bytes(b"%PDF-kept")

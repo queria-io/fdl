@@ -1,9 +1,9 @@
 ---
 title: Serving over HTTP
-description: Letting readers attach a repository from a plain HTTP server or a CDN, and the caching each kind of file allows.
+description: Letting readers attach a dataset from a plain HTTP server or a CDN, and the caching each kind of file allows.
 ---
 
-Readers only read files, so a repository can be served by any HTTP server, a bucket's public URL or a CDN in front of one. DuckDB fetches the metadata and the Parquet files with range requests.
+Readers only read files, so a dataset can be served by any HTTP server, a bucket's public URL or a CDN in front of one. DuckDB fetches the metadata and the Parquet files with range requests.
 
 ## What a reader fetches
 
@@ -42,7 +42,7 @@ Readers do not list. A reader that knows a ref name gets everything else by foll
 
 Some readers do not know FDL and expect one metadata file URL. A host may serve the metadata of the version `HEAD` holds at `<root>/metadata.db`. It must then send the version ID in an `FDL-Version` response header, so a reader can tell which version it got, and must not let it be cached longer than the ref.
 
-This is a convenience for readers, not part of the repository: the store holds no metadata outside `versions/`.
+This is a convenience for readers, not part of the dataset: the store holds no metadata outside `versions/`.
 
 ## CORS
 

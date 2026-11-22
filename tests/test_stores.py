@@ -39,7 +39,7 @@ def test_missing_and_listing(s3: S3Store) -> None:
     assert s3.list("x/") == ["x/2"]
 
 
-def test_a_repository_on_s3(s3: S3Store) -> None:
+def test_a_dataset_on_s3(s3: S3Store) -> None:
     repo.init(s3)
     assert refs.resolve(s3) == ("refs/heads/main", None)
     assert s3.url == "s3://lake/datasets/towns/"
