@@ -20,7 +20,7 @@ uv run pytest
 ```
 docs/                 — the documentation site (Blume); docs/spec/ is the specification, docs/ja/ the Japanese mirror
 src/fdl/
-├── layout.py         — where each file of a repository sits
+├── layout.py         — where each file of a dataset sits
 ├── version.py        — version.json and version IDs
 ├── refs.py           — reading refs and moving them on condition
 ├── catalog.py        — DuckLake catalogs in SQLite and DuckDB, and the conversion

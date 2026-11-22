@@ -1,9 +1,9 @@
 ---
 title: Getting started
-description: Make a repository, write a first version with DuckDB, and read it back.
+description: Make a dataset, write a first version with DuckDB, and read it back.
 ---
 
-This page makes a repository in a folder, writes a table into it and reads the result as a reader would. The same commands work on S3 and R2: pass `s3://bucket/prefix/` instead of a folder.
+This page makes a dataset in a folder, writes a table into it and reads the result as a reader would. The same commands work on S3 and R2: pass `s3://bucket/prefix/` instead of a folder.
 
 ## Install
 
@@ -13,7 +13,7 @@ pip install 'fdl-cli[s3]'
 
 The package installs the `fdl` command and the `fdl` Python package. Python 3.10 or later is needed. Leave out `[s3]` if you only use folders.
 
-## Make a repository
+## Make a dataset
 
 ```bash
 fdl init ./towns/
@@ -29,11 +29,11 @@ towns/
 
 `HEAD` names the default branch, `main`. The branch itself does not exist yet: there is no version for it to point at.
 
-`fdl init` makes the repository where readers will find it, as `git init --bare` does on a server. Your own place to write is the working metadata, made next.
+`fdl init` makes the dataset where readers will find it, as `git init --bare` does on a server. Your own place to write is the working metadata, made next.
 
 ## Clone a working metadata file
 
-You never write to the repository directly. You write to a working metadata file, a DuckLake metadata file in a SQLite file on your own disk, and turn it into a version when you are done.
+You never write to the dataset directly. You write to a working metadata file, a DuckLake metadata file in a SQLite file on your own disk, and turn it into a version when you are done.
 
 ```bash
 mkdir work && cd work
@@ -50,11 +50,11 @@ ATTACH 'ducklake:lake.sqlite' AS lake (
 );
 ```
 
-Beside the working metadata, `lake.sqlite.fdl.json` remembers the repository, the branch and the version the clone was made from.
+Beside the working metadata, `lake.sqlite.fdl.json` remembers the dataset, the branch and the version the clone was made from.
 
 ## Write
 
-Use any DuckDB client. The Parquet files go straight into the repository's `data/` folder.
+Use any DuckDB client. The Parquet files go straight into the dataset's `data/` folder.
 
 ```sql
 CREATE TABLE lake.main.towns AS
@@ -80,7 +80,7 @@ fdl commit lake.sqlite -m "First towns" --author alice
 fdl push lake.sqlite
 ```
 
-`commit` freezes the working metadata into a version on your disk. `push` measures each table into a small summary (a profile) that readers can show without reading the data, uploads the version with them and moves `main` to it, and prints `refs/heads/main -> 019a3c4e-… (version 1)`. The repository now holds:
+`commit` freezes the working metadata into a version on your disk. `push` measures each table into a small summary (a profile) that readers can show without reading the data, uploads the version with them and moves `main` to it, and prints `refs/heads/main -> 019a3c4e-… (version 1)`. The dataset now holds:
 
 ```
 towns/

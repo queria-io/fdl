@@ -3,16 +3,16 @@ title: From write to read
 description: One change followed from a working metadata file to a reader, with the requests at each step, and what each part of FDL is in Git.
 ---
 
-This page follows one change from the writer's machine to a reader, and names the request made at each step. The files each step leaves in the repository are shown in [Inside a repository](/internals/inside-a-repository), and the rules are in the [specification](/spec).
+This page follows one change from the writer's machine to a reader, and names the request made at each step. The files each step leaves in the dataset are shown in [Inside a dataset](/internals/inside-a-dataset), and the rules are in the [specification](/spec).
 
 ## The parts and their Git counterparts
 
-FDL keeps the roles and names of Git, and stores things its own way. Anyone who knows how Git keeps commits can read a repository by this table.
+FDL keeps the roles and names of Git, and stores things its own way. Anyone who knows how Git keeps commits can read a dataset by this table.
 
 | FDL | Git | Notes |
 | --- | --- | --- |
-| Repository (a prefix of a store) | Bare repository on a server | No server process is needed |
-| `fdl.json` | `config` | Holds the format, the repository's `id` and `data_dir` |
+| Dataset (a prefix of a store) | Bare repository on a server | No server process is needed |
+| `fdl.json` | `config` | Holds the format, the dataset's `id` and `data_dir` |
 | `versions/<ID>/version.json` | Commit | Parents, author, message, and the sha256 of the metadata |
 | `versions/<ID>/metadata.db` | Tree | Which tables there are and which data files they are made of |
 | Data file (Parquet) | Blob | Written once and never changed. One file can be named by many versions |
@@ -40,22 +40,22 @@ Three things differ on purpose:
 
 The working metadata's data path depends on the store:
 
-- A folder or S3: the repository's data folder. DuckDB writes new Parquet files straight into the repository
-- HTTP: a folder on the writer's machine. Files already in the repository are referred to by their URL under `data_dir` and are read over HTTP
+- A folder or S3: the dataset's data folder. DuckDB writes new Parquet files straight into the dataset
+- HTTP: a folder on the writer's machine. Files already in the dataset are referred to by their URL under `data_dir` and are read over HTTP
 
 ### Writing
 
-The writer runs SQL on the working metadata with DuckDB, directly or through a tool such as dbt. Each statement makes a DuckLake snapshot in the working metadata. Nothing a reader can see changes yet: the new Parquet files, if they are already in the repository, are named by no version.
+The writer runs SQL on the working metadata with DuckDB, directly or through a tool such as dbt. Each statement makes a DuckLake snapshot in the working metadata. Nothing a reader can see changes yet: the new Parquet files, if they are already in the dataset, are named by no version.
 
 ### Commit
 
-`fdl commit` copies the working metadata into a DuckDB file, sets its `data_path` to the repository's data folder, checks the declarations against its tables, writes `tables.json` from it, and writes `version.json` with a new ID and the previous version as its parent. If the tables hold the same rows and declarations as the parent's, there is no commit. The new version exists only on the writer's machine until it is pushed.
+`fdl commit` copies the working metadata into a DuckDB file, sets its `data_path` to the dataset's data folder, checks the declarations against its tables, writes `tables.json` from it, and writes `version.json` with a new ID and the previous version as its parent. If the tables hold the same rows and declarations as the parent's, there is no commit. The new version exists only on the writer's machine until it is pushed.
 
 ### Push
 
 A push writes files in the order that keeps readers safe: whatever a file points at is written before it.
 
-1. The new data files the repository lacks
+1. The new data files the dataset lacks
 2. `versions/<ID>/metadata.db`
 3. `versions/<ID>/tables.json`
 4. `versions/<ID>/version.json`
@@ -68,21 +68,21 @@ Readers start from a ref, and the ref is written in step 5. A push that stops be
 
 ### Push over HTTP
 
-Over HTTP, every key is a path under the repository's URL, and the host answers `GET`, `PUT` and the rest for it (see [Pushing over HTTP](/spec/http)). The order is the same as above. Two steps change:
+Over HTTP, every key is a path under the dataset's URL, and the host answers `GET`, `PUT` and the rest for it (see [Pushing over HTTP](/spec/http)). The order is the same as above. Two steps change:
 
 - Before step 1, the writer sends `POST <root>/?batch` with the keys and sizes of the files it is about to upload. For each file, the host answers with an upload URL, says the file is already there, or answers 413 to have it sent through the host. Files with a URL go straight to storage with `PUT`, and the host is not in the path of the data. A host without batches answers 404, 405 or 501, and every file goes through the host
-- In step 5, the host checks the push before it moves the ref: the version is complete, its parent is the version the ref holds now, the metadata and `tables.json` match `version.json`, `tables.json` lists the data files and delete files the metadata names, and every one of them is in the repository. It answers 409 with the reason when a check fails. A host that moves refs itself also writes `refs.json`, and answers 403 when the writer tries to
+- In step 5, the host checks the push before it moves the ref: the version is complete, its parent is the version the ref holds now, the metadata and `tables.json` match `version.json`, `tables.json` lists the data files and delete files the metadata names, and every one of them is in the dataset. It answers 409 with the reason when a check fails. A host that moves refs itself also writes `refs.json`, and answers 403 when the writer tries to
 
 A host can also keep writers from moving refs at all. The writer then uploads the version and stops after step 4, and the host moves the ref later, for example after someone approves the change.
 
 ## Reading a version
 
-A reader needs only `GET`. It does not have to know who wrote the repository or whether a host is in front of it.
+A reader needs only `GET`. It does not have to know who wrote the dataset or whether a host is in front of it.
 
 1. Read `HEAD`, or the ref asked for. `HEAD` holds `ref: refs/heads/main`, so read `refs/heads/main` next. A ref holds a version ID
 2. Read `versions/<ID>/version.json`. Check that its `id` is the ID asked for and that the reader knows the major version in `fdl`
 3. Check for `versions/<ID>/expired.json`. If it is there, stop: the version is past retention or withdrawn, and its metadata is gone
-4. Attach the metadata read-only, with the repository's data folder as the data path
+4. Attach the metadata read-only, with the dataset's data folder as the data path
 
 ```sql
 ATTACH 'ducklake:https://example.org/lake/versions/019a3c4e-…/metadata.db' AS lake (

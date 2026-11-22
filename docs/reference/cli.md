@@ -3,14 +3,14 @@ title: Command line
 description: The fdl commands, their options and when they refuse.
 ---
 
-`<remote>` is a repository: `s3://bucket/prefix/`, `https://host/path/` or a folder. Credentials and the endpoint for S3 come from boto3's usual places (`AWS_*` environment variables, `AWS_ENDPOINT_URL` for R2 and other S3-compatible stores). A repository over HTTP takes a token from `FDL_TOKEN` or a credential helper (see [Tokens for HTTP](#tokens-for-http)).
+`<remote>` is a dataset: `s3://bucket/prefix/`, `https://host/path/` or a folder. Credentials and the endpoint for S3 come from boto3's usual places (`AWS_*` environment variables, `AWS_ENDPOINT_URL` for R2 and other S3-compatible stores). A dataset over HTTP takes a token from `FDL_TOKEN` or a credential helper (see [Tokens for HTTP](#tokens-for-http)).
 
 ## Tokens for HTTP
 
-fdl keeps no tokens and has no login. A repository over HTTP has to be `https`, except on this machine (`localhost`). fdl sends the token only to the repository's origin, never after a redirect to another one, as `Authorization: Bearer`:
+fdl keeps no tokens and has no login. A dataset over HTTP has to be `https`, except on this machine (`localhost`). fdl sends the token only to the dataset's origin, never after a redirect to another one, as `Authorization: Bearer`:
 
 1. `FDL_TOKEN`, when set (for CI)
-2. Otherwise what the credential helper set for the repository's URL in fdl's config answers. With no helper set, fdl sends no token
+2. Otherwise what the credential helper set for the dataset's URL in fdl's config answers. With no helper set, fdl sends no token
 
 The config is `~/.config/fdl/config.toml` (`$XDG_CONFIG_HOME/fdl/config.toml`, or the file `FDL_CONFIG` names). A helper is set per URL prefix; the one with the longest matching path wins:
 
@@ -29,7 +29,7 @@ When the host answers 401 to a token from the helper, fdl runs the helper once m
 fdl init <remote> [--data-dir data/]
 ```
 
-Writes `fdl.json`, with a new `id`, and `HEAD`. Running it on an existing repository changes nothing and prints its settings.
+Writes `fdl.json`, with a new `id`, and `HEAD`. Running it on an existing dataset changes nothing and prints its settings.
 
 ## fdl clone
 
@@ -37,11 +37,11 @@ Writes `fdl.json`, with a new `id`, and `HEAD`. Running it on an existing reposi
 fdl clone <remote> [<working.sqlite>] [--branch main] [--storage s3://bucket/prefix/]
 ```
 
-Makes a working metadata file (DuckLake in SQLite) from the metadata of the version the branch holds, or an empty one before the first version. Without `<working.sqlite>`, it is named after the repository's last path segment in the current folder (`towns.sqlite` for `https://example.com/towns/`). `--branch` takes a branch name such as `main`, or a ref such as `refs/heads/main`. Beside it, `<working.sqlite>.fdl.json` remembers the repository, the branch and the version it was made from. It prints the `ATTACH` statement to write with.
+Makes a working metadata file (DuckLake in SQLite) from the metadata of the version the branch holds, or an empty one before the first version. Without `<working.sqlite>`, it is named after the dataset's last path segment in the current folder (`towns.sqlite` for `https://example.com/towns/`). `--branch` takes a branch name such as `main`, or a ref such as `refs/heads/main`. Beside it, `<working.sqlite>.fdl.json` remembers the dataset, the branch and the version it was made from. It prints the `ATTACH` statement to write with.
 
-For a repository over HTTP, new data files are written to `<working.sqlite>.data/` and uploaded by the push. Files already in the repository are read over HTTP where they are. Once a push has uploaded them, it makes the working metadata again from the new version and deletes the local copies, so the folder holds only what has not been pushed.
+For a dataset over HTTP, new data files are written to `<working.sqlite>.data/` and uploaded by the push. Files already in the dataset are read over HTTP where they are. Once a push has uploaded them, it makes the working metadata again from the new version and deletes the local copies, so the folder holds only what has not been pushed.
 
-With `--storage`, the working metadata reads and writes the data files in the repository's own storage instead: `--storage` is the repository's root there, and new files go straight under its `data_dir`, so the push has none to upload. The keys come from the `AWS_*` variables (`AWS_ENDPOINT_URL` for R2 and other S3-compatible stores), or from a DuckDB secret of your own. The build that writes to the working metadata needs them too.
+With `--storage`, the working metadata reads and writes the data files in the dataset's own storage instead: `--storage` is the dataset's root there, and new files go straight under its `data_dir`, so the push has none to upload. The keys come from the `AWS_*` variables (`AWS_ENDPOINT_URL` for R2 and other S3-compatible stores), or from a DuckDB secret of your own. The build that writes to the working metadata needs them too.
 
 `<working.sqlite>.fdl.json` also keeps the version's [declarations](/spec/versions#declarations) (primary keys, asset columns, profiles and dependencies), which `fdl declare` changes and the next commit writes. It writes no other file.
 
@@ -55,7 +55,7 @@ fdl config author.email alice@example.com
 fdl config author.name
 ```
 
-Sets who makes the versions you commit, kept in `~/.config/fdl/config.json` (under `$XDG_CONFIG_HOME` when it is set), apart from any repository. With no value, it prints the one set. `fdl commit`, `fdl revert` and `fdl merge` take the author from `--author`, else from the environment variables `FDL_AUTHOR_NAME` and `FDL_AUTHOR_EMAIL`, else from these settings, and are refused when none gives a name.
+Sets who makes the versions you commit, kept in `~/.config/fdl/config.json` (under `$XDG_CONFIG_HOME` when it is set), apart from any dataset. With no value, it prints the one set. `fdl commit`, `fdl revert` and `fdl merge` take the author from `--author`, else from the environment variables `FDL_AUTHOR_NAME` and `FDL_AUTHOR_EMAIL`, else from these settings, and are refused when none gives a name.
 
 ## fdl commit
 
@@ -63,13 +63,13 @@ Sets who makes the versions you commit, kept in `~/.config/fdl/config.json` (und
 fdl commit <working.sqlite> -m "What changed" [--author alice] [--allow-empty] [--assets files/]
 ```
 
-Freezes the working metadata into a new version whose parent is the version it was cloned at (or last pushed), and keeps it in `<working.sqlite>.pending/` until `fdl push` sends it. Nothing in the repository changes. It prints the new version ID and its `seq`. Committing again before pushing replaces the version not pushed yet.
+Freezes the working metadata into a new version whose parent is the version it was cloned at (or last pushed), and keeps it in `<working.sqlite>.pending/` until `fdl push` sends it. Nothing in the dataset changes. It prints the new version ID and its `seq`. Committing again before pushing replaces the version not pushed yet.
 
 The command checks the declarations kept beside the working metadata (see `fdl declare`) against its tables and views first. A commit starts from its parent's declarations: a table made again under the same name, as dbt's `CREATE OR REPLACE` does, keeps them, a table dropped loses them, and a column renamed since it was declared is declared under its new name.
 
 It writes the version's `tables.json` (see [tables.json](/spec/versions#tablesjson)): each table's data files and columns with its `primary_key`, `assets` and `profile`, each view's SQL and the columns its query returns, and `dependencies`. To find a view's columns, it attaches each dependency under its name, at the version it names or else the one its `main` holds; a view whose query it cannot bind is listed without columns. Comments in the metadata (`COMMENT ON`) are kept as they are and not read.
 
-The columns declared in `assets` hold the sha256 of files (see [Assets](/spec/versions#assets)). The command reads the values those columns hold, and the push uploads the files the repository lacks from the `--assets` folder to `assets/<sha256>`, by their content: file names in the folder do not matter. Keep the dataset's documents (a `README.md`, its images) in a table of your own whose `sha256` column is declared an asset column, and their files in the `--assets` folder (see `fdl assets`).
+The columns declared in `assets` hold the sha256 of files (see [Assets](/spec/versions#assets)). The command reads the values those columns hold, and the push uploads the files the dataset lacks from the `--assets` folder to `assets/<sha256>`, by their content: file names in the folder do not matter. Keep the dataset's documents (a `README.md`, its images) in a table of your own whose `sha256` column is declared an asset column, and their files in the `--assets` folder (see `fdl assets`).
 
 When the version would hold what its parent holds, with the same declarations (see [When nothing changed](/spec/writing#when-nothing-changed)), it prints `Nothing to commit`, makes nothing and exits 0. A rebuild that writes the same rows to new files counts as unchanged. `--allow-empty` makes the version anyway. If the rows cannot be read to tell, it warns and makes the version.
 
@@ -116,13 +116,13 @@ Uploads the version `fdl commit` made and moves the branch to it on condition (s
 
 Before uploading, it writes a profile of each table and view (see [profiles/](/spec/versions#profiles)) and uploads the profiles before `version.json`, so they are there when the branch moves. It reads only the tables whose data files or columns changed since the parent; the others keep the parent's profile. A view is profiled again, by running its query, when its query or a table or view it reads changed. A table or view declared with `profile` `false` gets none. A table it cannot read gets none, with a warning. When the working metadata changed after the commit, it profiles nothing and warns. `--no-profile` skips profiling; `fdl profile` adds the profiles later.
 
-Data files the working metadata wrote into the repository are there before the push, but no version names them until it. Files never pushed are deleted after the grace period.
+Data files the working metadata wrote into the dataset are there before the push, but no version names them until it. Files never pushed are deleted after the grace period.
 
 Refused when:
 
 - the branch has moved since the clone, so the version does not descend from what the branch holds now. Clone again and redo the work
-- a data file the metadata names is not in the repository
-- an asset column points at a file that is neither in the repository nor in `--assets`
+- a data file the metadata names is not in the dataset
+- an asset column points at a file that is neither in the dataset nor in `--assets`
 - a data file is recorded with an absolute path outside the data directory
 
 A refused push leaves the committed version in place, so it can be sent again once the cause is fixed.
@@ -269,7 +269,7 @@ A version reaches the assets its asset columns hold.
 
 Without `--yes` it only prints what it would delete. Files a kept version still reaches are listed as kept; if they hold the data, withdraw that version too. Refused while a branch or a request points at one of the versions.
 
-`--objects` applies a withdrawal made in another repository, in a copy of it such as a mirror. The file is that repository's `expired.json`, or just its `deleted`. Every live version that reaches one of the named objects is withdrawn too, with the versions given, and the named objects still there are deleted even where no version reaches them.
+`--objects` applies a withdrawal made in another dataset, in a copy of it such as a mirror. The file is that dataset's `expired.json`, or just its `deleted`. Every live version that reaches one of the named objects is withdrawn too, with the versions given, and the named objects still there are deleted even where no version reaches them.
 
 `--json` prints the plan as one JSON object (`versions`, `tags`, `deleted`, `still_read`, `blocked`). Refs other than tags that point at the versions are listed in `blocked` instead of failing, for a host that moves them before running it with `--yes`.
 
@@ -297,4 +297,4 @@ fdl gc <remote> [--grace 7d] [--yes]
 
 Deletes the data files and assets no live version reaches and that were written longer ago than `--grace` (`7d`, `24h` or `30m`), as [When a shared object may be deleted](/spec/data-files#when-a-shared-object-may-be-deleted) allows. These are the files only versions past retention reached, and files working metadata files wrote and never pushed. Without `--yes`, it only lists them.
 
-It reads `tables.json` of every live version, and the metadata of a version with asset columns. Refused for a repository over HTTP, where deleting is the host's, and when a live version has no `tables.json`.
+It reads `tables.json` of every live version, and the metadata of a version with asset columns. Refused for a dataset over HTTP, where deleting is the host's, and when a live version has no `tables.json`.

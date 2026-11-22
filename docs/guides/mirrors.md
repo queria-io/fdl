@@ -1,9 +1,9 @@
 ---
 title: Mirrors
-description: Copying a repository to another host, keeping the copy up to date, and reading from it.
+description: Copying a dataset to another host, keeping the copy up to date, and reading from it.
 ---
 
-A mirror is a copy of a repository on another host. Since versions and data files never change, mirroring is copying files that are not there yet and then the refs.
+A mirror is a copy of a dataset on another host. Since versions and data files never change, mirroring is copying files that are not there yet and then the refs.
 
 ## Copying
 
@@ -24,7 +24,7 @@ aws s3 cp   s3://origin/towns/HEAD      s3://mirror/towns/HEAD
 aws s3 cp   s3://origin/towns/refs.json s3://mirror/towns/refs.json
 ```
 
-A mirror keeps the origin's `id` in `fdl.json`. That is how a tool can tell the two URLs hold the same repository.
+A mirror keeps the origin's `id` in `fdl.json`. That is how a tool can tell the two URLs hold the same dataset.
 
 A mirror is for reading. Pushing to both the origin and a mirror would give them different histories under the same `id`.
 

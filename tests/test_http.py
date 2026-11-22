@@ -1,4 +1,4 @@
-"""A repository over HTTP: the store, and the whole round trip through it."""
+"""A dataset over HTTP: the store, and the whole round trip through it."""
 
 from __future__ import annotations
 
@@ -298,7 +298,7 @@ def test_a_commit_over_http_frees_the_local_data_files(served, tmp_path: Path) -
     folder = working.with_name(working.name + ".data")
     assert folder.is_dir() and not any(p.is_file() for p in folder.rglob("*"))
 
-    # The same working catalog goes on: the first file is read from the repository.
+    # The same working catalog goes on: the first file is read from the dataset.
     write(working, "INSERT INTO lake.main.towns SELECT id + 1 FROM lake.main.towns")
     commit(working, "-m", "second", "--author", "tester")
     second = repo.head(local)
@@ -330,7 +330,7 @@ def test_a_clone_with_storage_writes_data_files_there(served, tmp_path: Path) ->
         con.close()
 
     build("CREATE TABLE lake.main.towns AS SELECT 1 AS id")
-    # Written into the repository before the commit: nothing to upload.
+    # Written into the dataset before the commit: nothing to upload.
     assert list((Path(local.root) / "tables").rglob("*.parquet"))
     commit(working, "-m", "first", "--author", "tester")
     build("INSERT INTO lake.main.towns VALUES (2)")
@@ -361,7 +361,7 @@ def test_the_storage_secret_comes_from_the_aws_variables(monkeypatch) -> None:
     duckdb.connect().execute("INSTALL httpfs; LOAD httpfs;").execute(statement)
 
 
-def test_reading_an_s3_repository_takes_the_storage_secret(monkeypatch) -> None:
+def test_reading_an_s3_dataset_takes_the_storage_secret(monkeypatch) -> None:
     from fdl.cli import _read_setup
 
     monkeypatch.setenv("AWS_ACCESS_KEY_ID", "id")

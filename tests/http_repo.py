@@ -1,4 +1,4 @@
-"""A repository over HTTP for the tests: the protocol in the specification,
+"""A dataset over HTTP for the tests: the protocol in the specification,
 served from a folder with `LocalStore` behind it."""
 
 from __future__ import annotations

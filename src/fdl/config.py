@@ -1,7 +1,7 @@
 """The user's settings: who makes the versions they commit.
 
 Kept in ``$XDG_CONFIG_HOME/fdl/config.json`` (``~/.config/fdl/config.json``
-by default), apart from any repository, as git keeps ``user.name``.
+by default), apart from any dataset, as git keeps ``user.name``.
 """
 
 from __future__ import annotations

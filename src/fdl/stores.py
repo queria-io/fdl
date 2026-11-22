@@ -1,5 +1,5 @@
 """Three stores: a folder on this machine, an S3-compatible bucket, and a
-repository served over HTTP.
+dataset served over HTTP.
 
 Both raise `StoreError` with the HTTP status a failure would have had (404 for
 missing, 412 for a failed condition), which is all `fdl.store` looks at.
@@ -38,7 +38,7 @@ def _version() -> str:
 #: Sent with every request. Some hosts refuse the default ``Python-urllib/x.y``.
 USER_AGENT = f"fdl/{_version()}"
 
-#: Hosts a repository may be reached at over plain ``http://``: this machine only.
+#: Hosts a dataset may be reached at over plain ``http://``: this machine only.
 LOOPBACK = {"localhost", "127.0.0.1", "::1"}
 
 
@@ -86,11 +86,11 @@ class StoreError(RuntimeError):
 
 
 class LocalStore:
-    """A repository in a folder. ETags are content hashes, which is enough for
+    """A dataset in a folder. ETags are content hashes, which is enough for
     the conditional writes refs rely on. One writer at a time: the condition
     is checked and the file written in two steps."""
 
-    #: DuckDB writes data files straight into the repository.
+    #: DuckDB writes data files straight into the dataset.
     writes_data_files = True
 
     def __init__(self, root: Path | str) -> None:
@@ -164,7 +164,7 @@ class LocalStore:
 
 
 class S3Store:
-    """A repository under ``s3://<bucket>/<prefix>``.
+    """A dataset under ``s3://<bucket>/<prefix>``.
 
     Credentials and the endpoint come from boto3's usual places (the
     ``AWS_*`` environment variables, ``AWS_ENDPOINT_URL`` for R2 and other
@@ -254,9 +254,9 @@ class S3Store:
 
 
 class HttpStore:
-    """A repository served over HTTP by a host that takes writes.
+    """A dataset served over HTTP by a host that takes writes.
 
-    The protocol is in the specification ("A repository over HTTP"): plain
+    The protocol is in the specification ("Pushing over HTTP"): plain
     GET, HEAD and conditional PUT, a listing, and an upload in parts for files
     larger than a host takes in one request. There is no delete: what to keep
     is the host's call.
@@ -275,7 +275,7 @@ class HttpStore:
     def __init__(self, url: str, *, token: str | None = None, part_size: int | None = None) -> None:
         parsed = urlparse(url)
         if parsed.scheme != "https" and not (parsed.scheme == "http" and parsed.hostname in LOOPBACK):
-            raise StoreError(f"{url}: a repository over HTTP has to be https (plain http only on this machine)")
+            raise StoreError(f"{url}: a dataset over HTTP has to be https (plain http only on this machine)")
         self.root = url.rstrip("/") + "/"
         #: A token fdl asked for (rather than one it was handed) is asked for
         #: again when the host refuses it: a short-lived one may have run out.
@@ -481,7 +481,7 @@ class HttpStore:
                     action["href"],
                     data=body,
                     method="PUT",
-                    # Only the headers the host gave: the repository's token
+                    # Only the headers the host gave: the dataset's token
                     # is not for the storage the URL points at.
                     # Without a Content-Type urllib sends a form's, which
                     # storage keeps as the object's type.
@@ -529,7 +529,7 @@ class HttpStore:
                 return
 
     def delete(self, keys: Sequence[str]) -> None:
-        raise StoreError("a repository over HTTP is not deleted from by writers", status=405)
+        raise StoreError("a dataset over HTTP is not deleted from by writers", status=405)
 
 
 def config_path() -> Path:

@@ -2,7 +2,7 @@
 
 A working metadata file is a DuckLake metadata file in SQLite that you write to with any
 DuckDB client. Beside it sits ``<working>.fdl.json``, which remembers the
-repository it came from and the version it was cloned at, so a commit
+dataset it came from and the version it was cloned at, so a commit
 knows what it builds on. A commit waits in ``<working>.pending/`` until it is
 pushed.
 """
@@ -31,7 +31,7 @@ from .version import parse as parse_version
 
 app = typer.Typer(no_args_is_help=True, pretty_exceptions_short=True)
 
-Remote = typer.Argument(help="The repository: s3://bucket/prefix/, https://host/path/ or a folder")
+Remote = typer.Argument(help="The dataset: s3://bucket/prefix/, https://host/path/ or a folder")
 Working = typer.Argument(help="The working metadata (.sqlite)")
 
 
@@ -84,12 +84,12 @@ def init(
     remote: str = Remote,
     data_dir: str = typer.Option(layout.DEFAULT_DATA_DIR, help="Where data files go, under the root"),
 ) -> None:
-    """Start a repository (fdl.json and HEAD). Harmless on one that exists."""
+    """Start a dataset (fdl.json and HEAD). Harmless on one that exists."""
     try:
         config = repo.init(_store(remote), data_dir=data_dir)
     except ERRORS as exc:
         raise _fail(exc) from exc
-    typer.echo(f"fdl {config.fdl} repository, data in {config.data_dir}")
+    typer.echo(f"fdl {config.fdl} dataset, data in {config.data_dir}")
 
 
 def _default_working(remote: str) -> Path:
@@ -106,21 +106,21 @@ def _default_working(remote: str) -> Path:
 def clone(
     remote: str = Remote,
     working: Path | None = typer.Argument(
-        None, help="The working metadata (.sqlite). Default: <the repository's last path segment>.sqlite here"
+        None, help="The working metadata (.sqlite). Default: <the dataset's last path segment>.sqlite here"
     ),
     branch: str = typer.Option(layout.DEFAULT_BRANCH.removeprefix("refs/heads/"), "--branch", "-b", help="The branch to build on: a name such as main, or refs/heads/<name>"),
     storage: str | None = typer.Option(
         None,
-        help="The repository's root in its object storage (s3://…), to write new data files there directly instead of uploading them on commit",
+        help="The dataset's root in its object storage (s3://…), to write new data files there directly instead of uploading them on commit",
     ),
 ) -> None:
     """Make a working metadata file from the version a branch holds."""
     ref = branch if branch.startswith("refs/") else f"refs/heads/{branch}"
     working = working or _default_working(remote)
     store = _store(remote)
-    # A repository over HTTP takes no writes from DuckDB: new data files go to
+    # A dataset over HTTP takes no writes from DuckDB: new data files go to
     # a folder beside the working metadata until the commit uploads them, or
-    # straight to the repository's storage when the writer has keys to it.
+    # straight to the dataset's storage when the writer has keys to it.
     local = (
         None
         if storage or repo.writes_data_files(store)
@@ -185,7 +185,7 @@ def commit(
         "--assets",
         exists=True,
         file_okay=False,
-        help="A folder with the files the asset columns point at, to upload those the repository lacks",
+        help="A folder with the files the asset columns point at, to upload those the dataset lacks",
     ),
 ) -> None:
     """Freeze the working metadata into a version, kept beside it until you push it.
@@ -447,7 +447,7 @@ def revert(
             # What the earlier version declared comes back with its tables.
             facts = repo.declarations(store, target)
             catalog.restore(
-                working, frozen, data_path=reading, repository_data=repo.data_url(store), setup=setup
+                working, frozen, data_path=reading, dataset_data=repo.data_url(store), setup=setup
             )
         version = _commit(
             store,
@@ -564,7 +564,7 @@ def _merge(store, working: Path, state: dict, ours, theirs, base, *, message: st
             frozen["theirs"],
             keys=merging.primary_keys(*((said[side], held[side]) for side in ("base", "ours", "theirs"))),
             data_path=_written(store, state),
-            repository_data=repo.data_url(store),
+            dataset_data=repo.data_url(store),
             setup=_read_setup(store) + _storage_setup(state.get("storage")),
             # Written only when a version can be committed from it.
             write=not conflicts,
@@ -595,7 +595,7 @@ def _drop_uploaded(store, working: Path, local: Path, version) -> None:
     """Free the disk the uploaded data files took.
 
     The working metadata is made again from the version just pushed, so it
-    reads those files from the repository, and the local copies go. The
+    reads those files from the dataset, and the local copies go. The
     conversion replaces the working metadata only once it is complete, so on
     failure the working metadata and its local files stay as they were.
     """
@@ -637,7 +637,7 @@ def _storage_setup(storage: str | None) -> list[str]:
 
 
 def _read_setup(store) -> list[str]:
-    """What DuckDB needs to read the repository's data files: the token over HTTP, the ``AWS_*`` keys on S3."""
+    """What DuckDB needs to read the dataset's data files: the token over HTTP, the ``AWS_*`` keys on S3."""
     if isinstance(store, S3Store):
         return _storage_setup(store.url)
     token = getattr(store, "token", None)
@@ -762,7 +762,7 @@ def assets(folder: Path = typer.Argument(..., help="The folder of files the rows
 
     Read it into a table (DuckDB's read_csv, say) and declare its sha256 column
     an asset column with `fdl declare assets`. `fdl commit --assets <folder>`
-    then uploads the files the repository lacks.
+    then uploads the files the dataset lacks.
     """
     import csv
     import sys
@@ -1144,7 +1144,7 @@ def withdraw(
     objects: Path | None = typer.Option(
         None,
         "--objects",
-        help="A JSON file naming objects another repository withdrew, as `deleted` of its expired.json (or that file itself). Every version that reaches one is withdrawn too",
+        help="A JSON file naming objects another dataset withdrew, as `deleted` of its expired.json (or that file itself). Every version that reaches one is withdrawn too",
     ),
     yes: bool = typer.Option(False, "--yes", help="Do it. Without this, only say what would be done"),
     by: str | None = typer.Option(None, help="Who withdraws them, recorded in expired.json"),
@@ -1160,7 +1160,7 @@ def withdraw(
     asset no live version reaches is deleted.
 
     With --objects, a mirror applies a withdrawal made in the
-    repository it was copied from.
+    dataset it was copied from.
     """
     store = _store(remote)
     try:

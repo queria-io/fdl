@@ -1,4 +1,4 @@
-"""init, commit, push and log against a repository in a local folder.
+"""init, commit, push and log against a dataset in a local folder.
 
 Real DuckLake catalogs, because what matters is that a reader can attach the
 version that comes out the other side.
@@ -87,7 +87,7 @@ def test_init_writes_the_config_and_head(remote) -> None:
     assert repo.init(remote) == repo.Config(fdl="0.1", data_dir="tables/", id=config["id"])
 
 
-def test_a_repository_without_an_id_still_reads(tmp_path: Path) -> None:
+def test_a_dataset_without_an_id_still_reads(tmp_path: Path) -> None:
     store = LocalStore(tmp_path / "old")
     store.put(layout.CONFIG, b'{"fdl": "0.1", "data_dir": "ducklake.duckdb.files/"}')
     assert repo.read_config(store).id is None
@@ -206,7 +206,7 @@ def test_push_refuses_a_catalog_whose_data_files_are_gone(tmp_path: Path, remote
     first = commit(tmp_path, remote)
     remote.delete([key for key in remote.list("tables/")])
 
-    with pytest.raises(repo.RepoError, match="not in the repository"):
+    with pytest.raises(repo.RepoError, match="not in the dataset"):
         repo.push(remote, tmp_path / "local" / first.id, first)
     assert remote.head(layout.version_record(first.id)) is None
 

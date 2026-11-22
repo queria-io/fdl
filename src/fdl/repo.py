@@ -1,4 +1,4 @@
-"""The operations on a repository, with no terminal and no service behind them.
+"""The operations on a dataset, with no terminal and no service behind them.
 
 Each takes a `Store` for the remote and paths for the local side, and returns
 what it did. Printing, prompts and credentials belong to whoever calls these.
@@ -25,7 +25,7 @@ from .version import DuckLake, File, Metadata, Version, VersionError, new_id, pa
 
 
 class RepoError(RuntimeError):
-    """The repository cannot do what was asked, and nothing was changed."""
+    """The dataset cannot do what was asked, and nothing was changed."""
 
 
 class NotFastForward(RepoError):
@@ -48,15 +48,15 @@ class CannotCompare(RepoError):
 class Config:
     fdl: str
     data_dir: str
-    #: Never changes, so a copy of the repository can tell it holds the same one.
-    #: None for repositories started before it was written.
+    #: Never changes, so a copy of the dataset can tell it holds the same one.
+    #: None for datasets started before it was written.
     id: str | None = None
 
 
 def init(store: Store, *, data_dir: str = layout.DEFAULT_DATA_DIR) -> Config:
-    """Start a repository: `fdl.json` and HEAD, and no versions yet.
+    """Start a dataset: `fdl.json` and HEAD, and no versions yet.
 
-    An existing repository is left as it is and its settings returned, so
+    An existing dataset is left as it is and its settings returned, so
     running this twice is harmless.
     """
     if not layout.is_data_dir(data_dir):
@@ -81,7 +81,7 @@ def read_config(store: Store) -> Config:
         record = json.loads(store.get(layout.CONFIG))
     except Exception as exc:  # noqa: BLE001 - stores raise their own types
         if is_missing(exc):
-            raise RepoError("not an FDL repository (no fdl.json)") from exc
+            raise RepoError("not an FDL dataset (no fdl.json)") from exc
         raise
     major = str(record.get("fdl", "")).split(".")[0]
     if major != layout.FDL_VERSION.split(".")[0]:
@@ -161,7 +161,7 @@ def commit(
 
     ``working_data`` is where the working metadata wrote its new data files,
     when not where it records (see `clone`): comparing and binding views read
-    them there, after ``setup`` (the keys to read the repository's files).
+    them there, after ``setup`` (the keys to read the dataset's files).
 
     ``merged`` is the version a merge brought in: the second parent.
     """
@@ -173,7 +173,7 @@ def commit(
     try:
         catalog.convert(working, frozen, data_path=data_path)
         catalog.set_data_path(frozen, data_path)
-        # Files a working metadata file read from the repository where they are.
+        # Files a working metadata file read from the dataset where they are.
         catalog.unpin_files(frozen, data_path)
         absolute = catalog.absolute_paths(frozen)
         if absolute:
@@ -235,9 +235,9 @@ def clone(
 
     A store DuckDB cannot write to (one over HTTP) needs ``local_data``, a
     folder on this machine: new data files are written there and uploaded by
-    `push`, while the files already in the repository are read where they are.
+    `push`, while the files already in the dataset are read where they are.
 
-    ``storage`` is instead the repository's root in its object storage (an
+    ``storage`` is instead the dataset's root in its object storage (an
     ``s3://`` URL, say): the working metadata reads and writes the data files
     there directly, with keys of the writer's own, and `push` has none to
     upload.
@@ -275,9 +275,9 @@ def clone(
 
 def check_catalog(frozen: Path, version: Version) -> None:
     """Refuse a metadata file that is not the one ``version`` records, or that names
-    a data file outside the repository's data folder.
+    a data file outside the dataset's data folder.
 
-    A reader that trusted such a metadata file would read files the repository does
+    A reader that trusted such a metadata file would read files the dataset does
     not hold, with the reader's own credentials.
     """
     if _sha256(frozen) != version.metadata.sha256:
@@ -291,7 +291,7 @@ def check_catalog(frozen: Path, version: Version) -> None:
 
 
 def storage_data_path(storage: str, config: Config) -> str:
-    """The data files' folder, given the repository's root in its storage."""
+    """The data files' folder, given the dataset's root in its storage."""
     root = storage if "://" in storage else Path(storage).resolve().as_posix()
     return root.rstrip("/") + "/" + config.data_dir
 
@@ -430,11 +430,11 @@ def push(
     its refs itself (after an approval, say).
 
     ``local_data`` is the folder a working metadata file wrote new data files to
-    (see `clone`). Those the repository lacks are uploaded first.
+    (see `clone`). Those the dataset lacks are uploaded first.
 
     ``assets`` are the sha256 the version's asset columns hold (see
     `objects.asset_values`). They must
-    be in the repository; those it lacks are uploaded from
+    be in the dataset; those it lacks are uploaded from
     ``local_objects`` (sha256 to a file with that content), and a push that
     still lacks one is refused.
     """
@@ -457,7 +457,7 @@ def push(
     if missing:
         raise RepoError(
             f"{len(missing)} data file(s) the metadata names are not in the "
-            f"repository (first: {missing[0]}). Rebuild from the working "
+            f"dataset (first: {missing[0]}). Rebuild from the working "
             f"metadata and commit again."
         )
     _check_tables_index(Path(local), version, frozen)
@@ -730,7 +730,7 @@ def _tables_read(sql: str | None) -> set[tuple[str, str, str]] | None:
 
 
 def missing_profiles(store: Store, version: Version) -> list[dict]:
-    """The tables and views of ``version`` that get a profile and have none in the repository."""
+    """The tables and views of ``version`` that get a profile and have none in the dataset."""
     folder = layout.version_dir(version.id)
     index = diffs.indexed(store, version)
     if index is None:
@@ -876,7 +876,7 @@ def expire(
 
     `version.json` stays, so the history still says the version was there and
     what it was. Data files are not touched: other versions share them, and
-    which ones may go is for a pass over the whole repository to decide.
+    which ones may go is for a pass over the whole dataset to decide.
     Running it again finishes a run that stopped between the two steps.
     """
     version = read_version(store, version_id)
@@ -982,7 +982,7 @@ def plan_withdrawal(
     ``refuse_refs=False`` those refs are listed in `blocked` instead, for a
     host that moves them itself.
 
-    ``objects`` names shared objects another repository withdrew, as `deleted`
+    ``objects`` names shared objects another dataset withdrew, as `deleted`
     of its `expired.json` does: a copy of it, such as a mirror,
     applies that withdrawal. Every live version that reaches one of them is
     affected too, and those objects go even where no version reaches them.
@@ -1408,7 +1408,7 @@ def _refuse_unless_fast_forward(store: Store, current: refs.Ref | None, version:
 
 
 def forward(store: Store, ref: str, version: Version) -> None:
-    """Move a branch to a version already in the repository that descends from where it is.
+    """Move a branch to a version already in the dataset that descends from where it is.
 
     For a merge whose base is the branch's own version: no new version is
     made, the branch moves to the other one.
@@ -1496,7 +1496,7 @@ def _needed_objects(assets: Iterable[str]) -> dict[str, str]:
 
 
 def _upload_objects(store: Store, needed: dict[str, str], local: Mapping[str, Path]) -> None:
-    """Put the assets the repository lacks, or refuse the push."""
+    """Put the assets the dataset lacks, or refuse the push."""
     if not needed:
         return
     present = {key for prefix in _HASHED_DIRS.values() for key in store.list(prefix)}
@@ -1504,7 +1504,7 @@ def _upload_objects(store: Store, needed: dict[str, str], local: Mapping[str, Pa
     unknown = [key for key in lacking if key.rsplit("/", 1)[1] not in local]
     if unknown:
         raise RepoError(
-            f"{len(unknown)} file(s) the version points at are neither in the repository "
+            f"{len(unknown)} file(s) the version points at are neither in the dataset "
             f"nor given to upload (first: {unknown[0]})"
         )
     by_type: dict[str, list[tuple[str, Path]]] = {}

@@ -88,14 +88,14 @@ def tables(
     *,
     keys: dict[tuple[str, str], list[str]],
     data_path: str | None = None,
-    repository_data: str,
+    dataset_data: str,
     setup: Iterable[str] = (),
     write: bool = True,
 ) -> Plan:
     """Merge into the working catalog, in one new snapshot, what theirs changed since the base.
 
     ``working`` must hold ours at its last snapshot. ``base`` and ``theirs``
-    are frozen catalogs, whose data files are under ``repository_data``.
+    are frozen catalogs, whose data files are under ``dataset_data``.
     ``keys`` are the primary keys rows are merged by (see `primary_keys`).
 
     Nothing is written when there is a conflict, or when ``write`` is false
@@ -108,12 +108,12 @@ def tables(
         for statement in [
             *setup,
             *attach_sql(working, alias="lake", data_path=data_path or working_data_path(working)),
-            *attach_sql(base, alias="base", data_path=repository_data, read_only=True)[2:],
-            *attach_sql(theirs, alias="theirs", data_path=repository_data, read_only=True)[2:],
+            *attach_sql(base, alias="base", data_path=dataset_data, read_only=True)[2:],
+            *attach_sql(theirs, alias="theirs", data_path=dataset_data, read_only=True)[2:],
         ]:
             if statement:
                 con.execute(statement)
-        merging = _Merging(con, keys, repository_data)
+        merging = _Merging(con, keys, dataset_data)
         plan = merging.plan()
         if write and not plan.conflicts and (plan.taken or plan.dropped or plan.rows or merging.theirs_commented()):
             merging.apply(plan)
@@ -142,10 +142,10 @@ def _literal(text: str) -> str:
 class _Merging:
     """One merge on one connection, with ``lake`` (ours), ``base`` and ``theirs`` attached."""
 
-    def __init__(self, con, keys: dict[tuple[str, str], list[str] | None], repository_data: str) -> None:
+    def __init__(self, con, keys: dict[tuple[str, str], list[str] | None], dataset_data: str) -> None:
         self.con = con
         self.keys = keys
-        self.repository_data = repository_data
+        self.dataset_data = dataset_data
         #: By table: the staged rows, the columns to write and the ALTER TABLE statements first.
         self.staged: dict[tuple[str, str], tuple[str, list[str], list[str]]] = {}
         #: By table without a primary key: the counted rows and its columns.
@@ -186,7 +186,7 @@ class _Merging:
         return {schema for (schema,) in rows}
 
     def files(self, alias: str, table_id: int) -> frozenset[tuple[str, str | None]]:
-        """The table's data and delete files, by path under the repository's data folder.
+        """The table's data and delete files, by path under the dataset's data folder.
 
         A relative path is relative to the table's folder, so the schema's and
         the table's paths come first: a working metadata that pinned the files
@@ -210,7 +210,7 @@ class _Merging:
         def relative(prefix: str, path: str | None, is_relative: bool | None) -> str | None:
             if path is None:
                 return None
-            return prefix + path if is_relative else path.removeprefix(self.repository_data)
+            return prefix + path if is_relative else path.removeprefix(self.dataset_data)
 
         return frozenset((relative(p, d, dr), relative(p, x, xr)) for p, d, dr, x, xr in rows)
 

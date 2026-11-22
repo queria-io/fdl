@@ -227,7 +227,7 @@ def test_withdraw_says_what_it_would_do_until_told_yes(tmp_path: Path) -> None:
     assert repo.is_expired(store, leak.id)
 
 
-def test_withdraw_applies_the_objects_another_repository_withdrew(tmp_path: Path) -> None:
+def test_withdraw_applies_the_objects_another_dataset_withdrew(tmp_path: Path) -> None:
     import json
 
     remote, working = tmp_path / "remote", tmp_path / "work" / "lake.sqlite"
@@ -376,7 +376,7 @@ def test_restore_leaves_a_table_unchanged_since_as_it_is(tmp_path: Path) -> None
     commit(working, "-m", "second", "--author", "t")
 
     changed = catalog.restore(
-        working, remote / layout.version_metadata(first), data_path=repo.data_url(store), repository_data=repo.data_url(store)
+        working, remote / layout.version_metadata(first), data_path=repo.data_url(store), dataset_data=repo.data_url(store)
     )
     assert changed == ["main.b"]
 
@@ -393,7 +393,7 @@ def test_restore_brings_back_a_column_that_allowed_nulls(tmp_path: Path) -> None
     commit(working, "-m", "second", "--author", "t")
 
     changed = catalog.restore(
-        working, remote / layout.version_metadata(first), data_path=repo.data_url(store), repository_data=repo.data_url(store)
+        working, remote / layout.version_metadata(first), data_path=repo.data_url(store), dataset_data=repo.data_url(store)
     )
     assert changed == ["main.a"]
 
@@ -408,7 +408,7 @@ def test_restore_leaves_a_table_whose_files_the_working_metadata_pinned(tmp_path
     first = repo.head(store)
     write(working, store, "INSERT INTO lake.main.b VALUES (2)")
     commit(working, "-m", "second", "--author", "t")
-    # As a clone of a repository over HTTP makes it: published files by their URL, new ones in a local folder.
+    # As a clone of a dataset over HTTP makes it: published files by their URL, new ones in a local folder.
     local = tmp_path / "local"
     local.mkdir()
     frozen = tmp_path / "second.duckdb"
@@ -418,7 +418,7 @@ def test_restore_leaves_a_table_whose_files_the_working_metadata_pinned(tmp_path
     catalog.convert(frozen, pinned, data_path=local.as_posix() + "/")
 
     changed = catalog.restore(
-        pinned, remote / layout.version_metadata(first), data_path=local.as_posix() + "/", repository_data=repo.data_url(store)
+        pinned, remote / layout.version_metadata(first), data_path=local.as_posix() + "/", dataset_data=repo.data_url(store)
     )
     assert changed == ["main.b"]
 
@@ -440,7 +440,7 @@ def test_restore_keeps_what_the_columns_declared_and_drops_new_schemas(tmp_path:
     commit(working, "-m", "second", "--author", "t")
 
     changed = catalog.restore(
-        working, remote / layout.version_metadata(first), data_path=repo.data_url(store), repository_data=repo.data_url(store)
+        working, remote / layout.version_metadata(first), data_path=repo.data_url(store), dataset_data=repo.data_url(store)
     )
     assert changed == ["extra", "extra.t", "main.a"]
     con = duckdb.connect()
@@ -605,7 +605,7 @@ def test_a_push_committed_before_data_dir_moved_is_refused(tmp_path: Path) -> No
     assert len(list(repo.log(store))) == 2
 
 
-def test_clone_names_the_working_metadata_after_the_repository(tmp_path: Path, monkeypatch) -> None:
+def test_clone_names_the_working_metadata_after_the_dataset(tmp_path: Path, monkeypatch) -> None:
     remote = tmp_path / "towns"
     run("init", remote)
     monkeypatch.chdir(tmp_path)

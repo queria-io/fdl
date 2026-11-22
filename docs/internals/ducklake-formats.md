@@ -1,6 +1,6 @@
 ---
 title: DuckLake formats
-description: The three format numbers a version carries, and how a repository serves readers on older DuckDB releases when DuckLake's format moves.
+description: The three format numbers a version carries, and how a dataset serves readers on older DuckDB releases when DuckLake's format moves.
 ---
 
 ## Three format numbers
@@ -17,7 +17,7 @@ The last two move independently. DuckDB 2.0 writes DuckLake format 1.1 by defaul
 
 ## Why it matters for published data
 
-Readers update DuckDB on their own schedule, and some cannot choose: a browser runs whatever DuckDB WASM build the page ships. A repository that switches to a new format cuts those readers off.
+Readers update DuckDB on their own schedule, and some cannot choose: a browser runs whatever DuckDB WASM build the page ships. A dataset that switches to a new format cuts those readers off.
 
 Data files are not the problem. A new DuckLake format changes the bookkeeping tables, not the Parquet. So a version can carry one metadata file per format, all naming the same data files, and a reader picks the one it can open.
 

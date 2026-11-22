@@ -1,6 +1,6 @@
 ---
 title: Python API
-description: The fdl package - stores, refs, and the repository operations without a terminal.
+description: The fdl package - stores, refs, and the dataset operations without a terminal.
 ---
 
 ```python
@@ -20,7 +20,7 @@ for version in repo.log(store):
 | `fdl.refs` | reading and moving refs under their conditions |
 | `fdl.version` | `Version`, the record in `version.json`, and new IDs |
 | `fdl.catalog` | DuckLake metadata files in DuckDB and SQLite, and the copy between them |
-| `fdl.layout` | where each file of a repository sits |
+| `fdl.layout` | where each file of a dataset sits |
 | `fdl.store`, `fdl.stores` | what a store has to do, and the folder and S3 stores |
 
 ## Stores
@@ -43,7 +43,7 @@ for version in repo.log(store):
 repo.init(store, *, data_dir="data/") -> Config
 ```
 
-Start a repository. An existing one is left as it is and its settings returned.
+Start a dataset. An existing one is left as it is and its settings returned.
 
 ```python
 repo.clone(store, working, *, ref="HEAD", local_data=None, version=None) -> Version | None
@@ -89,11 +89,11 @@ repo.merge_bases(store, ours, theirs) -> list[Version]
 repo.forward(store, ref, version) -> None
 ```
 
-The common ancestors of two versions that no other common ancestor descends from: a merge needs exactly one. `forward` moves a branch to a version already in the repository that descends from where it is, for a merge whose base is the branch's own version.
+The common ancestors of two versions that no other common ancestor descends from: a merge needs exactly one. `forward` moves a branch to a version already in the dataset that descends from where it is, for a merge whose base is the branch's own version.
 
 ```python
 merge.primary_keys(base, ours, theirs) -> dict[tuple[str, str], list[str] | None]
-merge.tables(working, base, theirs, *, keys, repository_data, data_path=None, setup=(), write=True) -> Plan
+merge.tables(working, base, theirs, *, keys, dataset_data, data_path=None, setup=(), write=True) -> Plan
 ```
 
 The pieces of `fdl merge`. `primary_keys` gives each table's primary key from what each version declares and holds (`(repo.declarations(store, version), repo.tables_of(store, version))`): `None` for one whose primary key differs between the three, which is a conflict. A table it does not list has no primary key, and its rows are merged as a multiset. `tables` writes into the working metadata, in one snapshot, what the frozen metadata `theirs` changed since `base`, or nothing when there is a conflict; `Plan` lists the conflicts and what came over. `repo.commit` and `repo.record` take `merged=<theirs>` to make the merge version.
@@ -139,7 +139,7 @@ repo.plan_withdrawal(store, version_ids, *, objects=None, refuse_refs=True) -> W
 repo.withdraw(store, version_ids, *, plan=None, by=None) -> Withdrawal
 ```
 
-Withdraw versions that hold data that must not be published. `plan_withdrawal` changes nothing and returns the tags, the data files to delete, and the files kept because a kept version reads them. `withdraw` deletes the tags, the data files and the metadata files, in that order. Both raise `RepoError` while a branch or a request points at one of the versions; with `refuse_refs=False`, `plan_withdrawal` lists them in `blocked` instead and `withdraw` raises. `objects` (`{"data": [...], "assets": [...]}`, as `deleted` of `expired.json`) applies a withdrawal made in the repository this one was copied from: every live version that reaches one of them is affected too.
+Withdraw versions that hold data that must not be published. `plan_withdrawal` changes nothing and returns the tags, the data files to delete, and the files kept because a kept version reads them. `withdraw` deletes the tags, the data files and the metadata files, in that order. Both raise `RepoError` while a branch or a request points at one of the versions; with `refuse_refs=False`, `plan_withdrawal` lists them in `blocked` instead and `withdraw` raises. `objects` (`{"data": [...], "assets": [...]}`, as `deleted` of `expired.json`) applies a withdrawal made in the dataset this one was copied from: every live version that reaches one of them is affected too.
 
 ## fdl.declared
 
