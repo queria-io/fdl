@@ -1,9 +1,9 @@
 ---
 title: DuckDB を使わずに読む
-description: files.json を使い、表の Parquet ファイルを JavaScript で読む方法。Workers・ブラウザ・Node で動きます。
+description: tables.json を使い、表の Parquet ファイルを JavaScript で読む方法。Workers・ブラウザ・Node で動きます。
 ---
 
-Cloudflare Worker や Web ページのように DuckDB を動かせない読み手も、バージョンを読めます。`files.json` に表ごとのデータファイルが並んでいるので、Parquet ファイルを範囲指定で読めば済みます。JavaScript では [`@queria-io/fdl-js`](https://www.npmjs.com/package/@queria-io/fdl-js) がこれを行います。
+Cloudflare Worker や Web ページのように DuckDB を動かせない読み手も、バージョンを読めます。`tables.json` に表ごとのデータファイルが並んでいるので、Parquet ファイルを範囲指定で読めば済みます。JavaScript では [`@queria-io/fdl-js`](https://www.npmjs.com/package/@queria-io/fdl-js) がこれを行います。
 
 ```bash
 npm install @queria-io/fdl-js
@@ -22,9 +22,8 @@ const rows = await readWhere(await openParquet(store, file), "town_code", "13101
 
 ## 読めるもの
 
-[読み方](/ja/spec/reading)の手順にメタデータの手前まで従い、メタデータの代わりに `files.json` を読みます。
+[読み方](/ja/spec/reading)の手順にメタデータの手前まで従い、メタデータの代わりに `tables.json` を読みます。
 
-- `files.json` の無いバージョンは読めません。fdl-cli 0.16 より前の書き手は作りません
 - ファイルに `deletes` がある表と、`renamed_columns` が `true` の表は断ります（[tables.json](/ja/spec/versions#tablesjson) を参照）
 - `expired.json` のあるバージョンは断ります
 

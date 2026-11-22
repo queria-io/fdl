@@ -75,7 +75,7 @@ When the version would hold what its parent holds, with the same declarations (s
 
 Refused when:
 
-- a declaration names a column the table lacks or names one twice, an asset column is not `varchar`, a view is given a primary key or asset columns, or a dependency's `url` is not an absolute URL ending in `/` or its `version` is not a version ID
+- a declaration names a column the table lacks or names one twice, an asset column is not `varchar`, a view is given a primary key or asset columns, a dependency's name is not lower-case letters, digits and `_` or is `memory`, `system` or `temp`, or its `url` is not an absolute URL ending in `/` or its `version` is not a version ID
 - the working metadata holds inlined rows
 - an asset column holds a value that is not a sha256
 
@@ -104,7 +104,7 @@ fdl declare dependency lake.sqlite census https://example.org/census/
 - `dependency` names another dataset the views' SQL reads, under the name the SQL uses. Without `--version`, the views read the version its `main` holds. Without `<url>`, it removes the dependency
 - `list` prints one declaration a line, and `--json` all of them as one object
 
-A change is refused when the tables and views refuse it: a table or column that is not there, a primary key or asset columns on a view, an asset column that is not `varchar`, or a dependency whose `url` is not an absolute URL ending in `/`.
+A change is refused when the tables and views refuse it: a table or column that is not there, a primary key or asset columns on a view, an asset column that is not `varchar`, or a dependency whose name or `url` the commit would refuse.
 
 ## fdl push
 
@@ -158,7 +158,7 @@ Versions from the one the ref holds back to the first, by first parent. Each sho
 fdl status <working.sqlite> [--json]
 ```
 
-What the working metadata changed since it was cloned, in the same kinds as `fdl diff`. `Nothing to commit` when it holds what the version it came from holds. `~ declarations <name>` means the declarations of a table or view differ from the version's, and `~ dependencies` that the dependencies do. When a version is committed and not pushed yet, it is named first and the changes are counted from it; `--json` gives its ID as `pending`. After a fast-forward `fdl merge`, it says that `fdl push` will move the branch.
+What the working metadata changed since it was cloned, in the same kinds as `fdl diff`. `Nothing to commit` when it holds what the version it came from holds. `~ declarations <name>` means the declarations of a table or view differ from the version's, and `~ dependency <name>` that a dependency was added, removed or changed. When a version is committed and not pushed yet, it is named first and the changes are counted from it; `--json` gives its ID as `pending`. After a fast-forward `fdl merge`, it says that `fdl push` will move the branch.
 
 ## fdl diff
 
@@ -179,7 +179,7 @@ What changed in a version (default: the one `HEAD` holds) since its parent, or s
 ~ data main.towns
 ```
 
-Against its parent, the changes come from the version's `diff` (see [diff](/spec/versions#diff)). Otherwise, rows, data files, columns and declarations come from `tables.json`, and columns are compared by name, which does not see a rename. `~ data` means the table's data files differ, even when the rows are the same. `~ declarations` means the [declarations](/spec/versions#declarations) of a table or view changed. `--json` prints the same as an object with `tables` (`added`, `dropped`), `rows`, `columns`, `data` and `declarations`.
+Against its parent, the changes come from the version's `diff` (see [diff](/spec/versions#diff)). Otherwise, rows, data files, columns and declarations come from `tables.json`, and columns are compared by name, which does not see a rename. `~ data` means the table's data files differ, even when the rows are the same. `~ declarations` means the [declarations](/spec/versions#declarations) of a table or view changed, and `~ dependency` that a dependency was added, removed or given another `url` or `version`. `--json` prints the same as an object with `tables` (`added`, `dropped`), `rows`, `columns`, `data`, `declarations` and `dependencies`.
 
 ## fdl show
 
@@ -241,14 +241,15 @@ Merges another branch into the branch the working metadata was cloned from (see 
 - When the working metadata's version is in the history of `<theirs>`, the working metadata is made again from `<theirs>` and no version is made. `fdl push` then moves the branch there (a fast-forward)
 - Otherwise it writes the merge into the working metadata and commits a merge version, whose `parents` are the working metadata's version and `<theirs>`. `fdl push` uploads it as it does a commit. The message defaults to `Merge <theirs>`
 
-A table only `<theirs>` changed, added or dropped since the base comes over as `<theirs>` holds it, written to new data files. A table both sides changed is merged cell by cell, by the `primary_key` both declare for it (see [Cells merged by primary key](/spec/writing#cells-merged-by-primary-key)): a row only one side added or deleted, and a cell only one side changed, take that change, and a column only one side added, dropped or gave another type takes that change too. Declarations and dependencies only one side changed come over, as values. The command lists the tables that came over and how many rows it added, changed or deleted.
+A table only `<theirs>` changed, added or dropped since the base comes over as `<theirs>` holds it, written to new data files. A table both sides changed is merged cell by cell, by the `primary_key` it has in the base and both sides (see [Cells merged by primary key](/spec/writing#cells-merged-by-primary-key)): a row only one side added or deleted, and a cell only one side changed, take that change, and a column only one side added, renamed, dropped or gave another type takes that change too. Columns are matched by their ID while the table keeps its DuckLake table ID, and by name in a table made again. A cell one side changed in a column the other side gave another type is cast to that type. A table without a primary key in any of the three is merged as a multiset of rows (see [Rows merged without a primary key](/spec/writing#rows-merged-without-a-primary-key)): each row is counted in the base and both sides, and a count only one side changed takes that side's. Declarations and dependencies only one side changed come over, as values. The command lists the tables that came over and how many rows it added, changed or deleted.
 
 When anything conflicts, the command lists each conflict, by table and, for rows, by the values of the primary key, exits with 1 and changes nothing. A conflict is:
 
-- a table both sides changed differently, without a primary key both declare (a view is compared by its SQL, as such a table)
+- a table both sides changed whose primary key differs between the base and the two sides, or a view both sides changed differently
 - a table one side dropped and the other changed
-- a column both sides added, dropped or retyped differently
-- a cell both sides changed differently, a row one side deleted and the other changed, a row both sides added with different values, a cell of a column one side dropped that the other changed, or a primary key that holds `NULL` or repeats
+- a column both sides added, renamed, dropped or retyped differently, or a `NOT NULL` column without a default one side added while the other added rows
+- a cell both sides changed differently, a cell that does not cast to the type the other side gave its column, a row one side deleted and the other changed, a row both sides added with different values, a cell of a column one side dropped that the other changed, or a primary key that holds `NULL` or repeats
+- in a table without a primary key, a row both sides counted differently, or columns that differ between the two sides
 - a declaration or dependency both sides changed differently
 - a merge whose declarations the merged tables refuse, such as one where one side dropped a column and the other made it part of the primary key
 

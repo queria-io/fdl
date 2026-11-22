@@ -15,8 +15,7 @@ for version in repo.log(store):
 | モジュール | 中身 |
 | --- | --- |
 | `fdl.repo` | 操作: `init`、`clone`、`commit`、`push`、`log`、`expire`、`prune` |
-| `fdl.fdl_schema` | [_fdl スキーマ](/ja/spec/fdl-schema)のテーブルの定義、行の読み書き、確認 |
-| `fdl.meta` | `fdl meta` と同じく、名前とキーで `_fdl` の行を読み書きする |
+| `fdl.declared` | バージョンの[宣言](/ja/spec/versions#宣言)（主キー・アセット列・profile・dependencies）、その確認とマージ |
 | `fdl.diff` | 2 つのバージョンの違い（`diff.versions`）と作業メタデータの変更（`diff.working`） |
 | `fdl.refs` | ref を読み、条件付きで動かす |
 | `fdl.version` | `Version`（`version.json` の記録）と新しい ID |
@@ -53,22 +52,29 @@ repo.clone(store, working, *, ref="HEAD", local_data=None, version=None) -> Vers
 `ref` が指すバージョン、または `version` を渡したときはそのバージョンから、`working` に作業メタデータを作ります。そのバージョンを返し、最初のバージョンの前は `None` を返します。HTTP の置き場では、新しいデータファイルを書くフォルダ `local_data` が要ります。メタデータの sha256 が `version.json` の記録と違うときと、メタデータがデータフォルダの外のデータファイルを指しているときは断ります。
 
 ```python
-repo.commit(working, out_dir, *, parent, data_path, author, message, annotations=None, allow_empty=True, setup=(), earlier=None) -> Version
+repo.commit(working, out_dir, *, parent, data_path, author, message, annotations=None, allow_empty=True, setup=(), facts=None, inherited=None, merged=None) -> Version
 ```
 
-作業メタデータを `out_dir/<ID>/` に固めます。その前に `_fdl` をテーブル・ビューと照らし合わせて確認し、問題があれば `fdl_schema.SchemaError` を投げます。`earlier` は、`_fdl` より前に書かれた親が述べていたこと（`repo.earlier_facts(store, parent, working)`）で、`_fdl` が述べていなければ先に `_fdl` に書きます。`data_path` は `repo.data_url(store)` です。アップロードはしません。
+作業メタデータを `out_dir/<ID>/` に固め、宣言 `facts`（`declared.Facts`）を持つ `tables.json` を書きます。その前に宣言をテーブル・ビューと照らし合わせて確認し、問題があれば `declared.DeclarationError` を投げます。`data_path` は `repo.data_url(store)` です。`inherited` は親の宣言（`repo.declarations(store, parent)`）で、変更の有無の判定と diff に使います。アップロードはしません。
 
 ```python
-repo.record(frozen, out_dir, *, parent, author, message, annotations=None) -> Version
+repo.record(frozen, out_dir, *, parent, author, message, annotations=None, described=None, inherited=None, merged=None) -> Version
 ```
 
 固め終えたメタデータからバージョンを作ります。自分でメタデータを固める書き手向けです。
 
 ```python
+repo.declarations(store, version) -> declared.Facts
+repo.tables_of(store, version) -> set[str]
+```
+
+push したバージョンの宣言と、テーブルとビューを、その `tables.json` から返します。
+
+```python
 repo.push(store, local, version, *, ref="refs/heads/main", move_ref=True) -> None
 ```
 
-コミットしたバージョンをアップロードし、条件付きで `ref` を動かします。ref が動いていれば `NotFastForward`、データファイルが足りなければ `RepoError` を出します。`move_ref=False` ではアップロードだけして止まります。ref を自分で動かすホスト向けです。
+コミットしたバージョンをアップロードし、条件付きで `ref` を動かします。ref が動いていれば `NotFastForward`、データファイルが足りないときや `tables.json` が `version.json` とメタデータに合わないときは `RepoError` を出します。`move_ref=False` ではアップロードだけして止まります。ref を自分で動かすホスト向けです。
 
 ```python
 repo.log(store, name="HEAD") -> Iterator[Version]
@@ -86,11 +92,11 @@ repo.forward(store, ref, version) -> None
 `merge_bases` は、2 つのバージョンの共通の祖先のうち、ほかの共通の祖先の祖先でないものを返します。マージにはちょうど 1 つ要ります。`forward` は、リポジトリにすでにあり、いまの位置の子孫であるバージョンへブランチを動かします。基点がブランチ自身のバージョンであるマージ向けです。
 
 ```python
-merge.primary_keys(base, ours, theirs) -> dict[tuple[str, str], list[str]]
+merge.primary_keys(base, ours, theirs) -> dict[tuple[str, str], list[str] | None]
 merge.tables(working, base, theirs, *, keys, repository_data, data_path=None, setup=(), write=True) -> Plan
 ```
 
-`fdl merge` の部品です。`primary_keys` は、それぞれのバージョンが宣言すること（`repo.declared(store, version)`）から、行をマージできるテーブルを返します。`_fdl` のテーブルも含みます。`tables` は、固めたメタデータ `theirs` が `base` から変えた内容を、作業メタデータに 1 つのスナップショットで書きます。衝突があるときは何も書きません。`Plan` は衝突と取り込んだものを持ちます。マージのバージョンは、`repo.commit` と `repo.record` に `merged=<theirs>` を渡して作ります。
+`fdl merge` の部品です。`primary_keys` は、それぞれのバージョンが宣言することと持つテーブル（`(repo.declarations(store, version), repo.tables_of(store, version))`）から、テーブルごとの主キーを返します。主キーが 3 つで違うテーブルは `None` で、衝突になります。返さないテーブルには主キーが無く、行を多重集合としてマージします。`tables` は、固めたメタデータ `theirs` が `base` から変えた内容を、作業メタデータに 1 つのスナップショットで書きます。衝突があるときは何も書きません。`Plan` は衝突と取り込んだものを持ちます。マージのバージョンは、`repo.commit` と `repo.record` に `merged=<theirs>` を渡して作ります。
 
 ```python
 repo.readable(store, name="HEAD") -> Version
@@ -135,21 +141,18 @@ repo.withdraw(store, version_ids, *, plan=None) -> Withdrawal
 
 公開してはいけないデータを持つバージョンを取り下げます。`plan_withdrawal` は何も変えずに、消すタグ、消すデータファイル、残すバージョンが読むので残すファイルを返します。`withdraw` はタグ、データファイル、メタデータの順に消します。ブランチかリクエストが該当するバージョンを指しているあいだは、どちらも `RepoError` を出します。`refuse_refs=False` のときは、`plan_withdrawal` はそれらを `blocked` に並べ、`withdraw` が `RepoError` を出します。`objects`（`expired.json` の `deleted` と同じ `{"data": [...], "assets": [...]}`）は、写し元のリポジトリで行った取り下げを適用します。それらを参照する有効なバージョンも該当するバージョンになります。
 
-## fdl.fdl_schema
+## fdl.declared
 
 ```python
-fdl_schema.TYPES -> dict[str, dict[str, str]]
-fdl_schema.KEYS -> dict[str, tuple[str, ...]]
-fdl_schema.create_sql(table, columns=None, alias="lake") -> str
-fdl_schema.ensure(con, table, columns=(), alias="lake") -> dict[str, str]
-fdl_schema.upsert(con, table, row, alias="lake") -> None
-fdl_schema.delete(con, table, key, alias="lake") -> int
-fdl_schema.replace(con, rows, alias="lake") -> None
-fdl_schema.load(con, alias="lake") -> dict[str, list[dict]]
-fdl_schema.check(con, alias="lake") -> list[str]
+declared.Facts(primary_keys={}, assets={}, dependencies={}, unprofiled=frozenset())
+declared.from_index(index) -> Facts
+declared.check(facts, found) -> list[str]
+declared.merged(base, ours, theirs) -> tuple[Facts, list[str]]
+declared.changed(old, new, names) -> list[str]
+declared.dependencies_changed(old, new) -> list[str]
 ```
 
-[_fdl スキーマ](/ja/spec/fdl-schema)のテーブルを扱います。`_fdl` を書くツールは、自分で `CREATE TABLE` や列の一覧を持たずにこれを使います。どれも、メタデータを `alias` で ATTACH した DuckDB の接続を受け、呼び手が始めたトランザクションの中で動きます。`TYPES` はテーブルごとの列と DuckDB の型、`KEYS` はテーブルごとの主キーです。`ensure` はスキーマ・テーブルと、足りない列を作ります。`upsert` は `row` が持つキーの行を変えるか追加し、`row` が持つほかの列を設定します（`None` は消す）。キーのほかに何も残らない行は削除します。`delete` はキーの行を削除します。`replace` は `_fdl` のテーブルをすべて DROP し、`rows` が挙げるテーブルをすべての列で作って行を書き、`check` を実行します。`load` はすべての行を、NULL の列を除いて JSON の値で返します（日付は ISO の文字列、`_fdl.attributes` の `value` は解いた値）。値は Python の値で渡します。`VARCHAR[]` にはリスト、STRUCT には dict、属性には JSON にできる任意の値、スカラーの型には文字列を渡すと DuckDB の変換規則で変換します。`check` は[確認](/ja/spec/fdl-schema#確認)が断る内容を返します。書く関数は問題を持つ `fdl_schema.SchemaError` を投げます（例: `dataset: issued cannot be written as DATE (at the dataset.issued)`）。
+`Facts` はバージョンの宣言を持ちます。`primary_keys` と `assets` は `schema.table` ごと、`dependencies` は名前ごと（`{"url": ..., "version": ...}`）、`unprofiled` は `profile` が `false` のテーブルとビューです。`of(name)` は 1 つのテーブルかビューの宣言を `tables.json` と同じ形で返し、`to_json` と `from_json` はファイルに保存するためのものです。`from_index` は `tables.json` から宣言を読みます。`check` は、作業メタデータのテーブルとビュー（`found_in(working, data_path=...)`）に照らして、[決まり](/ja/spec/versions#宣言)に通らないものを返します。`merged` は 3 方向でマージし、衝突も返します。`changed` と `dependencies_changed` は diff に並べる名前を返します。
 
 ## fdl.diff
 
@@ -159,7 +162,7 @@ diff.working(working, base) -> dict
 diff.lines(result) -> list[str]
 ```
 
-`versions` は 2 つのバージョンを、古い方が親なら新しい方の `diff` から、それ以外は `files.json`（`_fdl` より前に書かれたバージョンでは `dataset.json` も）から比べます（最初のバージョンの前は `old` を `None` にします）。`working` は作業メタデータを、clone したときのバージョン `base` と比べます。どちらも `tables`（`added`・`dropped`）・`rows`・`columns`・`data` を返し、`fdl diff --json` と同じ形です。`lines` は `fdl diff` が表示する行を返します。
+`versions` は 2 つのバージョンを、古い方が親なら新しい方の `diff` から、それ以外は `tables.json` から比べます（最初のバージョンの前は `old` を `None` にします）。`working` は作業メタデータを、clone したときのバージョン `base` と比べます。どちらも `tables`（`added`・`dropped`）・`rows`・`columns`・`data` を返し、`fdl diff --json` と同じ形です。`versions` は `declarations` と `dependencies` も返します。`lines` は `fdl diff` が表示する行を返します。
 
 ## fdl.refs
 

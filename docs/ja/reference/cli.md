@@ -43,7 +43,7 @@ HTTP のリポジトリでは、新しいデータファイルは `<working.sqli
 
 `--storage` を付けると、作業メタデータはリポジトリのストレージで直接データファイルを読み書きします。`--storage` にはそのストレージでのリポジトリの根を渡します。新しいファイルはその `data_dir` の下に直接書かれるので、push でアップロードするものはありません。鍵は `AWS_*` の環境変数（R2 などの S3 互換ストレージは `AWS_ENDPOINT_URL`）か、自分で作った DuckDB の secret から取ります。作業メタデータに書くビルドにも同じ鍵が要ります。
 
-データセットの説明・主キー・アセットは作業メタデータの `_fdl` スキーマのテーブルにあり（[_fdl スキーマ](/ja/spec/fdl-schema)）、クローンはデータと一緒にそれらを持ちます。作業メタデータのほかにファイルは書きません。
+`<working.sqlite>.fdl.json` には、バージョンの[宣言](/ja/spec/versions#宣言)（主キー・アセット列・profile・dependencies）も保存します。`fdl declare` がそれを変え、次のコミットが書きます。ほかのファイルは書きません。
 
 バージョンの保持期間が過ぎているとき、メタデータの sha256 が `version.json` の記録と違うとき、メタデータがデータフォルダの外のデータファイルを指しているときは断られます。
 
@@ -65,72 +65,47 @@ fdl commit <working.sqlite> -m "What changed" [--author alice] [--allow-empty] [
 
 作業メタデータを、クローンした（または最後に push した）バージョンを親とする新しいバージョンに固め、`fdl push` で送るまで `<working.sqlite>.pending/` に置きます。リポジトリは何も変わりません。新しいバージョン ID と `seq` を表示します。push する前にもう一度コミットすると、まだ push していないバージョンを置き換えます。
 
-コマンドは作業メタデータの `_fdl` スキーマ（[_fdl スキーマ](/ja/spec/fdl-schema)）を読み、まずテーブルとビューに照らして確認します。`_fdl` は、ほかのスキーマと同じく SQL か `fdl meta` で、コミットの前に書きます。
+コマンドはまず、作業メタデータの隣に保存した宣言（`fdl declare` を参照）をテーブルとビューに照らして確認します。コミットは親の宣言から始めます。dbt の `CREATE OR REPLACE` のように同じ名前で作り直したテーブルは宣言を引き継ぎ、削除したテーブルは宣言を失い、宣言のあとに名前を変えた列は新しい名前で宣言されます。
 
-```sql
-CREATE SCHEMA lake._fdl;
-CREATE TABLE lake._fdl.tables ("schema" VARCHAR, "name" VARCHAR, primary_key VARCHAR[]);
-INSERT INTO lake._fdl.tables VALUES ('main', 'towns', ['code']);
-```
+バージョンの `tables.json`（[tables.json](/ja/spec/versions#tablesjson)）には、テーブルごとのデータファイルと列、`primary_key`・`assets`・`profile`、ビューごとの SQL とクエリが返す列、`dependencies` を書きます。ビューの列を求めるときは、dependencies をそれぞれの名前で、指定したバージョンか、無ければその `main` が指すバージョンで ATTACH します。クエリを解決できないビューは列なしで載せます。メタデータのコメント（`COMMENT ON`）はそのまま残し、読みません。
 
-バージョンの `files.json` には、テーブルごとの `primary_key` とアセット列、ビューごとの SQL とクエリが返す列、`_fdl.catalogs` を書きます（[files.json](/ja/spec/versions#filesjson)）。ビューの列を求めるときは、`_fdl.catalogs` が挙げるリポジトリを、それぞれの `HEAD` が指すバージョンでその名前で ATTACH します。クエリを解決できないビューは列なしで載せます。メタデータのコメント（`COMMENT ON`）はそのまま残し、読みません。バージョンは `dataset.json` も `tree.json` も持たず、コマンドは tag を書きません。
+`assets` で宣言した列は、ファイルの sha256 を持ちます（[アセット](/ja/spec/versions#アセット)）。コマンドはその列の値を読み、push がリポジトリに無いファイルを `--assets` のフォルダから `assets/<sha256>` にアップロードします。ファイルは中身で照合するので、フォルダの中のファイル名は問いません。データセットの文書（`README.md` とその画像など）は、`sha256` 列をアセット列として宣言した自分のテーブルに載せ、そのファイルを `--assets` のフォルダに置きます（`fdl assets` を参照）。
 
-元のバージョンが `_fdl` より前に書かれたもの（fdl-cli 0.33 以前）のときは、そのバージョンの `dataset.json` か `fdl.` tag が言っていた主キー・アセット・catalogs・`"profile": false` を、`_fdl` がまだ言っていなければ先に `_fdl` に書きます（[以前のバージョンの tag](/ja/spec/versions#以前のバージョンの-tag)）。このとき作業メタデータが変わります。それだけを持つ `_fdl` のテーブルは変更とみなさず、それだけではバージョンを作らず、追加したテーブルとしても表示しません。
-
-`_fdl.columns` で `asset` の印を付けた列と `_fdl.files` の `sha256` は、ファイルの sha256 を持ちます（[アセット](/ja/spec/versions#アセット)）。コマンドはその列の値を読み、push がリポジトリに無いファイルを `--assets` のフォルダから `assets/<sha256>` にアップロードします。ファイルは中身で照合するので、フォルダの中のファイル名は問いません。データセットの文書（`README.md` とその画像など）は `_fdl.files` に載せ、そのファイルを `--assets` のフォルダに置きます（`fdl assets` を参照）。
-
-親と同じ中身になるとき（[変更がないとき](/ja/spec/writing#変更がないとき)）は `Nothing to commit` と表示し、何も作らずに終了コード 0 で終わります。同じ行を新しいファイルに書き直しただけの作り直しも、変更なしとみなします。`--allow-empty` を付けると、それでもバージョンを作ります。行を読めず判定できないときは、警告を出してバージョンを作ります。
+宣言も含めて親と同じ中身になるとき（[変更がないとき](/ja/spec/writing#変更がないとき)）は `Nothing to commit` と表示し、何も作らずに終了コード 0 で終わります。同じ行を新しいファイルに書き直しただけの作り直しも、変更なしとみなします。`--allow-empty` を付けると、それでもバージョンを作ります。行を読めず判定できないときは、警告を出してバージョンを作ります。
 
 次のときは断られます。
 
-- `_fdl` が[確認](/ja/spec/fdl-schema#確認)に通らないとき。行が無いスキーマ・テーブル・ビュー・列を指すとき、主キーがテーブルに無い列や同じ列を 2 回挙げるとき、アセット列が `varchar` でないとき、ビューに主キーかアセット列を付けたとき、`_fdl.dataset` が 2 行以上あるとき、`_fdl` のテーブルに主キーの列が無いとき
+- 宣言がテーブルに無い列や同じ列を 2 回挙げるとき、アセット列が `varchar` でないとき、ビューに主キーかアセット列を付けたとき、dependencies の名前が英小文字・数字・`_` でないか `memory`・`system`・`temp` のとき、その `url` が `/` で終わる絶対 URL でないか `version` がバージョン ID でないとき
 - 作業メタデータが行をメタデータの中に持っているとき
 - アセットの列が sha256 でない値を持つとき
 - データファイルが、データディレクトリの外を指す絶対パスで記録されているとき
 
-## fdl meta
+## fdl declare
 
 ```bash
-fdl meta list <working.sqlite> [<name>] [--json]
-fdl meta get <working.sqlite> <name> <key>
-fdl meta set <working.sqlite> <name> <key> <value>...
-fdl meta set <working.sqlite> (--stdin | -F <rows.json>) [--replace]
-fdl meta unset <working.sqlite> <name> <key>
-fdl meta dump <working.sqlite>
-fdl meta objects <working.sqlite>
+fdl declare list <working.sqlite> [--json]
+fdl declare primary-key <working.sqlite> <schema.table> [<column>...]
+fdl declare assets <working.sqlite> <schema.table> [<column>...]
+fdl declare profile <working.sqlite> <schema.name> (true|false)
+fdl declare dependency <working.sqlite> <name> [<url>] [--version <ID>]
 ```
 
-作業メタデータの `_fdl` の行を、`git config` が設定ファイルを読み書きするように読み書きします（[_fdl スキーマ](/ja/spec/fdl-schema)）。変更は、テーブルの変更と同じように、次の `fdl commit` で新しいバージョンに入ります。
-
-`<name>` は、データセットなら `.`、スキーマなら `schema`、テーブルかビューなら `schema.table`、列なら `schema.table.column` です。`<key>` は、その名前に対応する `_fdl` のテーブル（`_fdl.dataset`・`_fdl.schemas`・`_fdl.tables`・`_fdl.columns`）の列で、`title`・`description`・`primary_key`・`asset` などです。`example-theme` のように `-` を含むキーは、`_fdl.attributes` の行のキーです。
+次のコミットがテーブルとビューについて[宣言](/ja/spec/versions#宣言)する内容を変えます。宣言は `<working.sqlite>.fdl.json` に保存し、作業メタデータをクローンしたバージョンの宣言から始まります。コミットがそれを `tables.json` に書きます。
 
 ```bash
-fdl meta set lake.sqlite . title "Population by town"
-fdl meta set lake.sqlite main.population primary_key code year
-fdl meta set lake.sqlite main.population.code title "Area code"
-fdl meta set lake.sqlite main.population example-theme '{"color": "blue"}'
-fdl meta set lake.sqlite main.population licenses '[{"spdx": "CC-BY-4.0"}]'
+fdl declare primary-key lake.sqlite main.population code year
+fdl declare assets lake.sqlite main.reports pdf_sha256
+fdl declare profile lake.sqlite main.stg_population false
+fdl declare dependency lake.sqlite census https://example.org/census/
 ```
 
-`set` は、必要な `_fdl` スキーマ・テーブル・列・行を作ります。リスト（`primary_key`・`spatial_coverage`）には値を 1 つ以上渡します。STRUCT（`licenses`・`sources`・`temporal_coverage`）と属性には値を 1 つ JSON で渡します。JSON でない属性の値は文字列として扱います。結果が、それまで `_fdl` が通っていた[確認](/ja/spec/fdl-schema#確認)のどれかに通らないとき（名前のものが無い、ビューに主キーを付けた、など）は断ります。`unset` はキーを消し、名前のほかに何も残らない行を削除します。
+- `primary-key` は、テーブルの行を識別する列を設定します。[セル単位のマージ](/ja/spec/writing#主キーでのセルのマージ)に使います。列を省くと主キーを外します
+- `assets` は、ファイルの sha256 を持つテーブルの `varchar` 列を設定します。列を省くと外します
+- `profile false` は、ビルドの中間テーブルなどに push が profile を書かないようにします。`profile true` でそれを外します
+- `dependency` は、ビューの SQL が読む別のデータセットを、SQL が使う名前で設定します。`--version` を省くと、ビューはその `main` が指すバージョンを読みます。`<url>` を省くと外します
+- `list` は 1 行に 1 つの宣言を表示します。`--json` を付けるとすべてを 1 つのオブジェクトで表示します
 
-`list` は 1 行に 1 つのキーを `name.key=value` の形で表示します。データセットのキーは名前を付けずに表示します。`get` は値を表示します。どちらも、1 行に収まる文字列はそのまま、それ以外は JSON で表示します。`get` と `unset` は、キーが設定されていないと終了コード 1 で終わります。`_fdl.files` と `_fdl.catalogs` はここでは読み書きしません。SQL で書いてください。
-
-`dump` は `_fdl` のすべての行を 1 つの JSON オブジェクトで表示します。`_fdl` のテーブル（接頭辞なし）ごとに行の配列を持ち、各行は NULL でない列だけを持ちます。日付は ISO の文字列で、`_fdl.attributes` の `value` は JSON の値そのものです。
-
-```json
-{
-  "dataset": [{ "title": "Population by town" }],
-  "tables": [{ "schema": "main", "name": "population", "primary_key": ["code", "year"] }],
-  "attributes": [{ "schema": "main", "table": "population", "column": "code", "key": "example-theme", "value": { "color": "blue" } }]
-}
-```
-
-`set --stdin` は標準入力から、`set -F <rows.json>` はファイルから、この形のオブジェクトを受け取ります。書き手のファイルから `_fdl` を作るツールのためのものです。渡した行を主キーで照合して、行が持つ列で変更または追加し、ほかの行は残します。`--replace` を付けると、`_fdl` はこの行だけを持つようになります。`_fdl` のテーブルは、仕様が定めるすべての列で作り直します。テーブル・列・値が `_fdl` に書けないものだったときや、結果が確認に通らないときは、何も書かずに終了コード 1 で終わります。問題ごとに場所を示します（例: `dataset: issued cannot be written as DATE (at the dataset.issued)`）。
-
-`objects` は、作業メタデータのうち `_fdl` が説明できるテーブルとビューを JSON で表示します。`schema`・`name`・`kind`（`table` か `view`）と、テーブルなら `columns`（列と型）を持ちます。
-
-`_fdl` より前に書かれたバージョンからクローンした作業メタデータでは、`fdl meta` は最初に、そのバージョンが述べていたことを `fdl commit` と同じように `_fdl` に書きます。`get`・`list`・`dump`・`objects` はそれを表示するだけで残しません。`set`・`unset` はそれを残すので、消したキーはコミットでも消えたままです。
+テーブルとビューに照らして通らない変更は断ります。無いテーブルや列、ビューへの主キーやアセット列、`varchar` でないアセット列、コミットが断る名前や `url` の dependencies です。
 
 ## fdl push
 
@@ -140,7 +115,7 @@ fdl push <working.sqlite> [--no-profile]
 
 `fdl commit` が作ったバージョンをアップロードし、条件付きでブランチをそこへ動かします（[書き込みの順番](/ja/spec/writing#書き込みの順番)）。ブランチ、バージョン ID、`seq` を表示します。fast-forward の `fdl merge` のあとは、何もアップロードせず、ブランチをマージしたバージョンへ動かします。コミットしたものが無いときは `Nothing to push` と表示します。
 
-アップロードの前に、テーブルとビューごとの profile（[profiles/](/ja/spec/versions#profiles)）を書き、`version.json` より前にアップロードします。ブランチが動く時点で profile がリポジトリにあります。読むのは、データファイルか列が親から変わったテーブルだけで、ほかのテーブルは親の profile を引き継ぎます。ビューは、そのクエリか、クエリが読むテーブル・ビューが変わると、クエリを実行して測り直します。`_fdl.tables` の `profile` が `false` のテーブルとビュー、`_fdl` のテーブルには profile を書きません。読めなかったテーブルには profile を書かず、警告を出します。コミットのあとに作業メタデータが変わっていたときは profile を書かずに警告します。`--no-profile` を付けると profile を書きません。`fdl profile` であとから足せます。
+アップロードの前に、テーブルとビューごとの profile（[profiles/](/ja/spec/versions#profiles)）を書き、`version.json` より前にアップロードします。ブランチが動く時点で profile がリポジトリにあります。読むのは、データファイルか列が親から変わったテーブルだけで、ほかのテーブルは親の profile を引き継ぎます。ビューは、そのクエリか、クエリが読むテーブル・ビューが変わると、クエリを実行して測り直します。`profile` を `false` と宣言したテーブルとビューには profile を書きません。読めなかったテーブルには profile を書かず、警告を出します。コミットのあとに作業メタデータが変わっていたときは profile を書かずに警告します。`--no-profile` を付けると profile を書きません。`fdl profile` であとから足せます。
 
 作業メタデータがリポジトリに書いたデータファイルは push の前からありますが、push するまでどのバージョンも参照しません。push しなかったファイルは猶予期間のあとに削除されます。
 
@@ -148,6 +123,7 @@ fdl push <working.sqlite> [--no-profile]
 
 - クローンのあとにブランチが動き、バージョンがいまブランチの指すバージョンの子孫でないとき。クローンし直して作業をやり直す
 - メタデータが参照するデータファイルがリポジトリに無いとき
+- `tables.json` が `version.json` の記録と合わないとき、またはメタデータが参照するデータファイルと削除ファイルを並べていないとき
 - アセットの列が、リポジトリにも `--assets` にも無いファイルを指すとき
 
 断られても、コミットしたバージョンはそのまま残るので、原因を直してからもう一度送れます。
@@ -158,11 +134,15 @@ fdl push <working.sqlite> [--no-profile]
 fdl assets <folder> > files.csv
 ```
 
-フォルダより下のファイル（隠しファイルを除く）を、`path`・`sha256`・`bytes`・`media_type` の CSV で表示します。これは `_fdl.files` の列です。データセットの文書なら `_fdl.files` に、行がファイルを指す自分のテーブルならそのテーブルに DuckDB の `read_csv` などで読み込み（後者は `_fdl.columns` で `sha256` の列に `asset` の印を付けます）、`--assets <folder>` を付けてコミットします。ファイルの sha256 はここで 1 回だけ計算し、SQL でファイルを読む必要はありません。
+フォルダより下のファイル（隠しファイルを除く）を、`path`・`sha256`・`bytes`・`media_type` の CSV で表示します。DuckDB の `read_csv` などでテーブルに読み込み、その `sha256` 列をアセット列として宣言し、`--assets <folder>` を付けてコミットします。ファイルの sha256 はここで 1 回だけ計算し、SQL でファイルを読む必要はありません。
 
 ```sql
-CREATE TABLE lake._fdl.files AS
+CREATE TABLE lake.docs.files AS
 SELECT path, sha256, bytes::BIGINT AS bytes, media_type FROM read_csv('docs.csv', all_varchar = true);
+```
+
+```bash
+fdl declare assets lake.sqlite docs.files sha256
 ```
 
 ## fdl log
@@ -179,7 +159,7 @@ ref が指すバージョンから最初のバージョンまで、最初の親�
 fdl status <working.sqlite> [--json]
 ```
 
-作業メタデータが clone してから何を変えたかを、`fdl diff` と同じ区分で表示します。元のバージョンと同じ内容なら `Nothing to commit` と表示します。`_fdl` のテーブルもほかのテーブルと同じく比べます。コミットしてまだ push していないバージョンがあれば、先にそれを表示し、変更はそのバージョンから数えます。`--json` では `pending` にその ID を入れます。fast-forward の `fdl merge` のあとは、`fdl push` でブランチが動くことを表示します。
+作業メタデータが clone してから何を変えたかを、`fdl diff` と同じ区分で表示します。元のバージョンと同じ内容なら `Nothing to commit` と表示します。`~ declarations <name>` はテーブルかビューの宣言が元のバージョンと違うこと、`~ dependency <name>` は dependencies を追加・削除・変更したことを示します。コミットしてまだ push していないバージョンがあれば、先にそれを表示し、変更はそのバージョンから数えます。`--json` では `pending` にその ID を入れます。fast-forward の `fdl merge` のあとは、`fdl push` でブランチが動くことを表示します。
 
 ## fdl diff
 
@@ -200,7 +180,7 @@ fdl diff <remote> [<version>] [--against <version>] [--json]
 ~ data main.towns
 ```
 
-親と比べるときは、バージョンの `diff` から取ります（[diff](/ja/spec/versions#diff)）。それ以外のときや `diff` のないバージョンでは、行数・データファイル・列を `files.json` から取り、列は名前で比べます。そのため列名の変更は見分けられません。`~ data` は、行が同じでもテーブルのデータファイルが変わったことを示します。`_fdl` の変更は、そのテーブルの変更として表示します。`--json` を付けると、同じ内容を `tables`（`added`・`dropped`）・`rows`・`columns`・`data` を持つオブジェクトで表示します。`_fdl` より前に書かれたバージョンでは `~ tags`（[tag](/ja/spec/versions#以前のバージョンの-tag) が変わった）と `~ dataset.json` の行も、fdl-cli 0.31 以前が書いたバージョンでは `~ description` の行も表示します。
+親と比べるときは、バージョンの `diff` から取ります（[diff](/ja/spec/versions#diff)）。それ以外のときは、行数・データファイル・列・宣言を `tables.json` から取り、列は名前で比べます。そのため列名の変更は見分けられません。`~ data` は、行が同じでもテーブルのデータファイルが変わったことを示します。`~ declarations` はテーブルかビューの[宣言](/ja/spec/versions#宣言)が変わったこと、`~ dependency` は dependencies を追加・削除したか、`url` か `version` を変えたことを示します。`--json` を付けると、同じ内容を `tables`（`added`・`dropped`）・`rows`・`columns`・`data`・`declarations`・`dependencies` を持つオブジェクトで表示します。
 
 ## fdl show
 
@@ -245,7 +225,7 @@ fdl revert <version> <working.sqlite> [--author <name>] [-m <message>]
 fdl push <working.sqlite>
 ```
 
-作業メタデータを `<version>` が持っていたテーブルとビュー（`_fdl` も含みます）に書き戻し、`fdl commit` と同じく新しいバージョンをコミットします。`<version>` が `_fdl` より前に書かれたものなら、その `dataset.json` か tag が言っていたことを `_fdl` に書きます。作業メタデータのコミットしていない変更は失われます。そのあと `fdl push` でブランチを前に進めます。間のバージョンは履歴に残り、読み続けられます。`<version>` から変わっていないテーブルはデータファイルをそのまま使い、変わったテーブルは `<version>` の時点の行から書き直します。`<version>` にはバージョン ID か ref を渡し、作業メタデータをクローンしたバージョンから最初の親をたどった履歴にあって（マージで取り込んだだけのバージョンは含みません）保持期間内のバージョンを指定します。そのバージョンがすでに `<version>` と同じものを持つときは、何も作りません。
+作業メタデータを `<version>` が持っていたテーブルとビューと宣言に書き戻し、`fdl commit` と同じく新しいバージョンをコミットします。作業メタデータのコミットしていない変更は失われます。そのあと `fdl push` でブランチを前に進めます。間のバージョンは履歴に残り、読み続けられます。`<version>` から変わっていないテーブルはデータファイルをそのまま使い、変わったテーブルは `<version>` の時点の行から書き直します。`<version>` にはバージョン ID か ref を渡し、作業メタデータをクローンしたバージョンから最初の親をたどった履歴にあって（マージで取り込んだだけのバージョンは含みません）保持期間内のバージョンを指定します。そのバージョンがすでに `<version>` と同じものを持つときは、何も作りません。
 
 公開してはいけないデータを除くときは `fdl withdraw` を使います。revert は間のバージョンとそのデータファイルをそのまま残します。
 
@@ -262,15 +242,17 @@ fdl push <working.sqlite>
 - 作業メタデータのバージョンが `<theirs>` の履歴にあるときは、作業メタデータを `<theirs>` から作り直し、バージョンは作りません。そのあと `fdl push` でブランチをそこへ動かします（fast-forward）
 - それ以外は、マージの結果を作業メタデータに書き、マージのバージョンをコミットします。`parents` は作業メタデータのバージョンと `<theirs>` です。`fdl push` はコミットと同じくそれをアップロードします。メッセージの既定は `Merge <theirs>` です
 
-基点から `<theirs>` だけが変えた・追加した・削除したテーブルは、`<theirs>` の内容を新しいデータファイルに書いて取り込みます。両方が変えたテーブルは、両方が `_fdl.tables` で同じ `primary_key` を付け、同じアセット列を持つとき、その主キーで行をマージします。`<theirs>` だけが追加・変更・削除した行は、その変更を取り込みます。`_fdl` のテーブルも、[_fdl スキーマ](/ja/spec/fdl-schema)が決める主キーで同じようにマージするので、片方だけが変えた説明は取り込まれます。コマンドは、取り込んだテーブルと、`<theirs>` が追加・変更・削除した行数を表示します。
+基点から `<theirs>` だけが変えた・追加した・削除したテーブルは、`<theirs>` の内容を新しいデータファイルに書いて取り込みます。両方が変えたテーブルは、基点と両方で同じ `primary_key` を持つとき、その主キーでセル単位にマージします（[主キーでのセルのマージ](/ja/spec/writing#主キーでのセルのマージ)）。片方だけが追加・削除した行と、片方だけが変えたセルは、その変更を取り込みます。片方だけが追加・改名・削除した列や型を変えた列も、その変更を取り込みます。列は、テーブルが DuckLake のテーブル ID を保っているあいだは ID で、作り直したテーブルでは名前で対応させます。片方が型を変えた列で、もう片方が変えたセルは、新しい型にキャストします。基点・ours・theirs のどれにも主キーが無いテーブルは、行の多重集合としてマージします（[主キーの無いテーブルの行のマージ](/ja/spec/writing#主キーの無いテーブルの行のマージ)）。行ごとに基点と両方での出現数を数え、片方だけが変えた数はその数を取ります。片方だけが変えた宣言と dependencies は、値として取り込みます。コマンドは、取り込んだテーブルと、追加・変更・削除した行数を表示します。
 
 衝突があるときは、テーブルごとに、行の衝突は主キーの値で一覧を表示し、終了コード 1 で終わり、何も変えません。衝突になるのは次のときです。
 
-- 両方が違う形に変えたテーブルに、両方が宣言する主キーが無いとき（ビューはその SQL で、そのようなテーブルと同じく比較します）
+- 両方が変えたテーブルの主キーが基点と両方で違うとき、または両方が違う形に変えたビュー
 - 片方が削除したテーブルを、もう片方が変えたとき
-- 両方が変えたテーブルの列か型が両者で違うとき、または両方が列を変えたとき
-- 両方が違う形に変えた行があるとき、または主キーに `NULL` や重複があるとき
-- マージした `_fdl` が[確認](/ja/spec/fdl-schema#確認)に通らないとき（片方がテーブルを削除し、もう片方がその列を説明したときなど）
+- 両方が違う形に追加・改名・削除した列、または型を変えた列。片方が既定値の無い `NOT NULL` の列を追加し、もう片方が行を追加したとき
+- 両方が違う値に変えたセル、もう片方が変えた型にキャストできないセル、片方が削除しもう片方が変えた行、両方が違う値で追加した行、片方が削除した列でもう片方が変えたセル、主キーに `NULL` や重複があるとき
+- 主キーの無いテーブルで、両方が違う数に変えた行、または両方で列が違うとき
+- 両方が違う形に変えた宣言か dependencies
+- マージした宣言をマージしたテーブルが通さないとき（片方が削除した列を、もう片方が主キーにしたときなど）
 
 衝突しなくなるようにどちらかのブランチを直してから、もう一度マージします。
 
@@ -284,7 +266,7 @@ fdl withdraw <remote> [<version>...] [--objects <file>] [--json] [--yes] [--by <
 
 間違って公開した個人データなど、公開してはいけないデータを持つバージョンを取り下げます（[取り下げ](/ja/spec/data-files#取り下げ)）。先にそのデータを除いたバージョンをコミットし、該当するバージョンを指すブランチが無い状態にします。そのうえでこのコマンドが、該当するバージョンを指すタグ、そのバージョンが参照し残すバージョンが参照しないデータファイルとアセット、メタデータを消し、`"reason": "withdrawn"` と消したオブジェクトの名前（`deleted`）を持つ `expired.json` を置きます。`version.json` は残します。保持期間を過ぎたバージョンを含めると、そのメタデータはもう無いので、有効なバージョンのどれも参照しないデータファイルとアセットを、猶予期間を待たずにすべて消します。
 
-バージョンが参照するアセットは、アセット列（`_fdl.files` の `sha256` も含みます）が持つ sha256 と、`_fdl` より前に書かれたバージョンでは `tree.json` に載っているものです。
+バージョンが参照するアセットは、アセット列が持つ sha256 です。
 
 `--yes` を付けないと、消すものを表示するだけです。残すバージョンが参照しているファイルは残すものとして表示します。それがそのデータを持つなら、そのバージョンも取り下げます。ブランチかリクエストが該当するバージョンを指しているあいだは断られます。
 
@@ -316,4 +298,4 @@ fdl gc <remote> [--grace 7d] [--yes]
 
 どの生きているバージョンからも参照されず、`--grace`（`7d`、`24h`、`30m`）より前に書かれたデータファイルとアセットを削除します（[共有オブジェクトを消してよいとき](/ja/spec/data-files#共有オブジェクトを消してよいとき)）。保持期間を過ぎたバージョンだけが参照していたファイルと、作業メタデータが書いて push しなかったファイルがこれに当たります。`--yes` を付けないときは、一覧を表示するだけです。
 
-生きているバージョンそれぞれの `files.json` と、行がアセットを持つバージョンのメタデータを読みます。HTTP のリポジトリ（削除はホストが行う）と、`files.json` もメタデータも無い生きているバージョンがあるときは断られます。
+生きているバージョンそれぞれの `tables.json` と、アセット列を持つバージョンのメタデータを読みます。HTTP のリポジトリ（削除はホストが行う）と、`tables.json` の無い生きているバージョンがあるときは断られます。

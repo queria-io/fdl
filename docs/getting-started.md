@@ -63,17 +63,15 @@ SELECT * FROM '../towns.csv';
 
 `DATA_INLINING_ROW_LIMIT 0` makes DuckLake write every row to Parquet. Left at its default, DuckLake keeps small tables inside the metadata, and a version has to carry its rows in data files that a reader can fetch.
 
-## Describe
+## Declare
 
-What a version says about its tables, such as its title, primary keys and the files it publishes, goes into the `_fdl` schema of the same metadata, as rows of tables FDL defines (see [The _fdl schema](/spec/fdl-schema)):
+Tell FDL which columns identify a row. A merge matches rows by the primary key, and readers can look rows up by it:
 
-```sql
-CREATE SCHEMA lake._fdl;
-CREATE TABLE lake._fdl.tables ("schema" VARCHAR, name VARCHAR, title VARCHAR, primary_key VARCHAR[]);
-INSERT INTO lake._fdl.tables VALUES ('main', 'towns', 'Towns and their codes', ['code']);
+```bash
+fdl declare primary-key lake.sqlite main.towns code
 ```
 
-`_fdl` is optional. A version without it holds the tables alone. `fdl commit` checks `_fdl` against the tables before it makes a version.
+Declarations stay with the working metadata until the commit, which checks them against the tables (see [Declarations](/spec/versions#declarations)). They are optional: a version without them holds the tables alone.
 
 ## Commit and push
 
@@ -91,7 +89,7 @@ towns/
   refs/heads/main                       019a3c4e-…
   versions/019a3c4e-…/
     metadata.db
-    files.json
+    tables.json
     profiles/main/towns.json
     version.json
   tables/main/towns/ducklake-….parquet

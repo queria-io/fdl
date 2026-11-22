@@ -24,8 +24,10 @@ src/fdl/
 ├── version.py        — version.json and version IDs
 ├── refs.py           — reading refs and moving them on condition
 ├── catalog.py        — DuckLake catalogs in SQLite and DuckDB, and the conversion
-├── dataset.py        — dataset.json: reading the description and checking it against the catalog
-├── objects.py        — assets and tree.json
+├── declared.py       — declarations: primary keys, assets, profiles and dependencies in tables.json
+├── diff.py           — what changed between versions or in a working metadata
+├── merge.py          — the three-way merge of tables, rows and cells
+├── objects.py        — assets
 ├── profiles.py       — the profile of each table
 ├── repo.py           — init, clone, commit, push, log, expire, withdraw
 ├── store.py          — what a store has to provide

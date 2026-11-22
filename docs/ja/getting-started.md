@@ -63,17 +63,15 @@ SELECT * FROM '../towns.csv';
 
 `DATA_INLINING_ROW_LIMIT 0` を付けると、DuckLake はすべての行を Parquet に書きます。既定のままだと小さな表をメタデータの中に持ちますが、バージョンは行を、読み手が取得できるデータファイルとして持つ必要があります。
 
-## 説明を書く
+## 宣言する
 
-バージョンがテーブルについて述べること（タイトル・主キー・公開するファイルなど）は、同じメタデータの `_fdl` スキーマに、FDL が定めるテーブルの行として書きます（[_fdl スキーマ](/ja/spec/fdl-schema)）。
+行を識別する列を FDL に伝えます。マージは主キーで行を照合し、読み手は主キーで行を引けます。
 
-```sql
-CREATE SCHEMA lake._fdl;
-CREATE TABLE lake._fdl.tables ("schema" VARCHAR, name VARCHAR, title VARCHAR, primary_key VARCHAR[]);
-INSERT INTO lake._fdl.tables VALUES ('main', 'towns', 'Towns and their codes', ['code']);
+```bash
+fdl declare primary-key lake.sqlite main.towns code
 ```
 
-`_fdl` は省略できます。`_fdl` のないバージョンはテーブルだけを持ちます。`fdl commit` はバージョンを作る前に `_fdl` をテーブルと照らし合わせて確認します。
+宣言はコミットまで作業メタデータと一緒に保存され、コミットがテーブルと照らし合わせて確認します（[宣言](/ja/spec/versions#宣言)）。宣言は省略できます。宣言の無いバージョンはテーブルだけを持ちます。
 
 ## コミットして push する
 
@@ -91,7 +89,7 @@ towns/
   refs/heads/main                       019a3c4e-…
   versions/019a3c4e-…/
     metadata.db
-    files.json
+    tables.json
     profiles/main/towns.json
     version.json
   tables/main/towns/ducklake-….parquet
