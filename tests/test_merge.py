@@ -115,17 +115,80 @@ def test_the_same_change_on_both_sides_is_no_conflict(branches) -> None:
     assert towns(main, store) == [(2, "b"), (3, "c")]
 
 
-def test_a_table_without_a_primary_key_is_not_merged_by_rows(branches) -> None:
+def test_a_table_whose_primary_key_differs_between_the_sides_is_a_conflict(branches) -> None:
     store, main, feature = branches
     sql(feature, store, "INSERT INTO lake.main.towns VALUES (5, 'e')")
     unkeyed(feature, "towns")
     save(feature, "feature")
     sql(main, store, "INSERT INTO lake.main.towns VALUES (4, 'd')")
-    unkeyed(main, "towns")
     save(main, "main")
 
     out = run("merge", "refs/heads/feature", main, "--author", "tester", code=1)
-    assert "main.towns: both sides changed the table, and it has no primary key both declare" in out
+    assert "main.towns: both sides changed the table, and its primary key differs between the sides" in out
+
+
+@pytest.fixture
+def unkeyed_branches(tmp_path: Path):
+    """main and feature at a first version holding a table without a primary key."""
+    remote = tmp_path / "remote"
+    store = LocalStore(remote)
+    run("init", remote)
+    main, feature = tmp_path / "main.sqlite", tmp_path / "feature.sqlite"
+    run("clone", remote, main)
+    sql(main, store, "CREATE TABLE lake.main.notes AS SELECT * FROM (VALUES ('a'), ('a'), ('b'), ('c')) t(text)")
+    save(main, "first")
+    run("branch", remote, "feature")
+    run("clone", remote, feature, "--branch", "feature")
+    return store, main, feature
+
+
+def notes(working: Path, store: LocalStore) -> list[tuple]:
+    return sql(working, store, "SELECT text FROM lake.main.notes ORDER BY ALL")
+
+
+def test_rows_of_a_table_without_a_primary_key_are_merged_as_a_multiset(unkeyed_branches) -> None:
+    store, main, feature = unkeyed_branches
+    # Theirs deletes one 'a' and changes 'c'; ours adds 'd' and changes 'c' too, the same way.
+    sql(feature, store, "CREATE OR REPLACE TABLE lake.main.notes AS SELECT * FROM (VALUES ('a'), ('b'), ('C')) t(text)")
+    save(feature, "feature")
+    sql(main, store, "UPDATE lake.main.notes SET text = 'C' WHERE text = 'c'; INSERT INTO lake.main.notes VALUES ('d')")
+    save(main, "main")
+
+    run("merge", "refs/heads/feature", main, "--author", "tester")
+    assert notes(main, store) == [("C",), ("a",), ("b",), ("d",)]
+
+
+def test_a_row_both_sides_changed_differently_without_a_primary_key_keeps_both(unkeyed_branches) -> None:
+    store, main, feature = unkeyed_branches
+    sql(feature, store, "UPDATE lake.main.notes SET text = 'x' WHERE text = 'c'")
+    save(feature, "feature")
+    sql(main, store, "UPDATE lake.main.notes SET text = 'y' WHERE text = 'c'")
+    save(main, "main")
+
+    run("merge", "refs/heads/feature", main, "--author", "tester")
+    assert notes(main, store) == [("a",), ("a",), ("b",), ("x",), ("y",)]
+
+
+def test_counts_both_sides_changed_differently_without_a_primary_key_are_a_conflict(unkeyed_branches) -> None:
+    store, main, feature = unkeyed_branches
+    sql(feature, store, "INSERT INTO lake.main.notes VALUES ('b')")
+    save(feature, "feature")
+    sql(main, store, "INSERT INTO lake.main.notes VALUES ('b'), ('b')")
+    save(main, "main")
+
+    out = run("merge", "refs/heads/feature", main, "--author", "tester", code=1)
+    assert "main.notes: both sides changed 1 row(s) of the table, which has no primary key, differently" in out
+
+
+def test_columns_that_differ_without_a_primary_key_are_a_conflict(unkeyed_branches) -> None:
+    store, main, feature = unkeyed_branches
+    sql(feature, store, "ALTER TABLE lake.main.notes ADD COLUMN n INTEGER")
+    save(feature, "feature")
+    sql(main, store, "INSERT INTO lake.main.notes VALUES ('d')")
+    save(main, "main")
+
+    out = run("merge", "refs/heads/feature", main, "--author", "tester", code=1)
+    assert "main.notes: both sides changed the table, which has no primary key, and its columns differ" in out
 
 
 def test_a_dropped_table_the_other_side_changed_is_a_conflict(branches) -> None:

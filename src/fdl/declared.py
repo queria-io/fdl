@@ -10,8 +10,12 @@ the new version's `tables.json`.
 
 from __future__ import annotations
 
+import re
 from dataclasses import dataclass, field
 from typing import Any
+
+#: Names DuckDB keeps for its own catalogs, which a dependency cannot take.
+_RESERVED = frozenset({"memory", "system", "temp"})
 
 
 class DeclarationError(ValueError):
@@ -235,6 +239,8 @@ def check(facts: Facts, found: Objects) -> list[str]:
     from .version import is_id
 
     for name, entry in sorted(facts.dependencies.items()):
+        if not re.fullmatch(r"[a-z_][a-z0-9_]*", name) or name in _RESERVED:
+            problems.append(f"the dependency {name!r}: a name is lower-case letters, digits and _, and not memory, system or temp")
         url = entry.get("url") or ""
         if "://" not in url or not url.endswith("/"):
             problems.append(f"the dependency {name}: url has to be an absolute URL ending in /, not {url!r}")

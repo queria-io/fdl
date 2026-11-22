@@ -781,6 +781,8 @@ def test_a_version_writes_its_declarations_and_views(tmp_path: Path, remote) -> 
         (declared.Facts(assets={"main.reports": ["year"]}), "has to be VARCHAR"),
         (declared.Facts(assets={"main.v": ["id"]}), "main.v is a view, which has no asset columns"),
         (declared.Facts(dependencies={"c": {"url": "relative/"}}), "url has to be an absolute URL ending in /"),
+        (declared.Facts(dependencies={"Census": {"url": "https://example.org/c/"}}), "a name is lower-case letters"),
+        (declared.Facts(dependencies={"temp": {"url": "https://example.org/c/"}}), "not memory, system or temp"),
         (declared.Facts(dependencies={"c": {"url": "https://example.org/c/", "version": "v1"}}), "is not a version ID"),
     ],
 )

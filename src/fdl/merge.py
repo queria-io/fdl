@@ -33,19 +33,22 @@ LISTED_KEYS = 10
 Declared = tuple[declared.Facts, set[str]]
 
 
-def primary_keys(base: Declared, ours: Declared, theirs: Declared) -> dict[tuple[str, str], list[str]]:
-    """The tables whose rows may be merged, each with its primary key.
+def primary_keys(base: Declared, ours: Declared, theirs: Declared) -> dict[tuple[str, str], list[str] | None]:
+    """The primary key each table's cells are merged by, or ``None`` for a table
+    whose primary key differs between the three, which is a conflict. A table not
+    listed has no primary key on any side, and its rows are merged as a multiset.
 
     Each side is what it declares and the tables it holds (`repo.declarations`,
     `repo.tables_of`). Ours and theirs declare the same primary key, and the base
     declares it as well or did not hold the table.
     """
     (old, held), (mine, _), (other, _) = base, ours, theirs
-    found: dict[tuple[str, str], list[str]] = {}
-    for name, key in mine.primary_keys.items():
-        if other.primary_keys.get(name) == key and (name not in held or old.primary_keys.get(name) == key):
-            schema, table = name.split(".", 1)
-            found[(schema, table)] = list(key)
+    found: dict[tuple[str, str], list[str] | None] = {}
+    for name in {*old.primary_keys, *mine.primary_keys, *other.primary_keys}:
+        key = mine.primary_keys.get(name)
+        same = key is not None and other.primary_keys.get(name) == key
+        schema, table = name.split(".", 1)
+        found[(schema, table)] = list(key) if same and (name not in held or old.primary_keys.get(name) == key) else None
     return found
 
 
@@ -93,7 +96,7 @@ def tables(
 
     ``working`` must hold ours at its last snapshot. ``base`` and ``theirs``
     are frozen catalogs, whose data files are under ``repository_data``.
-    ``keys`` are the tables whose rows may be merged (see `primary_keys`).
+    ``keys`` are the primary keys rows are merged by (see `primary_keys`).
 
     Nothing is written when there is a conflict, or when ``write`` is false
     (the descriptions conflict, say): the plan says what would be done.
@@ -139,12 +142,14 @@ def _literal(text: str) -> str:
 class _Merging:
     """One merge on one connection, with ``lake`` (ours), ``base`` and ``theirs`` attached."""
 
-    def __init__(self, con, keys: dict[tuple[str, str], list[str]], repository_data: str) -> None:
+    def __init__(self, con, keys: dict[tuple[str, str], list[str] | None], repository_data: str) -> None:
         self.con = con
         self.keys = keys
         self.repository_data = repository_data
         #: By table: the staged rows, the columns to write and the ALTER TABLE statements first.
         self.staged: dict[tuple[str, str], tuple[str, list[str], list[str]]] = {}
+        #: By table without a primary key: the counted rows and its columns.
+        self.multisets: dict[tuple[str, str], tuple[str, list[str]]] = {}
         #: Temp tables made so far, kept or not, so each gets a name of its own.
         self.made = 0
 
@@ -263,7 +268,9 @@ class _Merging:
             elif key not in ids["lake"] or key not in ids["theirs"]:
                 plan.conflicts.append(f"{label}: one side dropped the table and the other changed it")
             elif key not in self.keys:
-                plan.conflicts.append(f"{label}: both sides changed the table, and it has no primary key both declare")
+                self._plan_multiset(plan, key, has_base=key in ids["base"])
+            elif self.keys[key] is None:
+                plan.conflicts.append(f"{label}: both sides changed the table, and its primary key differs between the sides")
             else:
                 self._plan_rows(plan, key, has_base=key in ids["base"])
         views = {alias: self.views_of(alias) for alias in ("base", "lake", "theirs")}
@@ -532,6 +539,49 @@ class _Merging:
             self.staged[key] = (f"temp.main.{staged}", [*primary, *(merged[n].name for n in kept)], altered)
             plan.rows[key] = taken
 
+    def _plan_multiset(self, plan: Plan, key: tuple[str, str], *, has_base: bool) -> None:
+        """Merge the rows of a table without a primary key as a multiset: each row (the
+        values of all its columns) is counted in the base, ours and theirs, and a count
+        only one side changed takes that side's."""
+        label = ".".join(key)
+        shape = {
+            alias: self.con.execute(
+                "SELECT column_name, data_type FROM duckdb_columns() WHERE database_name = $d AND schema_name = $s "
+                "AND table_name = $t ORDER BY column_index",
+                {"d": alias, "s": key[0], "t": key[1]},
+            ).fetchall()
+            for alias in (("base", "lake", "theirs") if has_base else ("lake", "theirs"))
+        }
+        if shape["lake"] != shape["theirs"]:
+            plan.conflicts.append(f"{label}: both sides changed the table, which has no primary key, and its columns differ")
+            return
+        listed = ", ".join(_quoted(name) for name, _ in shape["lake"])
+        # A base with other columns holds none of the rows the sides hold.
+        sides = [alias for alias in shape if alias != "base" or shape["base"] == shape["lake"]]
+        counted = " UNION ALL ".join(f"SELECT {listed}, '{alias}' AS __fdl_side FROM {self.name(alias, key)}" for alias in sides)
+        staged = f"__fdl_merge_{self.made}"
+        self.made += 1
+        self.con.execute(
+            f"""
+            CREATE TEMP TABLE {staged} AS
+            SELECT *, CASE WHEN o = b THEN t WHEN t = b OR o = t THEN o END AS __fdl_count FROM (
+                SELECT {listed},
+                       count(*) FILTER (WHERE __fdl_side = 'base') AS b,
+                       count(*) FILTER (WHERE __fdl_side = 'lake') AS o,
+                       count(*) FILTER (WHERE __fdl_side = 'theirs') AS t
+                FROM ({counted}) GROUP BY ALL
+            )
+            """
+        )
+        total = self.con.execute(f"SELECT count(*) FILTER (WHERE __fdl_count IS NULL) FROM {staged}").fetchone()[0]
+        if total:
+            plan.conflicts.append(f"{label}: both sides changed {total} row(s) of the table, which has no primary key, differently")
+            return
+        changed = self.con.execute(f"SELECT coalesce(sum(abs(__fdl_count - o)), 0) FROM {staged}").fetchone()[0]
+        if changed:
+            self.multisets[key] = (f"temp.main.{staged}", [name for name, _ in shape["lake"]])
+            plan.rows[key] = int(changed)
+
     def _added_rows(self, key, primary: list[str], slots, alias: str, has_base: bool) -> bool:
         """Whether ``alias`` holds a row the base does not."""
         if not has_base:
@@ -588,6 +638,14 @@ class _Merging:
             listed = ", ".join(map(_quoted, names))
             con.execute(
                 f"INSERT INTO {self.name('lake', key)} ({listed}) SELECT {listed} FROM {staged} WHERE __fdl_present"
+            )
+        for key, (staged, names) in self.multisets.items():
+            # Written again whole: rows without a key cannot be told apart to delete only some.
+            listed = ", ".join(map(_quoted, names))
+            con.execute(f"DELETE FROM {self.name('lake', key)}")
+            con.execute(
+                f"INSERT INTO {self.name('lake', key)} ({listed}) "
+                f"SELECT {listed} FROM {staged}, range(__fdl_count) WHERE __fdl_count > 0"
             )
         for key in plan.taken:
             if key in self.views["theirs"]:
