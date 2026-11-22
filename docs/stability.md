@@ -9,9 +9,9 @@ FDL is in beta. This page says what a dataset written today can rely on, and how
 
 ## The format
 
-A dataset written for FDL 0.1 stays readable by later releases of `fdl`. The `fdl` field of `fdl.json` and `version.json` names the specification a file was written for, and a reader refuses a major version it does not know.
+Until FDL 1.0, the format may change between releases of `fdl`, and a release reads only the format it writes. When the format changes, its changelog says so, and `fdl migrate` rewrites an existing dataset to the new format. Run it before using the new release on a dataset. The `fdl` field of `fdl.json` and `version.json` names the specification a file was written for, and a reader refuses a major version it does not know.
 
-These keep their paths and their meaning:
+These are the parts of the format today:
 
 - `fdl.json`, `HEAD`, `refs/` and `refs.json`
 - `version.json` and its required fields
