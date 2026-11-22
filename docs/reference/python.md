@@ -15,7 +15,7 @@ for version in repo.log(store):
 | Module | Holds |
 | --- | --- |
 | `fdl.repo` | the operations: `init`, `clone`, `commit`, `push`, `log`, `expire`, `prune` |
-| `fdl.fdl_schema` | reading and checking the [_fdl schema](/spec/fdl-schema) of a metadata file (`fdl_schema.describe`) |
+| `fdl.fdl_schema` | the tables of the [_fdl schema](/spec/fdl-schema): their definition, writing and reading their rows, and the checks |
 | `fdl.meta` | the rows of `_fdl` read and written by name and key, as `fdl meta` does |
 | `fdl.diff` | what changed between two versions (`diff.versions`) or in a working metadata file (`diff.working`) |
 | `fdl.refs` | reading and moving refs under their conditions |
@@ -134,6 +134,22 @@ repo.withdraw(store, version_ids, *, plan=None, by=None) -> Withdrawal
 ```
 
 Withdraw versions that hold data that must not be published. `plan_withdrawal` changes nothing and returns the tags, the data files to delete, and the files kept because a kept version reads them. `withdraw` deletes the tags, the data files and the metadata files, in that order. Both raise `RepoError` while a branch or a request points at one of the versions; with `refuse_refs=False`, `plan_withdrawal` lists them in `blocked` instead and `withdraw` raises. `objects` (`{"data": [...], "assets": [...]}`, as `deleted` of `expired.json`) applies a withdrawal made in the repository this one was copied from: every live version that reaches one of them is affected too.
+
+## fdl.fdl_schema
+
+```python
+fdl_schema.TYPES -> dict[str, dict[str, str]]
+fdl_schema.KEYS -> dict[str, tuple[str, ...]]
+fdl_schema.create_sql(table, columns=None, alias="lake") -> str
+fdl_schema.ensure(con, table, columns=(), alias="lake") -> dict[str, str]
+fdl_schema.upsert(con, table, row, alias="lake") -> None
+fdl_schema.delete(con, table, key, alias="lake") -> int
+fdl_schema.replace(con, rows, alias="lake") -> None
+fdl_schema.load(con, alias="lake") -> dict[str, list[dict]]
+fdl_schema.check(con, alias="lake") -> list[str]
+```
+
+The tables of [the _fdl schema](/spec/fdl-schema), for a tool that writes `_fdl`: use these instead of keeping your own `CREATE TABLE` or list of columns. Each takes a DuckDB connection with the metadata attached as `alias`, and runs in the transaction the caller began. `TYPES` gives each table's columns and their DuckDB types, and `KEYS` each table's primary key. `ensure` makes the schema, a table and the columns it lacks. `upsert` changes or adds the row with the key `row` holds, sets the other columns `row` holds (`None` clears one), and removes a row left with nothing but its key. `delete` removes the row with a key. `replace` drops every table of `_fdl`, makes those `rows` names with all their columns and writes the rows, then runs `check`. `load` returns every row, without NULL columns, as JSON values (a date as ISO text, the `value` of `_fdl.attributes` parsed). Values are Python values: a list for `VARCHAR[]`, a dict for a STRUCT, any JSON value for an attribute, and a string for a scalar type, cast as DuckDB casts it. `check` returns what the [checks](/spec/fdl-schema#checks) refuse. The writing functions raise `fdl_schema.SchemaError` with the problems, such as `dataset: issued cannot be written as DATE (at the dataset.issued)`.
 
 ## fdl.diff
 

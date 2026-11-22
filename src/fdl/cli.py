@@ -733,6 +733,73 @@ def meta_unset(working: Path = Working, name: str = Name, key: str = Key) -> Non
         raise typer.Exit(1)
 
 
+@meta_app.command("dump")
+def meta_dump(working: Path = Working) -> None:
+    """Print every row of _fdl as JSON: {table: [row, ...]}, the form meta load takes."""
+    try:
+        rows = _meta(working, fdl_schema.load, write=False)
+    except (*ERRORS, catalog.CatalogError) as exc:
+        raise _fail(exc) from exc
+    typer.echo(json.dumps(rows, ensure_ascii=False, indent=2))
+
+
+@meta_app.command("objects")
+def meta_objects(working: Path = Working) -> None:
+    """Print the tables and views _fdl can describe, as JSON: schema, name, kind and a table's columns."""
+
+    def listed(con) -> list[dict]:
+        found = fdl_schema.objects(con)
+        tables = [
+            {"schema": s, "name": n, "kind": "table", "columns": [{"name": c, "type": t} for c, t in columns.items()]}
+            for (s, n), columns in found.tables.items()
+            if s != fdl_schema.SCHEMA
+        ]
+        views = [{"schema": s, "name": n, "kind": "view"} for s, n in found.views]
+        return sorted(tables + views, key=lambda o: (o["schema"], o["name"]))
+
+    try:
+        typer.echo(json.dumps(_meta(working, listed, write=False), ensure_ascii=False, indent=2))
+    except (*ERRORS, catalog.CatalogError) as exc:
+        raise _fail(exc) from exc
+
+
+@meta_app.command("load")
+def meta_load(
+    working: Path = Working,
+    source: str = typer.Argument(help="A JSON file of {table: [row, ...]}, or - for standard input"),
+    merge: bool = typer.Option(
+        False, "--merge", help="Change or add the rows given, and keep the others (default: _fdl holds these rows and no others)"
+    ),
+) -> None:
+    """Write many rows of _fdl at once, in the form meta dump prints.
+
+    Refused, with nothing written, when a table, column or value is not one _fdl
+    takes, or the result fails the _fdl checks.
+    """
+    try:
+        text = typer.get_text_stream("stdin").read() if source == "-" else Path(source).read_text(encoding="utf-8")
+        rows = json.loads(text)
+        if not isinstance(rows, dict) or not all(isinstance(v, list) and all(isinstance(r, dict) for r in v) for v in rows.values()):
+            raise metas.MetaError("give an object of {table: [row, ...]}")
+
+        def write(con) -> None:
+            if not merge:
+                fdl_schema.replace(con, rows)
+                return
+            for table, items in rows.items():
+                for row in items:
+                    fdl_schema.upsert(con, table, row)
+            problems = fdl_schema.check(con)
+            if problems:
+                raise fdl_schema.SchemaError(problems)
+
+        _meta(working, write, write=True)
+    except (ValueError, OSError) as exc:
+        raise _fail(exc) from exc
+    except (*ERRORS, catalog.CatalogError) as exc:
+        raise _fail(exc) from exc
+
+
 @app.command()
 def assets(folder: Path = typer.Argument(..., help="The folder of files the rows will point at")) -> None:
     """List the files below a folder as CSV: path, sha256, bytes, media_type.

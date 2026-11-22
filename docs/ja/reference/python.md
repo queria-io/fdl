@@ -15,7 +15,7 @@ for version in repo.log(store):
 | モジュール | 中身 |
 | --- | --- |
 | `fdl.repo` | 操作: `init`、`clone`、`commit`、`push`、`log`、`expire`、`prune` |
-| `fdl.fdl_schema` | メタデータの [_fdl スキーマ](/ja/spec/fdl-schema)の読み取りと確認（`fdl_schema.describe`） |
+| `fdl.fdl_schema` | [_fdl スキーマ](/ja/spec/fdl-schema)のテーブルの定義、行の読み書き、確認 |
 | `fdl.meta` | `fdl meta` と同じく、名前とキーで `_fdl` の行を読み書きする |
 | `fdl.diff` | 2 つのバージョンの違い（`diff.versions`）と作業メタデータの変更（`diff.working`） |
 | `fdl.refs` | ref を読み、条件付きで動かす |
@@ -134,6 +134,22 @@ repo.withdraw(store, version_ids, *, plan=None) -> Withdrawal
 ```
 
 公開してはいけないデータを持つバージョンを取り下げます。`plan_withdrawal` は何も変えずに、消すタグ、消すデータファイル、残すバージョンが読むので残すファイルを返します。`withdraw` はタグ、データファイル、メタデータの順に消します。ブランチかリクエストが該当するバージョンを指しているあいだは、どちらも `RepoError` を出します。`refuse_refs=False` のときは、`plan_withdrawal` はそれらを `blocked` に並べ、`withdraw` が `RepoError` を出します。`objects`（`expired.json` の `deleted` と同じ `{"data": [...], "assets": [...]}`）は、写し元のリポジトリで行った取り下げを適用します。それらを参照する有効なバージョンも該当するバージョンになります。
+
+## fdl.fdl_schema
+
+```python
+fdl_schema.TYPES -> dict[str, dict[str, str]]
+fdl_schema.KEYS -> dict[str, tuple[str, ...]]
+fdl_schema.create_sql(table, columns=None, alias="lake") -> str
+fdl_schema.ensure(con, table, columns=(), alias="lake") -> dict[str, str]
+fdl_schema.upsert(con, table, row, alias="lake") -> None
+fdl_schema.delete(con, table, key, alias="lake") -> int
+fdl_schema.replace(con, rows, alias="lake") -> None
+fdl_schema.load(con, alias="lake") -> dict[str, list[dict]]
+fdl_schema.check(con, alias="lake") -> list[str]
+```
+
+[_fdl スキーマ](/ja/spec/fdl-schema)のテーブルを扱います。`_fdl` を書くツールは、自分で `CREATE TABLE` や列の一覧を持たずにこれを使います。どれも、メタデータを `alias` で ATTACH した DuckDB の接続を受け、呼び手が始めたトランザクションの中で動きます。`TYPES` はテーブルごとの列と DuckDB の型、`KEYS` はテーブルごとの主キーです。`ensure` はスキーマ・テーブルと、足りない列を作ります。`upsert` は `row` が持つキーの行を変えるか追加し、`row` が持つほかの列を設定します（`None` は消す）。キーのほかに何も残らない行は削除します。`delete` はキーの行を削除します。`replace` は `_fdl` のテーブルをすべて DROP し、`rows` が挙げるテーブルをすべての列で作って行を書き、`check` を実行します。`load` はすべての行を、NULL の列を除いて JSON の値で返します（日付は ISO の文字列、`_fdl.attributes` の `value` は解いた値）。値は Python の値で渡します。`VARCHAR[]` にはリスト、STRUCT には dict、属性には JSON にできる任意の値、スカラーの型には文字列を渡すと DuckDB の変換規則で変換します。`check` は[確認](/ja/spec/fdl-schema#確認)が断る内容を返します。書く関数は問題を持つ `fdl_schema.SchemaError` を投げます（例: `dataset: issued cannot be written as DATE (at the dataset.issued)`）。
 
 ## fdl.diff
 

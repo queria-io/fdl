@@ -94,6 +94,9 @@ fdl meta list <working.sqlite> [<name>] [--json]
 fdl meta get <working.sqlite> <name> <key>
 fdl meta set <working.sqlite> <name> <key> <value>...
 fdl meta unset <working.sqlite> <name> <key>
+fdl meta dump <working.sqlite>
+fdl meta load <working.sqlite> <rows.json|-> [--merge]
+fdl meta objects <working.sqlite>
 ```
 
 Reads and writes the rows of `_fdl` in the working metadata (see [The _fdl schema](/spec/fdl-schema)), as `git config` reads and writes a config file. The next `fdl commit` takes the changes into the new version, as it takes any change to a table.
@@ -112,7 +115,21 @@ fdl meta set lake.sqlite main.population licenses '[{"spdx": "CC-BY-4.0"}]'
 
 `list` prints one key a line as `name.key=value`, with the dataset's keys without a name. `get` prints the value. Both print text as it is when it fits on one line, and anything else as JSON. `get` and `unset` exit 1 when the key is not set. `_fdl.files` and `_fdl.catalogs` are not read or written here: write them with SQL.
 
-On a working metadata cloned from a version written before `_fdl`, `fdl meta` first writes into `_fdl` what that version said, as `fdl commit` does. `get` and `list` show it without keeping it; `set` and `unset` keep it, so a key cleared then stays cleared at the commit.
+`dump` prints every row of `_fdl` as one JSON object: each table of `_fdl` (without the prefix) to its rows, each row with its non-null columns. A date is ISO text, and the `value` of `_fdl.attributes` is the JSON value itself.
+
+```json
+{
+  "dataset": [{ "title": "Population by town" }],
+  "tables": [{ "schema": "main", "name": "population", "primary_key": ["code", "year"] }],
+  "attributes": [{ "schema": "main", "table": "population", "column": "code", "key": "example-theme", "value": { "color": "blue" } }]
+}
+```
+
+`load` takes an object of that form, from a file or from standard input (`-`), for a tool that builds `_fdl` from the writer's own files. By default `_fdl` then holds these rows and no others: every table of `_fdl` is made again with all the columns the specification gives. With `--merge`, each row given is changed or added by its primary key, with the columns it holds, and the other rows are kept. `load` writes nothing and exits 1 when a table, a column or a value is not one `_fdl` takes, or the result fails the checks; each problem names where it is, such as `dataset: issued cannot be written as DATE (at the dataset.issued)`.
+
+`objects` prints, as JSON, the tables and views of the working metadata that `_fdl` can describe: `schema`, `name`, `kind` (`table` or `view`), and a table's `columns` with their types.
+
+On a working metadata cloned from a version written before `_fdl`, `fdl meta` first writes into `_fdl` what that version said, as `fdl commit` does. `get`, `list`, `dump` and `objects` show it without keeping it; `set`, `unset` and `load` keep it, so a key cleared then stays cleared at the commit.
 
 ## fdl push
 

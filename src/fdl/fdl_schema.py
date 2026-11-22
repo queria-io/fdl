@@ -1,7 +1,9 @@
 """The `_fdl` schema: what FDL reads from the tables of the metadata (see the specification's
 "The _fdl schema").
 
-The writer's tool writes `_fdl` with SQL like any other schema. FDL reads from it
+The writer's tool writes `_fdl` with SQL like any other schema, or with the
+functions here (`ensure`, `upsert`, `delete`, `replace`), which hold the only
+definition of its tables (`TYPES`, `KEYS`). FDL reads from it
 the primary keys, the asset columns, which tables and views get no profile, and the
 repositories views read; checks it against the tables and views before freezing;
 and, for a version made from one written before `_fdl`, writes into it what that
@@ -510,6 +512,264 @@ def _literal(value: Any) -> str:
     if isinstance(value, list):
         return "[" + ", ".join(_literal(v) for v in value) + "]::VARCHAR[]"
     return _lit(str(value))
+
+
+# -- writing rows ----------------------------------------------------------------------
+#
+# The tables of `_fdl` are defined here once: a tool that writes `_fdl` (fdl meta,
+# or a tool that builds it from the writer's files) calls these instead of keeping
+# its own CREATE TABLE or list of columns.
+
+
+def has_schema(con, alias: str = "lake") -> bool:
+    """Whether the attached metadata has the schema `_fdl`."""
+    return _has_schema(con, alias)
+
+
+def ensure(con, table: str, columns: Iterable[str] = (), alias: str = "lake") -> dict[str, str]:
+    """Make the schema `_fdl`, ``_fdl.<table>`` with its primary key, and ``columns``
+    where they are missing, with the types the specification gives. Returns each
+    column the table has and its type.
+
+    Raises `SchemaError` for a table or column the specification does not define.
+    """
+    if table not in TYPES:
+        raise SchemaError([f"{SCHEMA}.{table} is not a table of {SCHEMA}"])
+    unknown = [c for c in columns if c not in TYPES[table]]
+    if unknown:
+        raise SchemaError([f"{SCHEMA}.{table} has no column {', '.join(unknown)}"])
+    if not _has_schema(con, alias):
+        con.execute(f"CREATE SCHEMA {alias}.{_q(SCHEMA)}")
+    held = objects(con, alias).tables.get((SCHEMA, table))
+    if held is None:
+        con.execute(create_sql(table, columns, alias=alias))
+        return {c: TYPES[table][c] for c in dict.fromkeys([*KEYS[table], *columns])}
+    for column in columns:
+        if column not in held:
+            con.execute(f"ALTER TABLE {alias}.{_q(SCHEMA)}.{_q(table)} ADD COLUMN {_q(column)} {TYPES[table][column]}")
+            held[column] = TYPES[table][column]
+    return held
+
+
+def _expression(kind: str, value: Any) -> tuple[str, Any]:
+    """The SQL expression and parameter that give ``value`` as a ``kind``."""
+    upper = kind.upper()
+    if upper == "JSON":
+        return "CAST(? AS JSON)", json.dumps(value, ensure_ascii=False, default=str)
+    if value is None:
+        return "NULL", None
+    if isinstance(value, str) and "STRUCT" not in upper and not upper.endswith("[]"):
+        return f"CAST(? AS {kind})", value
+    return (
+        f"CAST(from_json(?, {_lit(json.dumps(structure(kind)))}) AS {kind})",
+        json.dumps(value, ensure_ascii=False, default=str),
+    )
+
+
+def _unwritable(con, table: str, row: dict[str, Any], types: dict[str, str]) -> list[str]:
+    """The values of ``row`` that cannot be written as their column's type, as messages."""
+    import duckdb
+
+    where = _where_of(table, row)
+    found = []
+    for column, value in row.items():
+        if column not in types or value is None:
+            continue
+        expression, parameter = _expression(types[column], value)
+        try:
+            con.execute(f"SELECT {expression}", [parameter]).fetchone()
+        except duckdb.Error:
+            found.append(f"{table}: {column} cannot be written as {types[column]} (at {where}.{column})")
+    return found
+
+
+def upsert(con, table: str, row: dict[str, Any], alias: str = "lake") -> None:
+    """Write ``row`` into ``_fdl.<table>``, making what it needs (`ensure`).
+
+    ``row`` holds the table's primary key and the columns to set; a value of None
+    clears the column. The row with that key is changed, or added when there is
+    none; `_fdl.dataset` has no key and one row at most. A row left with nothing
+    but its key is removed. Values are Python values (a list for ``VARCHAR[]``, a
+    dict for a STRUCT, any JSON value for `_fdl.attributes`); a string is cast to
+    a scalar type (``'true'``, ``'2026-01-01'``). Raises `SchemaError` for a row
+    without its key, or a table or column the specification does not define.
+    """
+    import duckdb
+
+    if table not in TYPES:
+        raise SchemaError([f"{SCHEMA}.{table} is not a table of {SCHEMA}"])
+    lacking = [k for k in KEYS[table] if row.get(k) is None]
+    if lacking:
+        raise SchemaError([f"a row of {SCHEMA}.{table} needs {', '.join(lacking)}"])
+    key = {k: row[k] for k in KEYS[table]}
+    values = {k: v for k, v in row.items() if k not in key}
+    held = ensure(con, table, values, alias)
+    problems = _unwritable(con, table, row, held)
+    if problems:
+        raise SchemaError(problems)
+    target = f"{alias}.{_q(SCHEMA)}.{_q(table)}"
+    where = " AND ".join(f"{_q(k)} = ?" for k in key)
+    where = f" WHERE {where}" if where else ""
+    parts = {column: _expression(held[column], value) for column, value in values.items()}
+    try:
+        exists = con.execute(f"SELECT count(*) FROM {target}{where}", list(key.values())).fetchone()[0]
+        if exists and parts:
+            sets = ", ".join(f"{_q(c)} = {e}" for c, (e, _) in parts.items())
+            params = [p for e, p in parts.values() if e != "NULL"]
+            con.execute(f"UPDATE {target} SET {sets}{where}", [*params, *key.values()])
+        elif not exists and any(v is not None for v in values.values()):
+            given = {c: ep for c, ep in parts.items() if ep[0] != "NULL"}
+            names = [*key, *given]
+            con.execute(
+                f"INSERT INTO {target} ({', '.join(map(_q, names))}) "
+                f"VALUES ({', '.join(['?'] * len(key) + [e for e, _ in given.values()])})",
+                [*key.values(), *(p for _, p in given.values())],
+            )
+    except duckdb.ConversionException as exc:
+        raise SchemaError([f"{SCHEMA}.{table}: {exc}"]) from exc
+    rest = [c for c in held if c not in KEYS[table]]
+    if rest:
+        empty = " AND ".join(f"{_q(c)} IS NULL" for c in rest)
+        con.execute(f"DELETE FROM {target}{where}{' AND ' if where else ' WHERE '}{empty}", list(key.values()))
+
+
+def delete(con, table: str, key: dict[str, Any], alias: str = "lake") -> int:
+    """Remove the row of ``_fdl.<table>`` with ``key`` (every row of `_fdl.dataset`). Returns how many."""
+    if not _has_schema(con, alias) or (SCHEMA, table) not in objects(con, alias).tables:
+        return 0
+    target = f"{alias}.{_q(SCHEMA)}.{_q(table)}"
+    where = " AND ".join(f"{_q(k)} = ?" for k in KEYS[table])
+    where = f" WHERE {where}" if where else ""
+    params = [key[k] for k in KEYS[table]]
+    count = con.execute(f"SELECT count(*) FROM {target}{where}", params).fetchone()[0]
+    con.execute(f"DELETE FROM {target}{where}", params)
+    return count
+
+
+def structure(kind: str) -> Any:
+    """A DuckDB type as the structure `from_json` takes: a STRUCT as an object, a list as a one-item list."""
+    text = kind.strip()
+    if text.endswith("[]"):
+        return [structure(text[:-2])]
+    if not text.upper().startswith("STRUCT(") or not text.endswith(")"):
+        return text
+    fields: dict[str, Any] = {}
+    for part in _split(text[len("STRUCT(") : -1]):
+        part = part.strip()
+        if part.startswith('"'):
+            end = part.index('"', 1)
+            while part[end + 1 : end + 2] == '"':
+                end = part.index('"', end + 2)
+            name, rest = part[1:end].replace('""', '"'), part[end + 1 :]
+        else:
+            name, _, rest = part.partition(" ")
+        fields[name] = structure(rest)
+    return fields
+
+
+def _split(text: str) -> list[str]:
+    """``text`` split at the commas outside parentheses and quotes."""
+    parts, depth, quoted, start = [], 0, False, 0
+    for at, char in enumerate(text):
+        if char == '"':
+            quoted = not quoted
+        elif not quoted and char == "(":
+            depth += 1
+        elif not quoted and char == ")":
+            depth -= 1
+        elif not quoted and char == "," and depth == 0:
+            parts.append(text[start:at])
+            start = at + 1
+    return [*parts, text[start:]]
+
+
+
+
+def _where_of(table: str, row: dict[str, Any]) -> str:
+    """Where a row of ``_fdl.<table>`` points, for messages: ``schema.table.column``, a path or a name."""
+    if table == "dataset":
+        return "the dataset"
+    if table == "attributes":
+        return ".".join(str(row.get(k)) for k in ("schema", "table", "column") if row.get(k)) or "the dataset"
+    return ".".join(str(row.get(k)) for k in KEYS[table])
+
+
+def replace(con, rows: dict[str, list[dict[str, Any]]], alias: str = "lake") -> None:
+    """Make `_fdl` hold ``rows`` and nothing else, in the transaction the caller began.
+
+    Every table of `_fdl` is dropped; each table ``rows`` names is made with the
+    columns the specification gives, and its rows written. Values are as `upsert`
+    takes them. Raises `SchemaError` for a table or column the specification does
+    not define, a value that cannot be written as its column's type, or `_fdl`
+    failing its checks.
+    """
+    problems: list[str] = []
+    for table, items in rows.items():
+        if table not in TYPES:
+            problems.append(f"{SCHEMA}.{table} is not a table of {SCHEMA}")
+            continue
+        for row in items:
+            where = _where_of(table, row)
+            problems += [f"{table}: {where} lacks {k}" for k in KEYS[table] if row.get(k) is None]
+            problems += [f"{table}: {where} has {c}, which is not a column of {SCHEMA}.{table}" for c in row if c not in TYPES[table]]
+            problems += _unwritable(con, table, row, TYPES[table])
+    if problems:
+        raise SchemaError(problems)
+    if _has_schema(con, alias):
+        for (schema, table) in objects(con, alias).tables:
+            if schema == SCHEMA:
+                con.execute(f"DROP TABLE {alias}.{_q(SCHEMA)}.{_q(table)}")
+    if not rows:
+        if _has_schema(con, alias):
+            con.execute(f"DROP SCHEMA {alias}.{_q(SCHEMA)}")
+        return
+    if not _has_schema(con, alias):
+        con.execute(f"CREATE SCHEMA {alias}.{_q(SCHEMA)}")
+    for table, items in rows.items():
+        con.execute(create_sql(table, alias=alias))
+        target = f"{alias}.{_q(SCHEMA)}.{_q(table)}"
+        for row in items:
+            given = {c: _expression(TYPES[table][c], v) for c, v in row.items() if v is not None}
+            con.execute(
+                f"INSERT INTO {target} ({', '.join(map(_q, given))}) VALUES ({', '.join(e for e, _ in given.values())})",
+                [p for _, p in given.values()],
+            )
+    found = check(con, alias)
+    if found:
+        raise SchemaError(found)
+
+
+def _plain(value: Any) -> Any:
+    """A value as JSON holds it: a date as its ISO text."""
+    if isinstance(value, dict):
+        return {k: _plain(v) for k, v in value.items()}
+    if isinstance(value, list):
+        return [_plain(v) for v in value]
+    if hasattr(value, "isoformat"):
+        return value.isoformat()
+    return value
+
+
+def load(con, alias: str = "lake") -> dict[str, list[dict[str, Any]]]:
+    """Every row of `_fdl`, by table, as JSON values; NULL columns left out, the
+    value of `_fdl.attributes` parsed. ``{}`` without `_fdl`."""
+    if not _has_schema(con, alias):
+        return {}
+    held: dict[str, list[dict[str, Any]]] = {}
+    for schema, table in sorted(objects(con, alias).tables):
+        if schema != SCHEMA:
+            continue
+        cursor = con.execute(f"SELECT * FROM {alias}.{_q(SCHEMA)}.{_q(table)}")
+        names = [d[0] for d in cursor.description]
+        held[table] = [
+            {
+                k: (json.loads(v) if table == "attributes" and k == "value" else _plain(v))
+                for k, v in zip(names, values)
+                if v is not None
+            }
+            for values in cursor.fetchall()
+        ]
+    return held
 
 
 # -- what a commit reads from the working metadata --------------------------------------

@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+import re
 import sqlite3
 from pathlib import Path
 
@@ -130,3 +131,90 @@ def test_what_an_earlier_version_said_can_be_changed(lake, tmp_path: Path) -> No
     run("commit", again, "-m", "no key", "--author", "tester")
     run("push", again)
     assert "primary_key" not in files_json(store)["tables"]["main.towns"]
+
+
+def _attached(working: Path, store: LocalStore):
+    con = duckdb.connect()
+    for statement in catalog.attach_sql(working, alias="lake", data_path=repo.data_url(store)):
+        if statement:
+            con.execute(statement)
+    return con
+
+
+def test_replace_writes_the_rows_and_load_reads_them_back(lake) -> None:
+    from fdl import fdl_schema
+
+    working, store = lake
+    rows = {
+        "dataset": [{"title": "Towns", "issued": "2026-01-01", "licenses": [{"spdx": "CC-BY-4.0"}]}],
+        "tables": [{"schema": "main", "name": "towns", "primary_key": ["code", "year"]}],
+        "attributes": [{"schema": "main", "table": "towns", "column": "code", "key": "example-theme", "value": {"a": 1}}],
+    }
+    con = _attached(working, store)
+    con.execute("BEGIN")
+    fdl_schema.replace(con, rows)
+    con.execute("COMMIT")
+    loaded = fdl_schema.load(con)
+    assert loaded["dataset"] == [{"title": "Towns", "issued": "2026-01-01", "licenses": [{"id": None, "spdx": "CC-BY-4.0", "url": None, "title": None}]}]
+    assert loaded["tables"] == rows["tables"]
+    assert loaded["attributes"] == rows["attributes"]
+
+    con.execute("BEGIN")
+    fdl_schema.replace(con, {"tables": [{"schema": "main", "name": "towns", "title": "Towns"}]})
+    con.execute("COMMIT")
+    assert fdl_schema.load(con) == {"tables": [{"schema": "main", "name": "towns", "title": "Towns"}]}
+    con.close()
+
+
+@pytest.mark.parametrize(
+    "rows, said",
+    [
+        ({"dataset": [{"issued": "someday"}]}, "dataset: issued cannot be written as DATE (at the dataset.issued)"),
+        ({"columns": [{"schema": "main", "table": "towns", "name": "code", "asset": "maybe"}]}, "columns: asset cannot be written as BOOLEAN (at main.towns.code.asset)"),
+        ({"tables": [{"schema": "main", "name": "towns", "colour": "red"}]}, "colour, which is not a column"),
+        ({"topics": []}, "_fdl.topics is not a table"),
+        ({"tables": [{"schema": "main", "name": "names", "primary_key": ["name"]}]}, "gives the view main.names a primary_key"),
+    ],
+)
+def test_replace_refuses_what_it_cannot_write(lake, rows, said) -> None:
+    from fdl import fdl_schema
+
+    working, store = lake
+    con = _attached(working, store)
+    con.execute("BEGIN")
+    with pytest.raises(fdl_schema.SchemaError, match=re.escape(said)):
+        fdl_schema.replace(con, rows)
+    con.execute("ROLLBACK")
+    assert fdl_schema.load(con) == {}
+    con.close()
+
+
+def test_load_and_dump(lake, tmp_path: Path) -> None:
+    working, _ = lake
+    rows = tmp_path / "rows.json"
+    rows.write_text(json.dumps({"dataset": [{"title": "Towns"}], "tables": [{"schema": "main", "name": "towns", "title": "Towns"}]}))
+    run("meta", "load", working, rows)
+    assert json.loads(run("meta", "dump", working))["tables"] == [{"schema": "main", "name": "towns", "title": "Towns"}]
+
+    merged = runner.invoke(
+        app, ["meta", "load", str(working), "-", "--merge"],
+        input=json.dumps({"tables": [{"schema": "main", "name": "towns", "description": "One a year"}]}),
+    )
+    assert merged.exit_code == 0, merged.output
+    assert json.loads(run("meta", "dump", working)) == {
+        "dataset": [{"title": "Towns"}],
+        "tables": [{"schema": "main", "name": "towns", "title": "Towns", "description": "One a year"}],
+    }
+
+    refused = runner.invoke(app, ["meta", "load", str(working), "-"], input=json.dumps({"tables": [{"schema": "main", "name": "gone"}]}))
+    assert refused.exit_code == 1
+    assert "main.gone, which is not there" in refused.output
+    assert json.loads(run("meta", "dump", working))["dataset"] == [{"title": "Towns"}]
+
+
+def test_objects_lists_the_tables_and_views(lake) -> None:
+    working, _ = lake
+    run("meta", "set", working, ".", "title", "Towns")
+    listed = json.loads(run("meta", "objects", working))
+    assert [(o["schema"], o["name"], o["kind"]) for o in listed] == [("main", "names", "view"), ("main", "towns", "table")]
+    assert listed[1]["columns"][0] == {"name": "code", "type": "INTEGER"}

@@ -95,6 +95,9 @@ fdl meta list <working.sqlite> [<name>] [--json]
 fdl meta get <working.sqlite> <name> <key>
 fdl meta set <working.sqlite> <name> <key> <value>...
 fdl meta unset <working.sqlite> <name> <key>
+fdl meta dump <working.sqlite>
+fdl meta load <working.sqlite> <rows.json|-> [--merge]
+fdl meta objects <working.sqlite>
 ```
 
 作業メタデータの `_fdl` の行を、`git config` が設定ファイルを読み書きするように読み書きします（[_fdl スキーマ](/ja/spec/fdl-schema)）。変更は、テーブルの変更と同じように、次の `fdl commit` で新しいバージョンに入ります。
@@ -113,7 +116,21 @@ fdl meta set lake.sqlite main.population licenses '[{"spdx": "CC-BY-4.0"}]'
 
 `list` は 1 行に 1 つのキーを `name.key=value` の形で表示します。データセットのキーは名前を付けずに表示します。`get` は値を表示します。どちらも、1 行に収まる文字列はそのまま、それ以外は JSON で表示します。`get` と `unset` は、キーが設定されていないと終了コード 1 で終わります。`_fdl.files` と `_fdl.catalogs` はここでは読み書きしません。SQL で書いてください。
 
-`_fdl` より前に書かれたバージョンからクローンした作業メタデータでは、`fdl meta` は最初に、そのバージョンが述べていたことを `fdl commit` と同じように `_fdl` に書きます。`get` と `list` はそれを表示するだけで残しません。`set` と `unset` はそれを残すので、消したキーはコミットでも消えたままです。
+`dump` は `_fdl` のすべての行を 1 つの JSON オブジェクトで表示します。`_fdl` のテーブル（接頭辞なし）ごとに行の配列を持ち、各行は NULL でない列だけを持ちます。日付は ISO の文字列で、`_fdl.attributes` の `value` は JSON の値そのものです。
+
+```json
+{
+  "dataset": [{ "title": "Population by town" }],
+  "tables": [{ "schema": "main", "name": "population", "primary_key": ["code", "year"] }],
+  "attributes": [{ "schema": "main", "table": "population", "column": "code", "key": "example-theme", "value": { "color": "blue" } }]
+}
+```
+
+`load` は、書き手のファイルから `_fdl` を作るツールのために、この形のオブジェクトをファイルか標準入力（`-`）から受け取ります。既定では、`_fdl` はこの行だけを持つようになります。`_fdl` のテーブルは、仕様が定めるすべての列で作り直します。`--merge` を付けると、渡した行を主キーで照合して、行が持つ列で変更または追加し、ほかの行は残します。テーブル・列・値が `_fdl` に書けないものだったときや、結果が確認に通らないときは、何も書かずに終了コード 1 で終わります。問題ごとに場所を示します（例: `dataset: issued cannot be written as DATE (at the dataset.issued)`）。
+
+`objects` は、作業メタデータのうち `_fdl` が説明できるテーブルとビューを JSON で表示します。`schema`・`name`・`kind`（`table` か `view`）と、テーブルなら `columns`（列と型）を持ちます。
+
+`_fdl` より前に書かれたバージョンからクローンした作業メタデータでは、`fdl meta` は最初に、そのバージョンが述べていたことを `fdl commit` と同じように `_fdl` に書きます。`get`・`list`・`dump`・`objects` はそれを表示するだけで残しません。`set`・`unset`・`load` はそれを残すので、消したキーはコミットでも消えたままです。
 
 ## fdl push
 

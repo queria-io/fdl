@@ -6,7 +6,7 @@ or ``schema.table.column``. A key is a column of the `_fdl` table for that name
 (``title``, ``primary_key``, ``asset``, ...), or, with a ``-`` in it, the key of
 a row of `_fdl.attributes` (``example-theme``). Every function takes a DuckDB
 connection with the working metadata attached as ``lake``; the caller begins
-and ends the transaction.
+and ends the transaction. The rows are written with `fdl_schema.upsert`.
 """
 
 from __future__ import annotations
@@ -15,7 +15,7 @@ import json
 from dataclasses import dataclass
 from typing import Any
 
-from .fdl_schema import KEYS, SCHEMA, TYPES, SchemaError, _q, check, create_sql, objects
+from .fdl_schema import KEYS, SCHEMA, TYPES, SchemaError, _q, check, delete, objects, upsert
 
 #: The tables a name stands for, by how many parts it has.
 _BY_PARTS = {1: "schemas", 2: "tables", 3: "columns"}
@@ -112,110 +112,34 @@ def get(con, at: Target, key: str) -> Any:
     raise KeyError(key)
 
 
-def _where(where: dict[str, str]) -> tuple[str, list[str]]:
-    if not where:
-        return "", []
-    return " WHERE " + " AND ".join(f"{_q(c)} = ?" for c in where), list(where.values())
-
-
-def _value(kind: str, values: list[str]) -> tuple[str, Any]:
-    """The SQL expression and parameter for ``values`` given to a column of type ``kind``."""
+def _parse(kind: str, values: list[str]) -> Any:
+    """The value ``values`` give a column of type ``kind``, as `fdl_schema.upsert` takes it."""
     upper = kind.upper()
     if upper.endswith("[]") and "STRUCT" not in upper:
         if not values:
             raise MetaError("give one value or more")
-        return f"CAST(? AS {kind})", list(values)
+        return list(values)
     if len(values) != 1:
         raise MetaError(f"give one value ({kind})")
     value = values[0]
     if upper == "JSON" or "STRUCT" in upper:
         try:
-            json.loads(value)
+            return json.loads(value)
         except ValueError:
             if upper != "JSON":
                 raise MetaError(f"give the value as JSON ({kind})") from None
-            value = json.dumps(value, ensure_ascii=False)
-        if upper == "JSON":
-            return "CAST(? AS JSON)", value
-        # A key the value leaves out is NULL, as from_json leaves it.
-        return f"CAST(from_json(?, {_quote(json.dumps(structure(kind)))}) AS {kind})", value
-    return f"CAST(? AS {kind})", value
-
-
-def _quote(text: str) -> str:
-    return "'" + text.replace("'", "''") + "'"
-
-
-def structure(kind: str) -> Any:
-    """A DuckDB type as the structure `from_json` takes: a STRUCT as an object, a list as a one-item list."""
-    text = kind.strip()
-    if text.endswith("[]"):
-        return [structure(text[:-2])]
-    if not text.upper().startswith("STRUCT(") or not text.endswith(")"):
-        return text
-    fields: dict[str, Any] = {}
-    for part in _split(text[len("STRUCT(") : -1]):
-        part = part.strip()
-        if part.startswith('"'):
-            end = part.index('"', 1)
-            while part[end + 1 : end + 2] == '"':
-                end = part.index('"', end + 2)
-            name, rest = part[1:end].replace('""', '"'), part[end + 1 :]
-        else:
-            name, _, rest = part.partition(" ")
-        fields[name] = structure(rest)
-    return fields
-
-
-def _split(text: str) -> list[str]:
-    """``text`` split at the commas outside parentheses and quotes."""
-    parts, depth, quoted, start = [], 0, False, 0
-    for at, char in enumerate(text):
-        if char == '"':
-            quoted = not quoted
-        elif not quoted and char == "(":
-            depth += 1
-        elif not quoted and char == ")":
-            depth -= 1
-        elif not quoted and char == "," and depth == 0:
-            parts.append(text[start:at])
-            start = at + 1
-    return [*parts, text[start:]]
+    return value
 
 
 def set_value(con, at: Target, key: str, values: list[str]) -> None:
     """Set ``key`` of ``at`` to ``values`` (one, or several for a list), making the
     schema, table, column or row it needs. Raises `SchemaError` when that makes
     `_fdl` fail a check it passed (a name that is not there, a primary key on a view)."""
-    import duckdb
-
     to = field(at, key)
     before = set(check(con))
-    found = objects(con)
-    target_table = f"lake.{_q(SCHEMA)}.{_q(to.table)}"
-    held = found.tables.get((SCHEMA, to.table))
-    if not _has_fdl(con):
-        con.execute(f"CREATE SCHEMA lake.{_q(SCHEMA)}")
-    if held is None:
-        con.execute(create_sql(to.table, [to.column]))
-        held = {c: TYPES[to.table][c] for c in (*KEYS[to.table], to.column)}
-    elif to.column not in held:
-        con.execute(f"ALTER TABLE {target_table} ADD COLUMN {_q(to.column)} {TYPES[to.table][to.column]}")
-        held = {**held, to.column: TYPES[to.table][to.column]}
-    expression, parameter = _value(held[to.column], values)
-    where, keys = _where(to.where)
-    try:
-        if con.execute(f"SELECT count(*) FROM {target_table}{where}", keys).fetchone()[0]:
-            con.execute(f"UPDATE {target_table} SET {_q(to.column)} = {expression}{where}", [parameter, *keys])
-        else:
-            columns = [*to.where, to.column]
-            con.execute(
-                f"INSERT INTO {target_table} ({', '.join(map(_q, columns))}) "
-                f"VALUES ({', '.join(['?'] * len(to.where) + [expression])})",
-                [*to.where.values(), parameter],
-            )
-    except duckdb.ConversionException as exc:
-        raise MetaError(f"{key}: {exc}") from exc
+    held = objects(con).tables.get((SCHEMA, to.table)) or {}
+    kind = held.get(to.column) or TYPES[to.table][to.column]
+    upsert(con, to.table, {**to.where, to.column: _parse(kind, values)})
     problems = [p for p in check(con) if p not in before]
     if problems:
         raise SchemaError(problems)
@@ -229,24 +153,11 @@ def unset(con, at: Target, key: str) -> bool:
     except KeyError:
         return False
     to = field(at, key)
-    target_table = f"lake.{_q(SCHEMA)}.{_q(to.table)}"
-    where, keys = _where(to.where)
     if to.table == "attributes":
-        con.execute(f"DELETE FROM {target_table}{where}", keys)
-        return True
-    con.execute(f"UPDATE {target_table} SET {_q(to.column)} = NULL{where}", keys)
-    rest = [c for c in objects(con).tables[(SCHEMA, to.table)] if c not in KEYS[to.table]]
-    empty = " AND ".join(f"{_q(c)} IS NULL" for c in rest)
-    con.execute(f"DELETE FROM {target_table}{where}{' AND ' if where else ' WHERE '}{empty}", keys)
+        delete(con, "attributes", to.where)
+    else:
+        upsert(con, to.table, {**to.where, to.column: None})
     return True
-
-
-def _has_fdl(con) -> bool:
-    return bool(
-        con.execute(
-            "SELECT count(*) FROM duckdb_schemas() WHERE database_name = 'lake' AND schema_name = ?", [SCHEMA]
-        ).fetchone()[0]
-    )
 
 
 def show(value: Any) -> str:
