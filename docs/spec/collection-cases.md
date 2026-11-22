@@ -3,7 +3,7 @@ title: Collection cases
 description: Test cases for deleting shared objects, which every implementation runs and agrees on.
 ---
 
-[`cases/collection.json`](https://github.com/queria-io/fdl/blob/main/cases/collection.json) holds repositories and, for each, the shared objects a process that deletes them ([Data files](/spec/data-files#when-a-shared-object-may-be-deleted)) deletes. An implementation that deletes shared objects runs every case and deletes exactly those. Stopping with an error counts as deleting nothing, so it meets a case only when that case deletes nothing.
+[`cases/collection.json`](https://github.com/queria-io/fdl/blob/main/cases/collection.json) holds datasets and, for each, the shared objects a process that deletes them ([Data files](/spec/data-files#when-a-shared-object-may-be-deleted)) deletes. An implementation that deletes shared objects runs every case and deletes exactly those. Stopping with an error counts as deleting nothing, so it meets a case only when that case deletes nothing.
 
 ```json
 {
@@ -11,8 +11,8 @@ description: Test cases for deleting shared objects, which every implementation 
   "grace_seconds": 86400,
   "cases": [
     {
-      "name": "keeps every data file named, not only those at the snapshot",
-      "files": { "fdl.json": {}, "versions/<ID>/version.json": {}, "versions/<ID>/files.json": {} },
+      "name": "keeps the data files a live version's tables.json lists",
+      "files": { "fdl.json": {}, "versions/<ID>/version.json": {}, "versions/<ID>/tables.json": {} },
       "objects": { "tables/main/t/ducklake-a.parquet": "2026-11-01T00:00:00Z" },
       "deleted": ["tables/main/t/ducklake-c.parquet"]
     }
@@ -23,9 +23,8 @@ description: Test cases for deleting shared objects, which every implementation 
 | Key | Holds |
 | --- | --- |
 | `now`, `grace_seconds` | The time the process runs, and the grace period |
-| `files` | The repository's files other than shared objects, by key. Each value is the file's JSON |
-| `metadata` | Optional. Metadata files a case needs read, by key: for each table (`schema.name`), its `columns` (name to DuckDB type) and its `rows`. Before running the case, an implementation writes them as DuckLake metadata at that key, with the data files it writes left out of the case |
-| `objects` | The objects under the data directory, `assets/` and `objects/`, and files elsewhere a process must leave alone, by key, with the time each was placed. Their content does not matter |
+| `files` | The dataset's files other than shared objects, by key. Each value is the file's JSON |
+| `objects` | The objects under the data directory and `assets/`, and files elsewhere a process must leave alone, by key, with the time each was placed. Their content does not matter |
 | `deleted` | The keys deleted |
 
 A change to what may be deleted comes with a case here, in the same change as this specification.

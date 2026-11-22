@@ -25,7 +25,7 @@ const rows = await readWhere(await openParquet(store, file), "town_code", "13101
 It follows [Reading](/spec/reading) up to the metadata and then reads `files.json` in its place:
 
 - A version without `files.json` cannot be read. Writers before fdl-cli 0.16 did not make one
-- A table whose files have `deletes`, or whose `renamed_columns` is `true`, is refused (see [files.json](/spec/versions#filesjson))
+- A table whose files have `deletes`, or whose `renamed_columns` is `true`, is refused (see [tables.json](/spec/versions#tablesjson))
 - A version with `expired.json` is refused
 
 Tables written once and replaced whole by each version, as `CREATE OR REPLACE TABLE` does, have neither deletes nor renamed columns.

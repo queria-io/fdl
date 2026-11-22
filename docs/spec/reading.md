@@ -28,9 +28,21 @@ ATTACH 'ducklake:https://example.org/lake/versions/019a2f10-…/metadata.db' AS 
 );
 ```
 
-- A reader must not read an earlier version by `AT (VERSION => n)` or `ducklake_snapshots()` in the metadata of a later version. A metadata file holds only its own snapshot ([The frozen metadata](/spec/versions#the-frozen-metadata)). Versions written by fdl-cli 0.31 and earlier also hold earlier snapshots, but a reader must not rely on them
+- A reader must not read an earlier version by `AT (VERSION => n)` or `ducklake_snapshots()` in the metadata of a later version. A metadata file holds only its own snapshot ([The frozen metadata](/spec/versions#the-frozen-metadata)).
 - To compare two versions, a reader attaches both metadata files under different names
 - A version past retention or withdrawn has no metadata to open (step 3)
+
+## Views that read other datasets
+
+A view's SQL may read tables of other datasets, under the names `dependencies` of [tables.json](/spec/versions#tablesjson) gives. Before it reads such a view, a reader attaches each entry under its name, by the steps above: the version `version` names, or the version `main` holds when it has none.
+
+```sql
+ATTACH 'ducklake:https://example.org/census/versions/019a2f10-…/metadata.db' AS census (
+  DATA_PATH 'https://example.org/census/tables/', OVERRIDE_DATA_PATH true, READ_ONLY
+);
+```
+
+A reader that does not read the view need not attach them.
 
 ## Signatures
 
@@ -43,22 +55,22 @@ ssh-keygen -Y verify -f allowed_signers -I alice@example.org -n fdl \
 
 - Signing is optional. A reader that does not check signatures reads a signed version as any other
 - A reader that checks verifies the signature against keys it trusts, gets the metadata and checks its sha256 against `metadata.sha256`
-- Keys come from the origin, not from the repository being read. `signers` in `fdl.json` only says which keys to expect
+- Keys come from the origin, not from the dataset being read. `signers` in `fdl.json` only says which keys to expect
 
 ## Data path
 
-The metadata's `data_path` is the absolute URL of the data folder where the writer published. A reader must pass `DATA_PATH '<root><data_dir>'` and `OVERRIDE_DATA_PATH true`, where `<root>` is wherever it reads the repository from. The statement is then the same at the origin and at a mirror, and a repository copied to another host is read without changing its metadata files.
+The metadata's `data_path` is the absolute URL of the data folder where the writer published. A reader must pass `DATA_PATH '<root><data_dir>'` and `OVERRIDE_DATA_PATH true`, where `<root>` is wherever it reads the dataset from. The statement is then the same at the origin and at a mirror, and a dataset copied to another host is read without changing its metadata files.
 
 ## Checking the metadata
 
-A metadata file is written by whoever can write the repository, and DuckDB reads every file it names with the reader's credentials. Before a reader attaches a metadata file with credentials that reach more than the repository, it should check that:
+A metadata file is written by whoever can write the dataset, and DuckDB reads every file it names with the reader's credentials. Before a reader attaches a metadata file with credentials that reach more than the dataset, it should check that:
 
 - the metadata's sha256 is `metadata.sha256` in `version.json`
 - every data file it names is recorded relative to the data path, with no empty, `.` or `..` segment
 
 A metadata file that names a file by an absolute path, or outside `data_dir`, makes the reader fetch whatever it points at.
 
-Over HTTP, a reader sends its token only to the origin of the repository, and only over `https` unless the host is the reader's own machine. A redirect to another origin goes without the token.
+Over HTTP, a reader sends its token only to the origin of the dataset, and only over `https` unless the host is the reader's own machine. A redirect to another origin goes without the token.
 
 ## Caching
 

@@ -15,13 +15,12 @@ FDL 0.1 で書いたリポジトリは、この先のリリースの `fdl` で�
 
 - `fdl.json`・`HEAD`・`refs/`・`refs.json`
 - `version.json` とその必須の項目
-- 固めたメタデータ（`metadata.path` の名前。`metadata.db`、fdl-cli 0.26 以前が書いたバージョンでは `ducklake.duckdb`）
-- メタデータの中の `_fdl` スキーマのテーブルと列
-- `_fdl` より前に書かれたバージョンの、テーブルとビューの `fdl.` の tag（`fdl.primary_key`・`fdl.assets`・`fdl.catalogs`・`fdl.profile`）と、tag より前に書かれたバージョンの `dataset.json`（`name`・`title`・`tables` と、各テーブルの `fields`）と `tree.json`
+- 固めたメタデータ（`metadata.path` の名前。`metadata.db`）
+- `tables.json` とその宣言（`primary_key`・`assets`・`profile`・`dependencies`）
 - `expired.json`
-- データファイル・`assets/<sha256>`・`objects/<sha256>`
+- データファイルと `assets/<sha256>`
 
-バージョンの任意のファイル `files.json`・`profiles/` は、メタデータとデータから作るもので、読み手はこれらが無くても読めます。この先のリリースでキーが増えることがあります。読み手は、どのファイルでも知らないキーを無視します。
+バージョンの任意のファイル `profiles/` は、メタデータとデータから作るもので、読み手はこれらが無くても読めます。この先のリリースでキーが増えることがあります。読み手は、どのファイルでも知らないキーを無視します。
 
 ## fdl-cli
 
