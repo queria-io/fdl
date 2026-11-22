@@ -33,7 +33,7 @@ DuckLake が記録する構造のほかに FDL がデータセットについて
 | `title` | VARCHAR | タイトル |
 | `description` | VARCHAR | 説明（Markdown） |
 | `language` | VARCHAR | 言葉の言語。BCP 47 のタグ（`ja`、`en`） |
-| `keywords` | VARCHAR[] | キーワード |
+| `topics` | VARCHAR[] | トピック。分類と検索に使う語で、GitHub のリポジトリのトピックに当たる |
 | `homepage` | VARCHAR | 提供元のデータのページ |
 | `issued` | DATE | データセットを最初に公開した日 |
 | `update_frequency` | VARCHAR | 更新の頻度（`daily`、`monthly`、`irregular` など） |
@@ -43,7 +43,7 @@ DuckLake が記録する構造のほかに FDL がデータセットについて
 | `temporal_coverage` | STRUCT(start VARCHAR, "end" VARCHAR) | データが対象とする期間 |
 | `spatial_coverage` | VARCHAR[] | 対象とする地域のコード（`JP`） |
 
-名前は [DCAT](https://www.w3.org/TR/vocab-dcat-3/) に合わせています。
+名前は [DCAT](https://www.w3.org/TR/vocab-dcat-3/) に合わせています。`topics` だけは GitHub に合わせた名前で、DCAT では `dcat:keyword` に当たります。
 
 ## _fdl.schemas
 
@@ -65,7 +65,7 @@ DuckLake が記録する構造のほかに FDL がデータセットについて
 | `name` | VARCHAR | テーブル名かビュー名 |
 | `title` | VARCHAR | タイトル |
 | `description` | VARCHAR | 説明（Markdown） |
-| `keywords` | VARCHAR[] | キーワード |
+| `topics` | VARCHAR[] | トピック。分類と検索に使う語で、GitHub のリポジトリのトピックに当たる |
 | `licenses`・`sources`・`temporal_coverage`・`spatial_coverage` | `_fdl.dataset` と同じ | データセットと違うときに書く |
 | `primary_key` | VARCHAR[] | 行を識別する列。テーブルだけ |
 | `profile` | BOOLEAN | `false`: profile を作らない。NULL は `true` |

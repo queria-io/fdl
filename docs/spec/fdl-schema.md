@@ -33,7 +33,7 @@ What the dataset as a whole means. At most one row, and no primary key: when bot
 | `title` | VARCHAR | Title |
 | `description` | VARCHAR | Description, in Markdown |
 | `language` | VARCHAR | Language of the words, a BCP 47 tag (`ja`, `en`) |
-| `keywords` | VARCHAR[] | Keywords |
+| `topics` | VARCHAR[] | Topics: words to classify and find it by, as a GitHub repository's topics |
 | `homepage` | VARCHAR | The publisher's page for the data |
 | `issued` | DATE | When the dataset was first published |
 | `update_frequency` | VARCHAR | How often it is updated (`daily`, `monthly`, `irregular`, ...) |
@@ -43,7 +43,7 @@ What the dataset as a whole means. At most one row, and no primary key: when bot
 | `temporal_coverage` | STRUCT(start VARCHAR, "end" VARCHAR) | The period the data covers |
 | `spatial_coverage` | VARCHAR[] | The places it covers, as codes (`JP`) |
 
-The names follow [DCAT](https://www.w3.org/TR/vocab-dcat-3/).
+The names follow [DCAT](https://www.w3.org/TR/vocab-dcat-3/), except `topics`, which follows GitHub and is `dcat:keyword` in DCAT.
 
 ## _fdl.schemas
 
@@ -65,7 +65,7 @@ One row per table or view. Primary key: `schema`, `name`.
 | `name` | VARCHAR | Table or view name |
 | `title` | VARCHAR | Title |
 | `description` | VARCHAR | Description, in Markdown |
-| `keywords` | VARCHAR[] | Keywords |
+| `topics` | VARCHAR[] | Topics: words to classify and find it by, as a GitHub repository's topics |
 | `licenses`, `sources`, `temporal_coverage`, `spatial_coverage` | as in `_fdl.dataset` | When they differ from the dataset's |
 | `primary_key` | VARCHAR[] | The columns that identify a row. Tables only |
 | `profile` | BOOLEAN | `false`: no profile is made for it. NULL is `true` |
