@@ -5,7 +5,7 @@ description: The tables of the _fdl schema in the metadata - what a dataset, its
 
 What FDL needs to know about a dataset beyond the structure DuckLake records, and what the dataset, its tables and its columns mean to people, is kept in the metadata as ordinary DuckLake tables in the schema `_fdl`. It plays the part of `.gitattributes` in Git: a file inside the repository, versioned with everything else, that says how the tools handle the rest.
 
-- `_fdl` is written like any other schema, with SQL, by whatever tool the writer uses. FDL does not write it
+- `_fdl` is written like any other schema, with SQL, by whatever tool the writer uses, fdl-cli among them. A change to it is in the working metadata until the next commit, as a change to any table is
 - A change to its rows makes a version, and its tables are merged like any table ([Writing](/spec/writing)). Each table's primary key is fixed by this page
 - Every table of `_fdl`, and every column outside a table's primary key, is optional. A dataset without `_fdl` has no primary keys and no assets, and nothing described
 - A reader ignores tables of `_fdl` and columns of its tables that this page does not define
