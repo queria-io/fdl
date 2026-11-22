@@ -87,7 +87,17 @@ When both sides changed a table differently, the writer merges it cell by cell. 
 - In a row both sides kept, a cell only one side changed takes that side's value, and a cell both changed to different values is a conflict. Two `NULL`s are the same value
 - In a column only one side added, the rows only the other side added hold the column's default, or `NULL`. When the column is `NOT NULL` and has no default, the table is a conflict
 
-A table where a key holds `NULL` or appears more than once, in any of the three versions, is a conflict. A table without a primary key that both sides changed differently is a conflict, even when they changed different rows. A writer may warn when a table has no primary key. A key made up for the merge (a row number, say) is not a primary key: it does not say which rows are the same row.
+A table where a key holds `NULL` or appears more than once, in any of the three versions, is a conflict. A key made up for the merge (a row number, say) is not a primary key: it does not say which rows are the same row.
+
+### Rows merged without a primary key
+
+When both sides changed a table without `primary_key` differently, the writer merges its rows as a multiset. A row is the values of all its columns, and the writer counts how many times each row appears in the base, ours and theirs.
+
+- Each declaration is merged as a value, as for a view. The columns and their types must be the same in ours and theirs; a table whose columns differ between the two is a conflict
+- For each row, when only one side's count differs from the base, the merge version holds that side's count. When both differ from the base by the same count, it holds that count. When both differ and the counts are not the same, the row is a conflict
+- A changed value is a row deleted and a row added. When both sides change the same row differently, both delete the old row and each adds its own, so the merge version holds both new rows
+
+A writer may warn when it merges a table without a primary key this way.
 
 ### Conflicts
 
