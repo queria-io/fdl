@@ -13,8 +13,8 @@ FDL is a storage layout for keeping versions of [DuckLake](https://ducklake.sele
 
 ## What it decides
 
-- the layout of a repository, and the name and content of each file ([Layout](/spec/layout))
-- the fields of a version record, the frozen metadata, and the tags FDL reads in it ([Versions](/spec/versions))
+- the layout of a dataset, and the name and content of each file ([Layout](/spec/layout))
+- the fields of a version record, the frozen metadata, and the declarations FDL reads beside it ([Versions](/spec/versions))
 - the content of refs and the rules for moving them ([Refs](/spec/refs))
 - when shared objects (data files and assets) may be deleted, and how a version is taken out of retention or withdrawn ([Data files](/spec/data-files))
 - how a reader finds and opens a version, and checks who made it ([Reading](/spec/reading))
@@ -23,10 +23,10 @@ FDL is a storage layout for keeping versions of [DuckLake](https://ducklake.sele
 
 ## What it leaves to hosts
 
-- who can read a repository, and who may move `main`. Everything in one repository is readable by the same people
+- who can read a dataset, and who may move `main`. Everything in one dataset is readable by the same people
 - authentication, URL shapes and retention defaults
 - the content of the DuckLake metadata itself, which is DuckLake's specification
-- how to record what a dataset, a table or a column means to people: titles, descriptions, licenses, sources and guides. FDL defines no field or tag for them
+- how to record what a dataset, a table or a column means to people: titles, descriptions, licenses, sources and guides. FDL defines no field or declaration for them
 
 The format names no host and no service. Fields a host adds go where the specification leaves room for them.
 
@@ -34,17 +34,17 @@ The format names no host and no service. Fields a host adds go where the specifi
 
 | Term | Meaning |
 | --- | --- |
-| store | Where a repository is kept: a bucket, or a folder |
-| repository | Everything under one prefix of a store (the root) |
+| store | Where a dataset is kept: a bucket, or a folder |
+| dataset | Everything under one prefix of a store (the root). It corresponds to a Git repository |
 | root | The prefix, ending in `/`. Paths in this specification are relative to it |
 | metadata | DuckLake's record of the tables, their snapshots and their data files, kept in a database (DuckLake calls it the catalog database) |
 | version | One frozen metadata file and its record. Never changed once written |
 | ref | A file that holds a version ID. Branches, tags and requests are refs |
-| working metadata | A writer's own DuckLake metadata, in SQLite. Never in the repository |
+| working metadata | A writer's own DuckLake metadata, in SQLite. Never in the dataset |
 | data file | A Parquet file DuckLake writes, shared between versions |
-| host | A service that keeps repositories and controls access to them |
+| host | A service that keeps datasets and controls access to them |
 | asset | A file the rows of a table point at by its sha256, such as a PDF or an image collected as data |
-| tag | A key and value DuckLake keeps for a table or a view in the metadata. FDL reads those whose key starts with `fdl.` |
+| declaration | What FDL needs to know about a table, a view or the dataset beyond what DuckLake records: a primary key, the columns that hold assets, whether to profile it, and the other datasets views read. Kept in a version's `tables.json` |
 | grace period | How long a shared object no version reaches is kept before it may be deleted. 7 days unless a host says otherwise |
 
 A DuckLake snapshot is to a version what a small commit on a work branch is to the squash commit that lands on `main`. Snapshots are made on every write to the working metadata. A frozen metadata keeps only its last snapshot, so the unit a reader can go back to is the version, read from its own metadata.

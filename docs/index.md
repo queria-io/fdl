@@ -51,8 +51,6 @@ FDL keeps a metadata file's versions the way Git keeps a project's commits. If y
 
 A version has one parent, or two when it merges another branch. [From write to read](/internals/from-write-to-read) follows the files through a commit, step by step.
 
-FDL is in beta. [Stability](/stability) says what stays the same across releases.
-
 ## How the documentation is organized
 
 - [Getting started](/getting-started) makes a repository, writes a first version and reads it back
@@ -61,7 +59,6 @@ FDL is in beta. [Stability](/stability) says what stays the same across releases
 - [Guides](/guides/stores) cover stores, serving over HTTP, mirrors and building a host
 - The [specification](/spec) is the normative description of the format. Tools are written against it
 - The [reference](/reference/cli) lists the commands and the Python API
-- [Stability](/stability) says what a repository written today can rely on
 
 The `fdl` command and the `fdl` Python package are the reference implementation. They are published on PyPI as `fdl-cli` under the MIT license.
 

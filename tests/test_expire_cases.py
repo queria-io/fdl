@@ -1,4 +1,4 @@
-"""Run the retention cases every implementation of the spec agrees on (cases/retention.json)."""
+"""Run the expire cases every implementation of the spec agrees on (cases/expire.json)."""
 
 from __future__ import annotations
 
@@ -11,7 +11,7 @@ import pytest
 from fdl import layout, repo
 from fdl.stores import LocalStore
 
-CASES = json.loads((Path(__file__).parent.parent / "cases" / "retention.json").read_text())
+CASES = json.loads((Path(__file__).parent.parent / "cases" / "expire.json").read_text())
 
 
 def _time(text: str) -> dt.datetime:

@@ -1,6 +1,6 @@
 ---
 title: Layout
-description: The files of a repository, their paths, and the content of fdl.json.
+description: The files of a dataset, their paths, and the content of fdl.json.
 ---
 
 ## Paths
@@ -9,7 +9,7 @@ Paths are relative to the root, lower case, and separated by `/`. The root is wh
 
 ```
 <root>/
-  fdl.json                         repository settings
+  fdl.json                         dataset settings
   HEAD                             the default ref: "ref: refs/heads/main"
   refs.json                        every ref and the version it holds, for readers that cannot list
   refs/
@@ -20,14 +20,13 @@ Paths are relative to the root, lower case, and separated by `/`. The root is wh
     version.json                   the version record, written last
     version.json.sig               a signature of the record (optional)
     metadata.db                    the frozen metadata
-    files.json                     each table's data files, indexed from the metadata (optional)
+    tables.json                    the tables and views, their data files and columns, and FDL's declarations
     profiles/<schema>/<table>.json a summary of each table, measured from the data (optional)
     metadata/<format>.db           the metadata in another DuckLake format (optional)
     expired.json                   the past-retention mark (only once expired)
     <others>                       files a host adds
   <data_dir><schema>/<table>/ducklake-<uuid>.parquet   data files (shared, immutable)
   assets/<sha256>                  files the rows of a table point at (shared, immutable)
-  objects/<sha256>                 files an earlier version's tree.json lists (shared, immutable)
 ```
 
 `HEAD` and everything under `refs/` have no extension, as in Git. Their content is UTF-8 text.
@@ -36,9 +35,7 @@ The root must not hold a DuckLake metadata file outside `versions/`, and must ne
 
 Files with other names may sit at the root. Readers must ignore them.
 
-Versions written before [tags](/spec/versions#tags) held what FDL needs also have `dataset.json` and `tree.json`, and the files under `objects/` belong to them ([Files of earlier versions](/spec/versions#files-of-earlier-versions)). A new version has neither, and a repository started now has no `objects/`.
-
-A repository's root must not be under another repository's root. Deleting the outer repository's shared objects would take the inner one's files for objects no version reaches.
+A dataset's root must not be under another dataset's root. Deleting the outer dataset's shared objects would take the inner one's files for objects no version reaches.
 
 ## fdl.json
 
@@ -58,31 +55,31 @@ A repository's root must not be under another repository's root. Deleting the ou
 | Field | Required | Meaning |
 | --- | --- | --- |
 | `fdl` | must | The version of this specification. A reader must not read a major version it does not know |
-| `id` | should | A UUID written when the repository is started and never changed |
+| `id` | should | A UUID written when the dataset is started and never changed |
 | `data_dir` | may | Where data files are, relative to the root, ending in `/`. Default `tables/` |
 | `metadata_formats` | may | The DuckLake formats published for new versions, and until when |
 | `signers` | may | Public keys that sign versions, as lines of an SSH `allowed_signers` file |
 
-`fdl.json` is created with `If-None-Match: *`, so starting a repository twice leaves the first one's settings in place.
+`fdl.json` is created with `If-None-Match: *`, so starting a dataset twice leaves the first one's settings in place.
 
 ### id
 
-The `id` lets a copy of the repository tell that it holds the same one. Mirrors keep it as it is. A host may write its own ID for the dataset here when it starts the repository. A repository without an `id` is still read.
+The `id` lets a copy of the dataset tell that it holds the same one. Mirrors keep it as it is. A host may write its own ID here when it starts the dataset. A dataset without an `id` is still read.
 
 ### data_dir
 
-The default is `tables/`. A repository whose data files already sit under another prefix declares that prefix here instead of moving them. Every data file a metadata file names must be under `data_dir`.
+The default is `tables/`. A dataset whose data files already sit under another prefix declares that prefix here instead of moving them. Every data file a metadata file names must be under `data_dir`.
 
 A `data_dir` is a folder under the root, written as one or more segments, each followed by `/`:
 
 - Each segment is made of lower-case ASCII letters, digits, `_`, `-` and `.`, and is not dots alone
 - The first segment is not `versions`, `refs`, `assets` or `objects`
 
-Readers and writers use the value as written. A repository whose `data_dir` breaks these rules, or is not a string, is refused, never corrected (by adding a missing `/`, say): two implementations that corrected it differently would read and write different files. A host may reserve other top-level folders for its own files and refuse a `data_dir` under them. [`cases/data-dir.json`](https://github.com/queria-io/fdl/blob/main/cases/data-dir.json) lists values and what each reads as; every implementation that reads `fdl.json` runs them.
+Readers and writers use the value as written. A dataset whose `data_dir` breaks these rules, or is not a string, is refused, never corrected (by adding a missing `/`, say): two implementations that corrected it differently would read and write different files. A host may reserve other top-level folders for its own files and refuse a `data_dir` under them. [`cases/data-dir.json`](https://github.com/queria-io/fdl/blob/main/cases/data-dir.json) lists values and what each reads as; every implementation that reads `fdl.json` runs them.
 
 #### Changing data_dir
 
-A host may move the data files of a repository that already has versions. Metadata files name data files relative to `data_dir`, so the versions are not rewritten. The host does it in this order:
+A host may move the data files of a dataset that already has versions. Metadata files name data files relative to `data_dir`, so the versions are not rewritten. The host does it in this order:
 
 1. Copy every data file a live version reaches to the same path under the new `data_dir`
 2. Check that each of them is there
@@ -94,7 +91,7 @@ A working metadata file checked out before step 3 writes its new data files to t
 
 ### signers
 
-The keys the repository's writers sign versions with (see [Reading](/spec/reading#signatures)). A reader must not trust a key because it is listed here: a mirror can change `fdl.json` too. The list tells a reader which keys to expect, and the reader gets the keys it trusts from the origin by other means.
+The keys the dataset's writers sign versions with (see [Reading](/spec/reading#signatures)). A reader must not trust a key because it is listed here: a mirror can change `fdl.json` too. The list tells a reader which keys to expect, and the reader gets the keys it trusts from the origin by other means.
 
 How long versions are kept is not declared here. It is the host's decision.
 
