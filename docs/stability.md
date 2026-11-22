@@ -16,12 +16,12 @@ These keep their paths and their meaning:
 - `fdl.json`, `HEAD`, `refs/` and `refs.json`
 - `version.json` and its required fields
 - the frozen metadata, at the name `metadata.path` gives (`metadata.db`, or `ducklake.duckdb` in versions written by fdl-cli 0.26 and earlier)
-- the `fdl.` tags of tables and views in the metadata (`fdl.primary_key`, `fdl.assets`, `fdl.catalogs`, `fdl.profile`)
-- in versions written before those tags, `dataset.json` (`name`, `title`, `tables` and each table's `fields`) and `tree.json`
+- `tables.json` and its declarations (`primary_key`, `assets`, `profile`, `datasets`)
+- in versions written before `tables.json`, the `fdl.` tags of tables and views in the metadata, and in the earliest, `dataset.json` (`name`, `title`, `tables` and each table's `fields`) and `tree.json`
 - `expired.json`
 - data files, `assets/<sha256>` and `objects/<sha256>`
 
-The optional files of a version, `files.json` and `profiles/`, are made from the metadata and the data, and a reader works without them. They may gain keys in later releases. A reader ignores keys it does not know, in every file.
+The optional files of a version, `profiles/` and the `files.json` of earlier versions, are made from the metadata and the data, and a reader works without them. They may gain keys in later releases. A reader ignores keys it does not know, in every file.
 
 ## fdl-cli
 

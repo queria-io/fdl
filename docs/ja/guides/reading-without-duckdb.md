@@ -25,7 +25,7 @@ const rows = await readWhere(await openParquet(store, file), "town_code", "13101
 [読み方](/ja/spec/reading)の手順にメタデータの手前まで従い、メタデータの代わりに `files.json` を読みます。
 
 - `files.json` の無いバージョンは読めません。fdl-cli 0.16 より前の書き手は作りません
-- ファイルに `deletes` がある表と、`renamed_columns` が `true` の表は断ります（[files.json](/ja/spec/versions#filesjson) を参照）
+- ファイルに `deletes` がある表と、`renamed_columns` が `true` の表は断ります（[tables.json](/ja/spec/versions#tablesjson) を参照）
 - `expired.json` のあるバージョンは断ります
 
 `CREATE OR REPLACE TABLE` のように、バージョンごとに表をまるごと作り直す書き方なら、削除も列の改名も起きません。

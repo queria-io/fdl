@@ -10,8 +10,8 @@ Data files, assets, and the tree files of earlier versions are shared objects: w
 | Object | Path | A version reaches it when |
 | --- | --- | --- |
 | data file | `<data_dir><schema>/<table>/ducklake-<uuid>.parquet` | its metadata names it |
-| asset | `assets/<sha256>` | a column its `fdl.assets` tag names holds the sha256 in a row |
-| tree file | `objects/<sha256>` | its `tree.json` lists it. Only [earlier versions](/spec/versions#files-of-earlier-versions) have one |
+| asset | `assets/<sha256>` | a column its table declares in `assets` holds the sha256 in a row |
+| tree file | `objects/<sha256>` | its `tree.json` lists it. Only [earlier versions](/spec/versions#datasetjson-and-treejson) have one |
 
 - A writer may place shared objects before making a version. Until a version reaches them, readers do not see them
 - A writer that finds an object already there need not upload it again. It may still be deleted before the version is written, so a push whose version reaches a missing object is refused ([Writing](/spec/writing#when-a-push-is-refused))
@@ -23,7 +23,7 @@ Data files, assets, and the tree files of earlier versions are shared objects: w
 
 ### Assets and tree files
 
-- Named by the lower-case hex sha256 of the content, so the same content is stored once (see [Assets](/spec/versions#assets) and [Files of earlier versions](/spec/versions#files-of-earlier-versions))
+- Named by the lower-case hex sha256 of the content, so the same content is stored once (see [Assets](/spec/versions#assets) and [Earlier versions](/spec/versions#datasetjson-and-treejson))
 - The same content may be both an asset and a tree file. It is then stored twice, once in each folder, and each copy is reached on its own
 
 ## When a shared object may be deleted
@@ -35,9 +35,9 @@ Only when both hold:
 
 Only a file whose path has the form in the table above is a shared object: a data file named `ducklake-<name>.parquet` under the data directory, or `assets/` or `objects/` followed by 64 lower-case hex digits. A process that deletes shared objects must leave every other file alone.
 
-A version written by fdl-cli 0.31 or earlier keeps earlier snapshots in its metadata, and the metadata names data files at each of them, not only at `ducklake.snapshot_id`. For such a version, the files in `tables` of `files.json` are not all it reaches. A process that cannot open the metadata uses `named` of `files.json`. When a live version has no `files.json`, or one without `named`, the process opens its metadata or deletes no data files.
+A version's metadata holds one snapshot, so the data files and delete files in `tables` of its `tables.json` are all it reaches. A version written by fdl-cli 0.31 or earlier keeps earlier snapshots in its metadata, and the metadata names data files at each of them, not only at `ducklake.snapshot_id`. For such a version, the files in `tables` of `files.json` are not all it reaches ([Earlier versions](/spec/versions#filesjson-and-tags)). A process that cannot open the metadata uses `named` of `files.json`. When a live version has no `files.json`, or one without `named`, the process opens its metadata or deletes no data files.
 
-DuckLake's own cleanup (`ducklake_cleanup_old_files`, `ducklake_expire_snapshots`) sees only one metadata file, so it must not be used to delete from a repository. Deleting is for a process that sees the whole repository.
+DuckLake's own cleanup (`ducklake_cleanup_old_files`, `ducklake_expire_snapshots`) sees only one metadata file, so it must not be used to delete from a dataset. Deleting is for a process that sees the whole dataset.
 
 ## Files outside data_dir
 
@@ -47,10 +47,10 @@ A version reaches data files only under `data_dir` as `fdl.json` names it now. A
 
 A deleted shared object cannot be brought back, and every version that reaches it can no longer be read. A process that deletes shared objects follows these rules:
 
-1. Delete nothing it cannot account for. When it cannot tell what a live version reaches, because a `version.json`, `files.json`, or an earlier version's `dataset.json` or `tree.json` cannot be read or parsed, or `files.json` has no `named` and the metadata cannot be opened, it deletes none of that kind: no data file when it cannot tell which data files the version reaches, no asset when it cannot tell which assets, no tree file when it cannot tell which tree files. Stopping without deleting anything also meets this. An object kept too long only costs storage; an object deleted too early breaks a version
+1. Delete nothing it cannot account for. When it cannot tell what a live version reaches, because a `version.json` or `tables.json`, or an earlier version's `files.json`, `dataset.json` or `tree.json`, cannot be read or parsed, or an earlier version's `files.json` is missing or has no `named` and the metadata cannot be opened, it deletes none of that kind: no data file when it cannot tell which data files the version reaches, no asset when it cannot tell which assets, no tree file when it cannot tell which tree files. Stopping without deleting anything also meets this. An object kept too long only costs storage; an object deleted too early breaks a version
 2. Read the versions again right before deleting. A writer may make a version while the process decides. Objects a version it did not see when deciding reaches are kept
 3. Delete the objects it decided on, one key at a time. It never deletes by prefix or a whole directory
-4. Implementations of this page agree on the cases in [Collection cases](/spec/collection-cases): for each repository there, the objects to delete are the same
+4. Implementations of this page agree on the cases in [Collection cases](/spec/collection-cases): for each dataset there, the objects to delete are the same
 
 A process may move an object to a place readers never read from, such as a separate bucket, and delete it there after a set time, so that a mistake can be undone. A writer does not count an object there as present.
 
@@ -59,7 +59,7 @@ A process may move an object to a place readers never read from, such as a separ
 A version is taken out of retention in this order:
 
 1. Put `versions/<ID>/expired.json`
-2. Delete the version's metadata files, `metadata.db` and `metadata/`, and its `files.json`, and `dataset.json` and `tree.json` if it has them
+2. Delete the version's metadata files, `metadata.db` and `metadata/`, and its `tables.json`, and `files.json`, `dataset.json` and `tree.json` if it has them
 3. After the grace period, delete the shared objects that meet the conditions above
 
 ```json expired.json
@@ -82,7 +82,7 @@ How long to keep versions is the host's choice: the newest `keep` on each branch
 4. It was made at or after `since`
 5. It was made within the grace period. A writer puts a version before it moves a ref to it
 
-The others are taken out. A repository without `refs/heads/main` has nothing taken out. This also takes out versions on no branch's first-parent line once nothing above keeps them: the parents a merge brought in other than its first, the versions of a deleted branch, and the head of a request the host closed and deleted. A version counts as made at its `created_at`.
+The others are taken out. A dataset without `refs/heads/main` has nothing taken out. This also takes out versions on no branch's first-parent line once nothing above keeps them: the parents a merge brought in other than its first, the versions of a deleted branch, and the head of a request the host closed and deleted. A version counts as made at its `created_at`.
 
 Implementations of this choice agree on the cases in [Retention cases](/spec/retention-cases).
 
@@ -110,9 +110,9 @@ The shared objects go before the metadata files, so a withdrawal that stops half
 ```
 
 - `deleted` names the shared objects step 3 deleted: data files by their path under `data_dir`, assets and tree files by their sha256. Names only, so it holds none of the data. Every affected version of one withdrawal carries the same list. A withdrawal run again after stopping half way keeps the names already there, since objects it deleted the first time may no longer be found
-- A host refuses a push that places an object named in `deleted` of any version, and a process that copies versions between repositories copies none of them. Otherwise an old copy, such as a local clone, brings the data back
-- A copy of the repository, such as a mirror, applies the withdrawal by the names in `deleted`: every live version in it that reaches one of them is an affected version, including versions made only in the copy, and the named objects go even where no version reaches them
+- A host refuses a push that places an object named in `deleted` of any version, and a process that copies versions between datasets copies none of them. Otherwise an old copy, such as a local clone, brings the data back
+- A copy of the dataset, such as a mirror, applies the withdrawal by the names in `deleted`: every live version in it that reaches one of them is an affected version, including versions made only in the copy, and the named objects go even where no version reaches them
 
-- `version.json` stays, as with retention, so every repository holds its history back to the first version. If the record itself holds the data (in `author`, `message`, `annotations`, or `inputs` in versions written before it was dropped), it is rewritten without it before `expired.json` is put: the value in `author` or `message` is replaced with `withdrawn`, and the entries of `annotations` or `inputs` that hold it are dropped. `id`, `seq`, `parents` and the other fields stay as they were
+- `version.json` stays, as with retention, so every dataset holds its history back to the first version. If the record itself holds the data (in `author`, `message`, `annotations`, or `inputs` in versions written before it was dropped), it is rewritten without it before `expired.json` is put: the value in `author` or `message` is replaced with `withdrawn`, and the entries of `annotations` or `inputs` that hold it are dropped. `id`, `seq`, `parents` and the other fields stay as they were
 - `by` and `message` of `expired.json` stay readable after the withdrawal, so they must not hold the data either: say why in general terms, such as "personal data published by mistake"
 - Mirrors keep their own copies. A mirror that copies `expired.json` with `"reason": "withdrawn"` deletes the metadata files and the shared objects named in `deleted`. The origin cannot force this; the host tells the mirrors it knows of

@@ -3,7 +3,7 @@ title: Collection cases
 description: Test cases for deleting shared objects, which every implementation runs and agrees on.
 ---
 
-[`cases/collection.json`](https://github.com/queria-io/fdl/blob/main/cases/collection.json) holds repositories and, for each, the shared objects a process that deletes them ([Data files](/spec/data-files#when-a-shared-object-may-be-deleted)) deletes. An implementation that deletes shared objects runs every case and deletes exactly those. Stopping with an error counts as deleting nothing, so it meets a case only when that case deletes nothing.
+[`cases/collection.json`](https://github.com/queria-io/fdl/blob/main/cases/collection.json) holds datasets and, for each, the shared objects a process that deletes them ([Data files](/spec/data-files#when-a-shared-object-may-be-deleted)) deletes. An implementation that deletes shared objects runs every case and deletes exactly those. Stopping with an error counts as deleting nothing, so it meets a case only when that case deletes nothing.
 
 ```json
 {
@@ -23,7 +23,7 @@ description: Test cases for deleting shared objects, which every implementation 
 | Key | Holds |
 | --- | --- |
 | `now`, `grace_seconds` | The time the process runs, and the grace period |
-| `files` | The repository's files other than shared objects, by key. Each value is the file's JSON |
+| `files` | The dataset's files other than shared objects, by key. Each value is the file's JSON |
 | `objects` | The objects under the data directory, `assets/` and `objects/`, and files elsewhere a process must leave alone, by key, with the time each was placed. Their content does not matter |
 | `deleted` | The keys deleted |
 
