@@ -16,8 +16,8 @@ These keep their paths and their meaning:
 - `fdl.json`, `HEAD`, `refs/` and `refs.json`
 - `version.json` and its required fields
 - the frozen metadata, at the name `metadata.path` gives (`metadata.db`, or `ducklake.duckdb` in versions written by fdl-cli 0.26 and earlier)
-- the `fdl_` tables in the metadata and their columns, and `fdl_tables.json`
-- in versions written before the `fdl_` tables, the `fdl.` tags of tables and views (`fdl.primary_key`, `fdl.assets`, `fdl.catalogs`, `fdl.profile`), and in versions written before those tags, `dataset.json` (`name`, `title`, `tables` and each table's `fields`) and `tree.json`
+- the `fdl.` tags of tables and views in the metadata (`fdl.primary_key`, `fdl.assets`, `fdl.catalogs`, `fdl.profile`)
+- in versions written before those tags, `dataset.json` (`name`, `title`, `tables` and each table's `fields`) and `tree.json`
 - `expired.json`
 - data files, `assets/<sha256>` and `objects/<sha256>`
 

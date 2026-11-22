@@ -36,7 +36,7 @@ The root must not hold a DuckLake metadata file outside `versions/`, and must ne
 
 Files with other names may sit at the root. Readers must ignore them.
 
-Versions written before [tags](/spec/versions#tags-of-earlier-versions) and the [FDL tables](/spec/fdl-schema) held what FDL needs also have `dataset.json` and `tree.json`, and the files under `objects/` belong to them ([Files of earlier versions](/spec/versions#files-of-earlier-versions)). A new version has neither, and a repository started now has no `objects/`.
+Versions written before [tags](/spec/versions#tags) held what FDL needs also have `dataset.json` and `tree.json`, and the files under `objects/` belong to them ([Files of earlier versions](/spec/versions#files-of-earlier-versions)). A new version has neither, and a repository started now has no `objects/`.
 
 A repository's root must not be under another repository's root. Deleting the outer repository's shared objects would take the inner one's files for objects no version reaches.
 
