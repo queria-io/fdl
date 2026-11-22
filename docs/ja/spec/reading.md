@@ -28,13 +28,13 @@ ATTACH 'ducklake:https://example.org/lake/versions/019a2f10-…/metadata.db' AS 
 );
 ```
 
-- 読み手は、後のバージョンのメタデータで `AT (VERSION => n)` や `ducklake_snapshots()` を使って前のバージョンを読んではいけない。メタデータは自分のスナップショットだけを持つ（[固めたメタデータ](/ja/spec/versions#固めたメタデータ)）。fdl-cli 0.31 以前が書いたバージョンは前のスナップショットも持つが、読み手はそれに頼ってはいけない
+- 読み手は、後のバージョンのメタデータで `AT (VERSION => n)` や `ducklake_snapshots()` を使って前のバージョンを読んではいけない。メタデータは自分のスナップショットだけを持つ（[固めたメタデータ](/ja/spec/versions#固めたメタデータ)）
 - 2 つのバージョンを比べるときは、両方のメタデータを別の名前で ATTACH する
 - 保持期間を過ぎたバージョンや取り下げたバージョンには、開くメタデータが無い（手順 3）
 
 ## ほかのデータセットを読むビュー
 
-ビューの SQL は、[tables.json](/ja/spec/versions#tablesjson) の `datasets` が決める名前で、ほかのデータセットのテーブルを読むことがあります。そのビューを読む前に、読み手は `datasets` のそれぞれを上の手順でその名前で ATTACH します。`version` があればそのバージョンを、無ければ `main` が指すバージョンを ATTACH します。
+ビューの SQL は、[tables.json](/ja/spec/versions#tablesjson) の `dependencies` が決める名前で、ほかのデータセットのテーブルを読むことがあります。そのビューを読む前に、読み手は `dependencies` のそれぞれを上の手順でその名前で ATTACH します。`version` があればそのバージョンを、無ければ `main` が指すバージョンを ATTACH します。
 
 ```sql
 ATTACH 'ducklake:https://example.org/census/versions/019a2f10-…/metadata.db' AS census (

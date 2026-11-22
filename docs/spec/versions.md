@@ -72,9 +72,9 @@ A version is the files under `versions/<version ID>/`. They must not change once
 | `diff` | may | What changed since the first parent, or in the first version ([diff](#diff)) |
 | `annotations` | may | What the format does not interpret, keyed by the name of whoever reads it (a host, a tool), such as the source files a version was made from |
 
-A reader must ignore fields it does not know. Versions written by fdl-cli 0.31 and earlier carry `inputs`, the source files used; a reader may show it and need not. Earlier versions carry `files` in place of `tables`, or neither, and the earliest carry `dataset` and `tree` ([Earlier versions](#earlier-versions)). A reader reads such a version as that section says.
+A reader must ignore fields it does not know.
 
-The `path` of `metadata` and `tables`, and of `files`, `dataset` and `tree` in earlier versions, is a file name in the version's folder: it holds no `/` or `\` and is not `.` or `..`. A reader must refuse a record with any other.
+The `path` of `metadata` and `tables` is a file name in the version's folder: it holds no `/` or `\` and is not `.` or `..`. A reader must refuse a record with any other.
 
 A version has one parent, or two for a merge: the version of the branch it was made on, then the version merged into it (see [Merging](/spec/writing#merging)). The first version has none. A reader must accept a list of any length, follow the first entry for the history of a branch, and follow every entry to find whether one version descends from another.
 
@@ -92,7 +92,7 @@ The description and SQL of the snapshot frozen stay in the metadata, in DuckLake
 | `data` | The tables both hold whose data files differ, even with the same rows |
 | `declarations` | The tables and views both hold whose [declarations](#declarations) differ |
 
-A writer compares the working metadata at the parent's snapshot with its last snapshot, before freezing. The working metadata is cloned from the parent's metadata, so it holds the parent's snapshot. The writer leaves `diff` out when it does not. Earlier versions carry `tags` in place of `declarations`, which a reader reads the same way, and `dataset` or `descriptions`, which say whether `dataset.json` changed and which a reader ignores. A reader compares the two versions' `tables.json` for a version without `diff`, or against a version other than its first parent.
+A writer compares the working metadata at the parent's snapshot with its last snapshot, before freezing. The working metadata is cloned from the parent's metadata, so it holds the parent's snapshot. The writer leaves `diff` out when it does not. A reader compares the two versions' `tables.json` for a version without `diff`, or against a version other than its first parent.
 
 Each entry of `columns` is one column difference in a table both hold. `column` is the column's name in the new version.
 
@@ -161,7 +161,7 @@ A reader can tell from `version.json` alone whether it can open a version.
       ]
     }
   },
-  "datasets": {
+  "dependencies": {
     "census": { "url": "https://example.org/census/", "version": "019a2f10-0c4d-7e88-a1b2-55c0d9e3f7aa" }
   }
 }
@@ -173,8 +173,8 @@ A reader can tell from `version.json` alone whether it can open a version.
 - `deletes` is the delete file for that data file, if rows were deleted from it
 - `columns` lists the table's columns at the snapshot, in the metadata's order. `id` is DuckLake's column ID, which DuckLake writes as the `field_id` of the column in every Parquet data file; it stays the same when the column is renamed. `type` is DuckLake's type name, and `nullable` is `false` for a `NOT NULL` column. `default` is the value, as text, that rows of data files written before the column was added hold, when it is not NULL. A `struct` has its fields in `children`, a `list` its `element`, and a `map` its `key` and `value`
 - `renamed_columns` is `true` when a column of the table was ever renamed. Data files written before the rename carry the old name
-- `views` holds every view alive at the snapshot, keyed `schema.view`. `sql` is the view's SQL as the metadata records it. `columns` lists the columns its query returns, in order, with `name` and `type` (DuckDB's type names). The writer gets them by binding the query, with each entry of `datasets` attached
-- `primary_key`, `assets` and `profile` of a table or a view, and `datasets`, are declarations. A table or view without a declaration leaves its key out, and a version whose views read no other dataset leaves out `datasets`
+- `views` holds every view alive at the snapshot, keyed `schema.view`. `sql` is the view's SQL as the metadata records it. `columns` lists the columns its query returns, in order, with `name` and `type` (DuckDB's type names). The writer gets them by binding the query, with each entry of `dependencies` attached
+- `primary_key`, `assets` and `profile` of a table or a view, and `dependencies`, are declarations. A table or view without a declaration leaves its key out, and a version whose views read no other dataset leaves out `dependencies`
 
 The writer makes `files`, `columns`, `renamed_columns` and `sql` from the metadata when it freezes, and they must agree with it. The declarations are kept only here. A reader ignores keys it does not know.
 
@@ -232,9 +232,7 @@ Each table's profile is at `versions/<ID>/profiles/<schema>/<table>.json`. A vie
 
 The metadata is the file `metadata.path` names in the version's folder, `metadata.db`. It is a DuckLake metadata file in DuckDB's file format.
 
-- A reader opens the file `metadata.path` names. Versions written by fdl-cli 0.26 and earlier name it `ducklake.duckdb` and record it as `catalog`, which a reader reads as `metadata`
-
-- It holds one snapshot, `ducklake.snapshot_id`, and only the bookkeeping rows that snapshot reads. Earlier snapshots, the rows that ended before it and the files scheduled for deletion are left out. A table rebuilt by a tool such as dbt is written to all new files, so earlier snapshots in one metadata share little with the last one and would only make the file larger. Versions written by fdl-cli 0.31 and earlier also hold earlier snapshots
+- It holds one snapshot, `ducklake.snapshot_id`, and only the bookkeeping rows that snapshot reads. Earlier snapshots, the rows that ended before it and the files scheduled for deletion are left out. A table rebuilt by a tool such as dbt is written to all new files, so earlier snapshots in one metadata share little with the last one and would only make the file larger.
 - It holds no inlined rows. All data is in data files
 - Every data file it names is under `data_dir`, recorded relative to the metadata's data path. A writer must check this; a host may check it too
 - Its `data_path` is the absolute URL of the data folder where the writer published: the root plus `data_dir`. Readers override it (see [Reading](/spec/reading))
@@ -249,12 +247,12 @@ What FDL needs to know about a table, a view or the dataset beyond what DuckLake
 | `primary_key` | a table | The names of the columns that identify a row, as a list | [Merging by cells](/spec/writing#cells-merged-by-primary-key) |
 | `assets` | a table | The names of the columns that hold assets, as a list | [Assets](#assets) |
 | `profile` | a table or a view | `false`: the writer makes no profile for it. Left out, it is `true` | [profiles/](#profiles) |
-| `datasets` | the version | Each other dataset the views' SQL reads, keyed by the name the SQL reads it under: `url`, the URL of its root, and `version`, the ID of the version to read. Without `version`, the version `main` holds is read | [Reading a view](/spec/reading#views-that-read-other-datasets) |
+| `dependencies` | the version | Each other dataset the views' SQL reads, keyed by the name the SQL reads it under: `url`, the URL of its root, and `version`, the ID of the version to read. Without `version`, the version `main` holds is read | [Reading a view](/spec/reading#views-that-read-other-datasets) |
 
 - A writer's tool sets declarations between the clone and the commit. How it keeps them until the commit is up to it
 - A commit starts from the parent's declarations, so a declaration stays until a tool changes or removes it. A table or view is found by `schema.table`, so a table made again under the same name, as dbt's `CREATE OR REPLACE` does, keeps its declarations. A table or view that is dropped loses them
 - A column renamed after a declaration named it keeps its old name in the parent's declaration. The writer follows the column's `id` and writes the new name
-- Every column a declaration names must be in the table at the snapshot, once. A column of `assets` must be `varchar`. A view has no `primary_key` or `assets`. `url` of `datasets` is an absolute URL ending in `/`, and `version` is a [version ID](#version-id). A writer refuses to freeze otherwise
+- Every column a declaration names must be in the table at the snapshot, once. A column of `assets` must be `varchar`. A view has no `primary_key` or `assets`. `url` of `dependencies` is an absolute URL ending in `/`, and `version` is a [version ID](#version-id). A writer refuses to freeze otherwise
 - Declarations are part of the table: a table or view whose declarations changed has changed ([When nothing changed](/spec/writing#when-nothing-changed), [Merging](/spec/writing#tables))
 
 FDL defines no declaration for what a dataset, a table or a column means to people, such as a title, a description, a license, a source or a guide. A writer may keep it as rows of ordinary tables in the metadata, such as in a schema of its own, and declare the columns that hold the sha256 of a document or an image as `assets`. FDL treats those tables as any other: a change to their rows makes a version, and they are merged like any table. A host may also keep it by its own means, and may refuse a push without it ([When a push is refused](/spec/writing#when-a-push-is-refused)).
@@ -296,42 +294,3 @@ versions/<ID>/
 - `metadata.storage` should be the oldest DuckDB storage format the declared readers can open
 
 [DuckLake formats](/internals/ducklake-formats) shows how to write an older format from DuckDB 2.0.
-
-## Earlier versions
-
-Versions written before `tables.json` keep FDL's declarations elsewhere. A reader and a writer read them as below. Merging with such a version as the base, comparing with it, and deleting the assets no version reaches depend on this.
-
-A writer does not write these files or tags for a new version. A writer that makes a version from an earlier one, by committing, reverting or merging, carries the declarations it read into `tables.json`. In `diff` and in [When nothing changed](/spec/writing#when-nothing-changed) it compares them with the declarations it read, so a table whose primary key and assets stay the same has not changed.
-
-### files.json and tags
-
-A version whose `version.json` has `files` and no `tables` may carry `files.json`, and keeps its declarations as DuckLake tags in its metadata: rows of `ducklake_tag` with the table's or view's ID as `object_id`, a key that starts with `fdl.`, and JSON text as the value.
-
-| Tag | On | Declaration |
-| --- | --- | --- |
-| `fdl.primary_key` | a table | `primary_key` |
-| `fdl.assets` | a table | `assets` |
-| `fdl.profile` | a table or a view | `profile` |
-| `fdl.catalogs` | a view | `datasets`: each name mapped to the URL of a dataset, with no `version`. The entries of every view together make `datasets` |
-
-- A reader reads the tags from the metadata, as `tags` of `duckdb_tables()` and `duckdb_views()`, or from the `ducklake_tag` rows. `files.json` also holds the `primary_key` and `assets` of each table
-- `files.json` has `tables` as `tables.json` does, with no `views` and no `datasets`. It is optional: a reader opens the metadata when it is missing
-- `named` of `files.json` lists every data file and delete file the metadata names, at any of its snapshots, relative to `data_dir`. It holds more than `tables` when the metadata keeps older snapshots ([Data files](/spec/data-files#when-a-shared-object-may-be-deleted))
-- Keys other than `fdl.` ones, such as DuckLake's `comment`, are not declarations
-
-### dataset.json and tree.json
-
-The earliest versions carry two more files beside the metadata. A version is one of them when its `version.json` has `dataset` or `tree`.
-
-```
-versions/<version ID>/
-  dataset.json       what the version holds, described by the writer
-  tree.json          other files of the version, such as a README, by path (optional)
-objects/<sha256>     the files tree.json lists (shared, immutable)
-```
-
-- `dataset` and `tree` of `version.json` name these files, with their size and sha256, as `tables` does
-- A reader may ignore `dataset.json`, `tree.json` and `objects/`. A reader that shows them shows what the writer wrote then, not what the version means now
-- Such a version has no tags. A reader and a writer read its declarations from `dataset.json`: `primary_key` of an entry of `tables` (keyed by `schema` and `name`) is `primary_key`, and the `name` of each entry of its `fields` with `"asset": true` is in `assets`. `catalogs` at the top of `dataset.json` is `datasets`, with no `version`
-- `tree.json` lists `entries`, each a `path`, the file's `sha256` and `bytes`. Each file is at `objects/<sha256>`, a shared object the version reaches ([Data files](/spec/data-files#shared-objects)). Versions written by fdl-cli 0.31 and earlier stored these files at `assets/<sha256>`; a dataset with such versions copies them to `objects/<sha256>`
-- `dataset.json` and `tree.json` are deleted with the metadata files when the version is taken out of retention. Once no live version has a `tree.json`, every file under `objects/` is reached by none, and is deleted after the grace period

@@ -11,8 +11,8 @@ description: 共有オブジェクトを消す処理のテストケース。す�
   "grace_seconds": 86400,
   "cases": [
     {
-      "name": "keeps every data file named, not only those at the snapshot",
-      "files": { "fdl.json": {}, "versions/<ID>/version.json": {}, "versions/<ID>/files.json": {} },
+      "name": "keeps the data files a live version's tables.json lists",
+      "files": { "fdl.json": {}, "versions/<ID>/version.json": {}, "versions/<ID>/tables.json": {} },
       "objects": { "tables/main/t/ducklake-a.parquet": "2026-11-01T00:00:00Z" },
       "deleted": ["tables/main/t/ducklake-c.parquet"]
     }
@@ -24,7 +24,7 @@ description: 共有オブジェクトを消す処理のテストケース。す�
 | --- | --- |
 | `now`、`grace_seconds` | 処理を実行する時刻と、猶予期間 |
 | `files` | 共有オブジェクト以外のデータセットのファイル。キーごとに、ファイルの JSON |
-| `objects` | データディレクトリ・`assets/`・`objects/` の下のオブジェクトと、処理が触れてはいけないその外のファイル。キーごとに、置いた時刻。中身は問いません |
+| `objects` | データディレクトリと `assets/` の下のオブジェクトと、処理が触れてはいけないその外のファイル。キーごとに、置いた時刻。中身は問いません |
 | `deleted` | 消すキー |
 
 消してよいものを変えるときは、この仕様と同じ変更でここにケースを追加します。

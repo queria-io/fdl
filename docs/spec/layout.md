@@ -27,7 +27,6 @@ Paths are relative to the root, lower case, and separated by `/`. The root is wh
     <others>                       files a host adds
   <data_dir><schema>/<table>/ducklake-<uuid>.parquet   data files (shared, immutable)
   assets/<sha256>                  files the rows of a table point at (shared, immutable)
-  objects/<sha256>                 files an earlier version's tree.json lists (shared, immutable)
 ```
 
 `HEAD` and everything under `refs/` have no extension, as in Git. Their content is UTF-8 text.
@@ -35,8 +34,6 @@ Paths are relative to the root, lower case, and separated by `/`. The root is wh
 The root must not hold a DuckLake metadata file outside `versions/`, and must never hold a working metadata file. Either would give readers a state that was never published.
 
 Files with other names may sit at the root. Readers must ignore them.
-
-Versions written before `tables.json` may have `files.json` in its place, and the earliest also have `dataset.json` and `tree.json`, with the files under `objects/` belonging to them ([Earlier versions](/spec/versions#earlier-versions)). A new version has none of these, and a dataset started now has no `objects/`.
 
 A dataset's root must not be under another dataset's root. Deleting the outer dataset's shared objects would take the inner one's files for objects no version reaches.
 

@@ -28,13 +28,13 @@ ATTACH 'ducklake:https://example.org/lake/versions/019a2f10-…/metadata.db' AS 
 );
 ```
 
-- A reader must not read an earlier version by `AT (VERSION => n)` or `ducklake_snapshots()` in the metadata of a later version. A metadata file holds only its own snapshot ([The frozen metadata](/spec/versions#the-frozen-metadata)). Versions written by fdl-cli 0.31 and earlier also hold earlier snapshots, but a reader must not rely on them
+- A reader must not read an earlier version by `AT (VERSION => n)` or `ducklake_snapshots()` in the metadata of a later version. A metadata file holds only its own snapshot ([The frozen metadata](/spec/versions#the-frozen-metadata)).
 - To compare two versions, a reader attaches both metadata files under different names
 - A version past retention or withdrawn has no metadata to open (step 3)
 
 ## Views that read other datasets
 
-A view's SQL may read tables of other datasets, under the names `datasets` of [tables.json](/spec/versions#tablesjson) gives. Before it reads such a view, a reader attaches each entry under its name, by the steps above: the version `version` names, or the version `main` holds when it has none.
+A view's SQL may read tables of other datasets, under the names `dependencies` of [tables.json](/spec/versions#tablesjson) gives. Before it reads such a view, a reader attaches each entry under its name, by the steps above: the version `version` names, or the version `main` holds when it has none.
 
 ```sql
 ATTACH 'ducklake:https://example.org/census/versions/019a2f10-…/metadata.db' AS census (

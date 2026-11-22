@@ -72,13 +72,13 @@ A table is the same table in two versions when it has the same `schema.table`. E
 
 A view is compared by its SQL and its declarations. When both sides changed a view differently, its SQL and each declaration are merged as values: one only one side changed takes that side's change, and one both changed differently is a conflict.
 
-`datasets` is merged by name in the same way: an entry only one side added, changed or removed takes that side's change, and an entry both changed differently is a conflict.
+`dependencies` is merged by name in the same way: an entry only one side added, changed or removed takes that side's change, and an entry both changed differently is a conflict.
 
 Comments (DuckLake's `comment`) are not compared, but the merge version keeps them. Each comment of a table, a view or a column is merged as a value: a comment only one side changed takes that side's change, wherever the table itself comes from. When both sides changed it differently, the merge version keeps ours and the writer warns.
 
 ### Cells merged by primary key
 
-When both sides changed a table differently, the writer merges it cell by cell. A cell is the value one row holds in one column, and the row is found by the values of its primary key. The table must have the same `primary_key` in ours, theirs and the base, or the base must not hold the table. A base from an earlier version reads it as [Earlier versions](/spec/versions#earlier-versions) says.
+When both sides changed a table differently, the writer merges it cell by cell. A cell is the value one row holds in one column, and the row is found by the values of its primary key. The table must have the same `primary_key` in ours, theirs and the base, or the base must not hold the table.
 
 - Each declaration other than `primary_key` is merged as a value, as for a view
 - Columns are found by name. A column only one side added, dropped or changed the type of takes that side's change. A column both sides changed differently, or one side dropped and the other changed a cell of, is a conflict
@@ -113,7 +113,7 @@ Files of a version are written once. A writer that finds one already there with 
 A push from stale working metadata is refused on two checks:
 
 1. The new version does not descend from the version the branch holds now. Someone else pushed first
-2. A data file the metadata names, or a file its `tree.json` lists when it has one ([Earlier versions](/spec/versions#datasetjson-and-treejson)), is missing from the dataset. A host may check the assets the rows hold as well. A file that no live version named for longer than the grace period may have been deleted, even if the writer found it there
+2. A data file the metadata names is missing from the dataset. A host may check the assets the rows hold as well. A file that no live version named for longer than the grace period may have been deleted, even if the writer found it there
 
 A writer also refuses to commit or push when `fdl.json` names another `data_dir` than the one it checked out with ([Changing data_dir](/spec/layout#changing-data_dir)).
 
