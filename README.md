@@ -46,17 +46,16 @@ CREATE TABLE lake.main.towns AS SELECT * FROM 'towns.csv';
 
 Rows have to go to Parquet, not into the metadata (`DATA_INLINING_ROW_LIMIT 0`): a version is read over HTTP, and inlined rows would not be in it.
 
-Describe what the version holds in `dataset.json`, in a folder of its own. Only `name` is required; `fdl commit` fills in each table's columns and row count from the metadata. Every other file in that folder, such as a `README.md`, goes into the version beside the tables:
+Declare which columns identify a row, so that a merge can match rows by them:
 
 ```bash
-mkdir about
-echo '{"name": "towns", "title": "Towns"}' > about/dataset.json
+fdl declare primary-key work/lake.sqlite main.towns town_code
 ```
 
 Then make a version and move `main` to it:
 
 ```bash
-fdl commit work/lake.sqlite --dataset about/dataset.json -m "First towns" --author alice
+fdl commit work/lake.sqlite -m "First towns" --author alice
 fdl push work/lake.sqlite
 fdl log s3://my-bucket/towns/
 ```
@@ -81,16 +80,17 @@ Credentials and the endpoint come from boto3's usual places (`AWS_*` environment
 | --- | --- |
 | `fdl init <remote>` | Start a repository (`fdl.json` and `HEAD`) |
 | `fdl clone <remote> <working>` | Make a working metadata file from the version `main` holds |
+| `fdl declare <kind> <working> …` | Declare a primary key, asset columns, a profile or another dataset the views read |
 | `fdl commit <working> -m … --author …` | Freeze the working metadata into a version |
 | `fdl push <working>` | Upload the committed version and move `main` to it |
 | `fdl log <remote>` | List versions from `main` back to the first |
 | `fdl status <working>` | What the working metadata changed since the clone |
-| `fdl diff <remote> [version]` | What a version changed since its parent: tables, rows, columns, data files, dataset.json |
+| `fdl diff <remote> [version]` | What a version changed since its parent: tables, rows, columns, data files, declarations |
 | `fdl show <remote> [version]` | A version's record, its tables and its changes |
 | `fdl url <remote> [--attach]` | Print the metadata URL of the version `main` holds, or the whole `ATTACH` statement |
 | `fdl tag <remote> [name] [version]` | List tags, tag a version, or delete a tag (`-d`) |
 | `fdl branch <remote> [name] [version]` | List branches, start a branch at a version, or delete a branch (`-d`) |
-| `fdl merge <ref> <working> --author …` | Merge another branch into the working metadata's branch, rows matched by primary key |
+| `fdl merge <ref> <working> --author …` | Merge another branch into the working metadata's branch, cells matched by primary key |
 | `fdl expire <remote> --keep N` | Mark older versions as past retention and delete their metadata files |
 | `fdl gc <remote> --yes` | Delete data files no live version reaches, after the grace period |
 | `fdl withdraw <remote> <version>…` | Remove versions that hold data that must not be published |

@@ -1,9 +1,9 @@
 ---
 title: Reading without DuckDB
-description: Reading a table's Parquet files from JavaScript with files.json, in Workers, browsers and Node.
+description: Reading a table's Parquet files from JavaScript with tables.json, in Workers, browsers and Node.
 ---
 
-A reader that cannot run DuckDB, such as a Cloudflare Worker or a web page, can still read a version: `files.json` lists each table's data files, and the Parquet files can be read by range. [`@queria-io/fdl-js`](https://www.npmjs.com/package/@queria-io/fdl-js) does this in JavaScript.
+A reader that cannot run DuckDB, such as a Cloudflare Worker or a web page, can still read a version: `tables.json` lists each table's data files, and the Parquet files can be read by range. [`@queria-io/fdl-js`](https://www.npmjs.com/package/@queria-io/fdl-js) does this in JavaScript.
 
 ```bash
 npm install @queria-io/fdl-js
@@ -22,9 +22,8 @@ const rows = await readWhere(await openParquet(store, file), "town_code", "13101
 
 ## What it can read
 
-It follows [Reading](/spec/reading) up to the metadata and then reads `files.json` in its place:
+It follows [Reading](/spec/reading) up to the metadata and then reads `tables.json` in its place:
 
-- A version without `files.json` cannot be read. Writers before fdl-cli 0.16 did not make one
 - A table whose files have `deletes`, or whose `renamed_columns` is `true`, is refused (see [tables.json](/spec/versions#tablesjson))
 - A version with `expired.json` is refused
 

@@ -63,19 +63,15 @@ SELECT * FROM '../towns.csv';
 
 `DATA_INLINING_ROW_LIMIT 0` makes DuckLake write every row to Parquet. Left at its default, DuckLake keeps small tables inside the metadata, and a version has to carry its rows in data files that a reader can fetch.
 
-## Describe
+## Declare
 
-Every version carries a `dataset.json` that says what it holds. Write one in the folder where you run `fdl commit`:
+Tell FDL which columns identify a row. A merge matches rows by the primary key, and readers can look rows up by it:
 
-```json dataset.json
-{
-  "name": "towns",
-  "title": "Towns",
-  "tables": [{ "schema": "main", "name": "towns", "title": "Towns and their codes" }]
-}
+```bash
+fdl declare primary-key lake.sqlite main.towns code
 ```
 
-Only `name` is required. `fdl commit` checks the file against the metadata and fills in each table's row count and each column's type. Every other file in the folder, such as a `README.md`, goes into the version beside it, apart from hidden files and the working metadata with the files `fdl` keeps beside it.
+Declarations stay with the working metadata until the commit, which checks them against the tables (see [Declarations](/spec/versions#declarations)). They are optional: a version without them holds the tables alone.
 
 ## Commit and push
 
@@ -93,8 +89,7 @@ towns/
   refs/heads/main                       019a3c4e-…
   versions/019a3c4e-…/
     metadata.db
-    dataset.json
-    files.json
+    tables.json
     profiles/main/towns.json
     version.json
   tables/main/towns/ducklake-….parquet
@@ -140,8 +135,6 @@ INSERT INTO lake.main.towns SELECT * FROM '../towns-2026.csv';
 fdl commit lake.sqlite -m "Add 2026" --author alice
 fdl push lake.sqlite
 ```
-
-The current folder already holds `dataset.json`, so the clone leaves it as it is. In an empty folder, the clone also writes there the version's `dataset.json` and the other files it holds, so whoever clones the repository can change the description as well as the data.
 
 The new version lists the first as its parent. Both metadata files name the first Parquet file; only the second names the new one.
 

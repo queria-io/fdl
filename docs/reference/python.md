@@ -15,6 +15,7 @@ for version in repo.log(store):
 | Module | Holds |
 | --- | --- |
 | `fdl.repo` | the operations: `init`, `clone`, `commit`, `push`, `log`, `expire`, `prune` |
+| `fdl.declared` | the [declarations](/spec/versions#declarations) of a version: primary keys, asset columns, profiles and dependencies, their checks and their merge |
 | `fdl.diff` | what changed between two versions (`diff.versions`) or in a working metadata file (`diff.working`) |
 | `fdl.refs` | reading and moving refs under their conditions |
 | `fdl.version` | `Version`, the record in `version.json`, and new IDs |
@@ -51,22 +52,29 @@ repo.clone(store, working, *, ref="HEAD", local_data=None, version=None) -> Vers
 Make a working metadata file at `working` from the version `ref` holds, or from `version` when given. Returns that version, or `None` before the first one. A store over HTTP needs `local_data`, the folder new data files go to. Refuses a metadata file whose sha256 is not the one `version.json` records, or that names a data file outside the data folder.
 
 ```python
-repo.commit(working, out_dir, *, parent, data_path, author, message, annotations=None, dataset=None) -> Version
+repo.commit(working, out_dir, *, parent, data_path, author, message, annotations=None, allow_empty=True, setup=(), facts=None, inherited=None, merged=None) -> Version
 ```
 
-Freeze the working metadata into `out_dir/<ID>/`, with `dataset` (the parsed `dataset.json`) checked against the metadata and completed from it. `data_path` is `repo.data_url(store)`. Nothing is uploaded.
+Freeze the working metadata into `out_dir/<ID>/` and write its `tables.json` with `facts`, the declarations (`declared.Facts`), after checking them against its tables and views; raises `declared.DeclarationError` with the problems found. `data_path` is `repo.data_url(store)`. `inherited` are the parent's declarations (`repo.declarations(store, parent)`), for telling whether anything changed and for the diff. Nothing is uploaded.
 
 ```python
-repo.record(frozen, out_dir, *, parent, author, message, annotations=None, dataset=None) -> Version
+repo.record(frozen, out_dir, *, parent, author, message, annotations=None, described=None, inherited=None, merged=None) -> Version
 ```
 
 Make a version around a metadata file that is already frozen, for a writer that freezes it itself.
 
 ```python
+repo.declarations(store, version) -> declared.Facts
+repo.tables_of(store, version) -> set[str]
+```
+
+What a pushed version declares, and its tables and views, from its `tables.json`.
+
+```python
 repo.push(store, local, version, *, ref="refs/heads/main", move_ref=True) -> None
 ```
 
-Upload a committed version, then move `ref` to it on condition. Raises `NotFastForward` when the ref moved, and `RepoError` when data files are missing. With `move_ref=False` it uploads and stops, for a host that moves refs itself.
+Upload a committed version, then move `ref` to it on condition. Raises `NotFastForward` when the ref moved, and `RepoError` when data files are missing or `tables.json` does not match `version.json` and the metadata. With `move_ref=False` it uploads and stops, for a host that moves refs itself.
 
 ```python
 repo.log(store, name="HEAD") -> Iterator[Version]
@@ -84,12 +92,11 @@ repo.forward(store, ref, version) -> None
 The common ancestors of two versions that no other common ancestor descends from: a merge needs exactly one. `forward` moves a branch to a version already in the repository that descends from where it is, for a merge whose base is the branch's own version.
 
 ```python
-merge.values(base, ours, theirs) -> tuple[value, list[str]]
-merge.primary_keys(base, ours, theirs) -> dict[tuple[str, str], list[str]]
+merge.primary_keys(base, ours, theirs) -> dict[tuple[str, str], list[str] | None]
 merge.tables(working, base, theirs, *, keys, repository_data, data_path=None, setup=(), write=True) -> Plan
 ```
 
-The pieces of `fdl merge`. `values` merges `dataset.json` or `tree.json` key by key and returns the conflicts; `merge.MISSING` stands for a value a version does not hold. `primary_keys` gives the tables whose rows may be merged. `tables` writes into the working metadata, in one snapshot, what the frozen metadata `theirs` changed since `base`, or nothing when there is a conflict; `Plan` lists the conflicts and what came over. `repo.commit` and `repo.record` take `merged=<theirs>` to make the merge version.
+The pieces of `fdl merge`. `primary_keys` gives each table's primary key from what each version declares and holds (`(repo.declarations(store, version), repo.tables_of(store, version))`): `None` for one whose primary key differs between the three, which is a conflict. A table it does not list has no primary key, and its rows are merged as a multiset. `tables` writes into the working metadata, in one snapshot, what the frozen metadata `theirs` changed since `base`, or nothing when there is a conflict; `Plan` lists the conflicts and what came over. `repo.commit` and `repo.record` take `merged=<theirs>` to make the merge version.
 
 ```python
 repo.readable(store, name="HEAD") -> Version
@@ -134,6 +141,19 @@ repo.withdraw(store, version_ids, *, plan=None, by=None) -> Withdrawal
 
 Withdraw versions that hold data that must not be published. `plan_withdrawal` changes nothing and returns the tags, the data files to delete, and the files kept because a kept version reads them. `withdraw` deletes the tags, the data files and the metadata files, in that order. Both raise `RepoError` while a branch or a request points at one of the versions; with `refuse_refs=False`, `plan_withdrawal` lists them in `blocked` instead and `withdraw` raises. `objects` (`{"data": [...], "assets": [...]}`, as `deleted` of `expired.json`) applies a withdrawal made in the repository this one was copied from: every live version that reaches one of them is affected too.
 
+## fdl.declared
+
+```python
+declared.Facts(primary_keys={}, assets={}, dependencies={}, unprofiled=frozenset())
+declared.from_index(index) -> Facts
+declared.check(facts, found) -> list[str]
+declared.merged(base, ours, theirs) -> tuple[Facts, list[str]]
+declared.changed(old, new, names) -> list[str]
+declared.dependencies_changed(old, new) -> list[str]
+```
+
+`Facts` holds the declarations of a version: `primary_keys` and `assets` by `schema.table`, `dependencies` by name (`{"url": ..., "version": ...}`), and `unprofiled`, the tables and views whose `profile` is `false`. `of(name)` gives what it declares of one table or view as `tables.json` writes it, and `to_json` and `from_json` keep it in a file. `from_index` reads them from a `tables.json`. `check` returns what the [rules](/spec/versions#declarations) refuse, given `found_in(working, data_path=...)`, the tables and views of a working metadata. `merged` merges three ways and returns the conflicts. `changed` and `dependencies_changed` give the names a diff lists.
+
 ## fdl.diff
 
 ```python
@@ -142,7 +162,7 @@ diff.working(working, base) -> dict
 diff.lines(result) -> list[str]
 ```
 
-`versions` compares two versions (`old` is `None` before the first one) from the newer one's `diff` when the older is its parent, and from their `dataset.json` and `files.json` otherwise. `working` compares a working metadata file with `base`, the version it was cloned at. Both return `tables` (`added`, `dropped`), `rows`, `columns`, `data` and `descriptions`, as `fdl diff --json` prints them. `lines` gives the lines `fdl diff` prints.
+`versions` compares two versions (`old` is `None` before the first one) from the newer one's `diff` when the older is its parent, and from their `tables.json` otherwise. `working` compares a working metadata file with `base`, the version it was cloned at. Both return `tables` (`added`, `dropped`), `rows`, `columns` and `data`, as `fdl diff --json` prints them; `versions` also returns `declarations` and `dependencies`. `lines` gives the lines `fdl diff` prints.
 
 ## fdl.refs
 

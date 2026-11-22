@@ -20,14 +20,16 @@ runner = CliRunner()
 
 
 @pytest.fixture(autouse=True)
-def described(tmp_path: Path, monkeypatch) -> Path:
-    """Every commit reads `dataset.json` from where it runs."""
-    # Its folder holds only what goes in the version: not the repository or the working metadata.
-    path = tmp_path / "about" / "dataset.json"
-    path.parent.mkdir()
-    path.write_text('{"name": "towns", "title": "Towns"}')
-    monkeypatch.chdir(path.parent)
+def elsewhere(tmp_path: Path, monkeypatch) -> Path:
+    """Commands run from a folder of their own, which they leave as it is."""
+    path = tmp_path / "about"
+    path.mkdir()
+    monkeypatch.chdir(path)
     return path
+
+
+#: A title for the dataset, in a table of its own.
+TITLED = "CREATE OR REPLACE TABLE lake.main.about AS SELECT {!r} AS title"
 
 
 def run(*args: str) -> str:
@@ -133,14 +135,17 @@ def test_a_change_makes_a_version(tmp_path: Path, sql: str) -> None:
     assert "version 2" in commit(working, "-m", "changed", "--author", "t")
 
 
-def test_a_new_description_makes_a_version(tmp_path: Path, described: Path) -> None:
+def test_a_new_description_makes_a_version(tmp_path: Path) -> None:
     remote, working = tmp_path / "remote", tmp_path / "lake.sqlite"
     store = LocalStore(remote)
     run("init", remote)
     run("clone", remote, working)
     write(working, store, "CREATE TABLE lake.main.towns AS SELECT 1 AS id")
+    write(working, store, TITLED.format("Towns"))
     commit(working, "-m", "first", "--author", "t")
-    described.write_text('{"name": "towns", "title": "Towns of the city"}')
+    write(working, store, TITLED.format("Towns"))
+    assert "Nothing to commit" in run("commit", working, "-m", "same", "--author", "t")
+    write(working, store, TITLED.format("Towns of the city"))
     assert "version 2" in commit(working, "-m", "retitled", "--author", "t")
 
 
@@ -251,7 +256,7 @@ def test_withdraw_refuses_an_objects_file_that_names_none(tmp_path: Path) -> Non
         assert result.exit_code != 0 and isinstance(result.exception, SystemExit), result.output
 
 
-def test_status_diff_and_show(tmp_path: Path, described: Path) -> None:
+def test_status_diff_and_show(tmp_path: Path) -> None:
     import json
 
     remote, working = tmp_path / "remote", tmp_path / "work" / "lake.sqlite"
@@ -268,7 +273,7 @@ def test_status_diff_and_show(tmp_path: Path, described: Path) -> None:
         store,
         "INSERT INTO lake.main.towns VALUES (2, 'b'); ALTER TABLE lake.main.towns RENAME COLUMN name TO town",
     )
-    described.write_text('{"name": "towns", "title": "Towns and their codes"}')
+    write(working, store, TITLED.format("Towns and their codes"))
     status = run("status", working)
     assert "~ rows main.towns: 1 -> 2" in status
     assert "~ column main.towns.name -> town  (breaking)" in status
@@ -276,10 +281,10 @@ def test_status_diff_and_show(tmp_path: Path, described: Path) -> None:
 
     lines = run("diff", remote).splitlines()
     assert lines == [
+        "+ table main.about",
         "~ rows main.towns: 1 -> 2",
         "~ column main.towns.name -> town  (breaking)",
         "~ data main.towns",
-        "~ dataset.json",
     ]
     first = list(repo.log(store))[-1]
     assert run("diff", remote, "--against", first.id).splitlines() == lines
@@ -316,7 +321,7 @@ def rows(store: LocalStore, sql: str) -> list[tuple]:
     return found
 
 
-def test_revert_moves_the_branch_forward_to_what_a_version_held(tmp_path: Path, described: Path) -> None:
+def test_revert_moves_the_branch_forward_to_what_a_version_held(tmp_path: Path) -> None:
     remote, working = tmp_path / "remote", tmp_path / "lake.sqlite"
     store = LocalStore(remote)
     run("init", remote)
@@ -327,7 +332,7 @@ def test_revert_moves_the_branch_forward_to_what_a_version_held(tmp_path: Path, 
     commit(working, "-m", "good", "--author", "t")
     good = repo.head(store)
 
-    described.write_text('{"name": "towns", "title": "Wrong"}')
+    write(working, store, TITLED.format("Wrong"))
     write(working, store, "CREATE OR REPLACE TABLE lake.main.towns AS SELECT 9 AS id")
     write(working, store, "DROP VIEW lake.main.ids")
     write(working, store, "CREATE TABLE lake.main.extra AS SELECT 1 AS id")
@@ -348,7 +353,9 @@ def test_revert_moves_the_branch_forward_to_what_a_version_held(tmp_path: Path, 
     assert rows(
         store, "SELECT count(*) FROM duckdb_tables() WHERE database_name = 'v' AND table_name = 'extra'"
     ) == [(0,)]
-    assert reverted.dataset.sha256 == good.dataset.sha256
+    assert rows(
+        store, "SELECT count(*) FROM duckdb_tables() WHERE database_name = 'v' AND table_name = 'about'"
+    ) == [(0,)]
     # The version in between is still in the history.
     assert [v.message for v in repo.log(store)] == ["Revert to version 1", "bad", "good"]
 
@@ -614,57 +621,19 @@ def test_clone_names_a_folder_given_as_dot_by_where_it_is(tmp_path: Path, monkey
     assert _default_working("https://data.example.invalid/datasets/alice/towns/") == Path("towns.sqlite")
 
 
-def _published_with_a_readme(tmp_path: Path) -> tuple[Path, LocalStore]:
+def test_clone_writes_only_the_working_metadata(tmp_path: Path, elsewhere: Path) -> None:
     remote, working = tmp_path / "remote", tmp_path / "work" / "lake.sqlite"
     store = LocalStore(remote)
-    (tmp_path / "about" / "README.md").write_text("# Towns\n")
-    (tmp_path / "about" / "docs").mkdir()
-    (tmp_path / "about" / "docs" / "codes.md").write_text("Codes\n")
     run("init", remote)
     run("clone", remote, working)
     write(working, store, "CREATE TABLE lake.main.towns AS SELECT 1 AS id")
+    write(working, store, TITLED.format("Towns"))
     commit(working, "-m", "first", "--author", "tester")
-    return remote, store
-
-
-def test_clone_writes_the_description_to_edit_and_commit(tmp_path: Path, monkeypatch) -> None:
-    remote, store = _published_with_a_readme(tmp_path)
-    elsewhere = tmp_path / "elsewhere"
-    elsewhere.mkdir()
-    monkeypatch.chdir(elsewhere)
-    run("clone", remote, "lake.sqlite")
-
-    written = json.loads((elsewhere / "dataset.json").read_text())
-    assert written["title"] == "Towns"
-    assert "rows" not in written["tables"][0]
-    assert (elsewhere / "README.md").read_text() == "# Towns\n"
-    assert (elsewhere / "docs" / "codes.md").read_text() == "Codes\n"
-
-    (elsewhere / "dataset.json").write_text(json.dumps({**written, "title": "Towns of Japan"}))
-    commit(elsewhere / "lake.sqlite", "-m", "retitle", "--author", "tester")
     head = repo.head(store)
-    assert json.loads(store.get(layout.version_dir(head.id) + layout.DATASET))["title"] == "Towns of Japan"
-    assert head.tree is not None
+    assert head.tables.path == layout.TABLES
 
-
-def test_clone_keeps_a_description_already_here(tmp_path: Path, described: Path) -> None:
-    remote, _ = _published_with_a_readme(tmp_path)
-    described.write_text('{"name": "towns", "title": "Mine"}')
-    run("clone", remote, tmp_path / "again.sqlite")
-    assert json.loads(described.read_text())["title"] == "Mine"
-
-
-def test_clone_refuses_to_overwrite_a_file_in_the_way(tmp_path: Path, monkeypatch) -> None:
-    remote, _ = _published_with_a_readme(tmp_path)
-    elsewhere = tmp_path / "elsewhere"
-    elsewhere.mkdir()
-    (elsewhere / "README.md").write_text("mine\n")
-    monkeypatch.chdir(elsewhere)
-    result = runner.invoke(app, ["clone", str(remote), "lake.sqlite"])
-    assert result.exit_code != 0
-    assert "README.md already here" in result.output
-    assert (elsewhere / "README.md").read_text() == "mine\n"
-    assert not (elsewhere / "lake.sqlite").exists()
+    run("clone", remote, "again.sqlite")
+    assert sorted(p.name for p in elsewhere.iterdir()) == ["again.sqlite", "again.sqlite.fdl.json"]
 
 
 def test_the_author_comes_from_the_settings_when_not_given(tmp_path: Path, monkeypatch) -> None:

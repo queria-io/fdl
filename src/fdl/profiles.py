@@ -80,13 +80,31 @@ def path(schema: str, table: str) -> str | None:
     return f"profiles/{schema}/{table}.json"
 
 
-def tables(described: dict[str, Any]) -> list[dict[str, Any]]:
-    """The tables and views of a `dataset.json` that get a profile.
+def indexed(index: dict[str, Any], unprofiled: Iterable[str] = ()) -> list[dict[str, Any]]:
+    """The tables and views of a `tables.json` that get a profile, in the shape `build` takes.
 
-    All whose names a path can hold, but those with `"profile": false` (the tag
-    `fdl.profile`), which a writer leaves out.
+    All but those declared ``"profile": false`` (``unprofiled``) and those whose
+    names a path cannot hold.
     """
-    return [t for t in described.get("tables", []) if t.get("profile") is not False and path(t["schema"], t["name"])]
+    skipped = set(unprofiled)
+
+    def kept(name: str) -> tuple[str, str] | None:
+        schema, table = name.split(".", 1)
+        if name in skipped or not path(schema, table):
+            return None
+        return schema, table
+
+    tables = [
+        {"schema": key[0], "name": key[1], "fields": [{"name": c["name"], "type": c["type"]} for c in table.get("columns", [])]}
+        for name, table in sorted(index.get("tables", {}).items())
+        if (key := kept(name))
+    ]
+    views = [
+        {"schema": key[0], "name": key[1], "kind": "view", "sql": view.get("sql")}
+        for name, view in sorted(index.get("views", {}).items())
+        if (key := kept(name))
+    ]
+    return tables + views
 
 
 def columns_of(table: dict[str, Any]) -> list[dict[str, str]]:
@@ -94,7 +112,7 @@ def columns_of(table: dict[str, Any]) -> list[dict[str, str]]:
 
 
 def build(working: Path, wanted: Iterable[dict[str, Any]], *, data_path: str, setup: Iterable[str] = ()) -> dict[str, bytes]:
-    """Profiles of ``wanted`` (tables of `dataset.json`) from the working catalog's last snapshot.
+    """Profiles of ``wanted`` (as `indexed` lists them) from the working catalog's last snapshot.
 
     Returns path to content. A table that cannot be read gets no profile, and
     a geometry sample that cannot be made (no spatial extension) is left out.
@@ -134,7 +152,7 @@ def reusable(previous: bytes, table: dict[str, Any]) -> bool:
         held = json.loads(previous).get("columns", [])
     except ValueError:
         return False
-    # A view's columns are not in `dataset.json`; the caller keeps its profile only
+    # A view's columns are its query's; the caller keeps its profile only
     # while its query and every table are unchanged, and so are its columns.
     if table.get("kind") != "view" and [
         {"name": c.get("name"), "type": c.get("type")} for c in held

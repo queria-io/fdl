@@ -1,15 +1,17 @@
 """What changed between two versions, or in a working catalog since its clone.
 
 Both are brought to one shape first: each table's row count, data files and
-columns. A version gives them from its `dataset.json` and `files.json`; a
-catalog gives them from two of its snapshots. Then one comparison lists the
-differences, in five kinds:
+columns. A version gives them from its `tables.json`; a catalog gives them from
+two of its snapshots. Then one comparison lists the differences, in four kinds:
 
 - tables added and dropped
 - row counts
 - columns added, dropped, renamed or given another type (``changes``)
 - data files: a table whose files differ, even with the same rows
-- dataset: whether what the writer wrote in `dataset.json` changed
+
+Between two versions, and in a commit's own diff, ``declarations`` lists the
+tables and views whose declarations changed, and ``dependencies`` the other
+datasets the views read whose entry changed.
 """
 
 from __future__ import annotations
@@ -18,7 +20,7 @@ import json
 from pathlib import Path
 from typing import Any, Iterable
 
-from . import catalog, layout, tags
+from . import catalog, layout
 from .store import Store, is_missing
 from .version import Version
 
@@ -26,27 +28,15 @@ from .version import Version
 Table = dict[str, Any]
 
 
-def from_version(dataset: dict | None, files: dict | None) -> dict[str, Table]:
-    """Each table of a version, from its `dataset.json` and `files.json`."""
-    indexed = (files or {}).get("tables", {})
-    described = {
-        f"{table.get('schema')}.{table.get('name')}": table
-        for table in (dataset or {}).get("tables", [])
-        if table.get("kind") != "view"
-    }
-    names = described.keys() | indexed.keys()
+def from_version(index: dict | None) -> dict[str, Table]:
+    """Each table of a version, from its `tables.json`."""
     return {
         name: {
-            "rows": described.get(name, {}).get("rows"),
-            "files": _file_set(indexed[name]) if name in indexed else None,
-            "columns": {
-                field["name"]: field.get("type")
-                for field in described.get(name, {}).get("fields", [])
-            }
-            if name in described
-            else None,
+            "rows": sum(f["rows"] - f.get("deletes", {}).get("rows", 0) for f in table.get("files", [])),
+            "files": _file_set(table),
+            "columns": {c["name"]: c.get("type") for c in table.get("columns", [])},
         }
-        for name in names
+        for name, table in (index or {}).get("tables", {}).items()
     }
 
 
@@ -72,8 +62,7 @@ def between(
 ) -> dict[str, Any] | None:
     """The differences between two snapshots of one catalog, ``before`` ``None`` for none.
 
-    What a commit records as its version's ``diff``, but for ``dataset``,
-    which the commit adds. ``None`` when the catalog no longer holds
+    What a commit records as its version's ``diff``. ``None`` when the catalog no longer holds
     ``before``: once expired, its tables and files cannot be read.
     """
     if before is not None and not catalog.has_snapshot(catalog_path, before):
@@ -186,10 +175,8 @@ def lines(result: dict[str, Any]) -> list[str]:
         + [f"~ rows {r['table']}: {r['from']:,} -> {r['to']:,}" for r in result["rows"]]
         + [column(c) for c in result["columns"]]
         + [f"~ data {name}" for name in result["data"]]
-        + [f"~ tags {name}" for name in result.get("tags", [])]
-        + (["~ dataset.json"] if result.get("dataset") else [])
-        # Written by fdl-cli 0.31 and earlier.
-        + [f"~ description {target}" for target in result.get("descriptions", [])]
+        + [f"~ declarations {name}" for name in result.get("declarations", [])]
+        + [f"~ dependency {name}" for name in result.get("dependencies", [])]
     )
 
 
@@ -205,20 +192,9 @@ def _get_json(store: Store, key: str) -> dict | None:
         raise
 
 
-def described(store: Store, version: Version) -> dict | None:
-    """A version's `dataset.json`, or ``None`` for one written without it or past retention."""
-    path = version.dataset.path if version.dataset else layout.DATASET
-    return _get_json(store, layout.version_dir(version.id) + path)
-
-
-def listed(store: Store, version: Version) -> dict | None:
-    """A version's `tree.json`, or ``None`` without one."""
-    return _get_json(store, layout.version_dir(version.id) + version.tree.path) if version.tree else None
-
-
 def indexed(store: Store, version: Version) -> dict | None:
-    """A version's `files.json`, or ``None`` without one."""
-    return _get_json(store, layout.version_dir(version.id) + version.files.path) if version.files else None
+    """A version's `tables.json`, or ``None`` past retention."""
+    return _get_json(store, layout.version_dir(version.id) + version.tables.path) if version.tables else None
 
 
 def versions(store: Store, old: Version | None, new: Version) -> dict[str, Any]:
@@ -230,62 +206,19 @@ def versions(store: Store, old: Version | None, new: Version) -> dict[str, Any]:
     """
     if new.diff is not None and (new.parents[:1] == ((old.id,) if old else ())):
         return new.diff
-    result = compare(
-        from_version(described(store, old) if old else {}, indexed(store, old) if old else {}),
-        from_version(described(store, new), indexed(store, new)),
-    )
-    return with_dataset(result, described(store, old) if old else None, described(store, new))
+    before, after = (indexed(store, old) if old else None), indexed(store, new)
+    from . import declared
 
-
-def with_dataset(result: dict[str, Any], old: dict | None, new: dict | None) -> dict[str, Any]:
-    """``result`` with ``dataset``: whether what the writer wrote in `dataset.json` changed,
-    and ``tags``: the tables and views both list whose `fdl.` tags it declares changed.
-
-    Left out when either version has no `dataset.json`, as before the first.
-    """
-    if old is None or new is None:
-        return result
-    held = tags.names(old) & tags.names(new)
+    old_facts, new_facts = declared.from_index(before), declared.from_index(after)
     return {
-        **result,
-        "tags": tags.changed(tags.from_dataset(old), tags.from_dataset(new), held),
-        "dataset": written(old) != written(new),
+        **compare(from_version(before), from_version(after)),
+        "declarations": declared.changed(old_facts, new_facts, _names(before) & _names(after)),
+        "dependencies": declared.dependencies_changed(old_facts, new_facts),
     }
 
 
-#: What the writer's tool fills in from the metadata, by where it sits.
-FILLED_TABLE = ("rows", "kind")
-FILLED_FIELD = ("type", "nullable")
-
-
-def written(described: dict) -> dict:
-    """A `dataset.json` as the writer wrote it: without what is filled in from the metadata.
-
-    That is each table's `rows` and `kind`, each field's `type` and
-    `nullable`, a view's `sql`, and the fields and tables left with nothing
-    but their names: a table or column added to the data is not a change in
-    what the writer wrote.
-    """
-
-    def field(item: Any) -> Any:
-        return {key: value for key, value in item.items() if key not in FILLED_FIELD} if isinstance(item, dict) else item
-
-    def table(item: Any) -> Any:
-        if not isinstance(item, dict):
-            return item
-        view = item.get("kind") == "view"
-        kept = {
-            key: value
-            for key, value in item.items()
-            if key not in FILLED_TABLE and not (view and key == "sql")
-        }
-        if isinstance(kept.get("fields"), list):
-            fields = [f for f in map(field, kept["fields"]) if not (isinstance(f, dict) and set(f) <= {"name"})]
-            kept = {**{k: v for k, v in kept.items() if k != "fields"}, **({"fields": fields} if fields else {})}
-        return kept
-
-    tables = [t for t in map(table, described.get("tables", [])) if not (isinstance(t, dict) and set(t) <= {"schema", "name"})]
-    return {**{k: v for k, v in described.items() if k != "tables"}, **({"tables": tables} if tables else {})}
+def _names(index: dict | None) -> set[str]:
+    return set((index or {}).get("tables", {})) | set((index or {}).get("views", {}))
 
 
 def working(working_path: Path, base: Version | None) -> dict[str, Any]:

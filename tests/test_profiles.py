@@ -9,7 +9,7 @@ import duckdb
 import pytest
 from typer.testing import CliRunner
 
-from fdl import catalog, layout, profiles, repo, tags
+from fdl import catalog, layout, profiles, repo
 from fdl.cli import app
 from fdl.stores import LocalStore
 
@@ -42,7 +42,6 @@ def repository(tmp_path: Path, monkeypatch):
     remote, working = tmp_path / "remote", tmp_path / "lake.sqlite"
     run("init", remote)
     run("clone", remote, working)
-    (tmp_path / "about" / "dataset.json").write_text('{"name": "towns"}')
     return LocalStore(remote), working
 
 
@@ -128,33 +127,6 @@ def test_an_unchanged_table_keeps_its_parents_profile(repository, monkeypatch) -
     assert built == ["other"]
     assert profile_of(store, "towns")["rows"] == 1
     assert profile_of(store, "other")["rows"] == 2
-
-
-def test_a_parent_without_columns_in_its_files_keeps_its_profile(repository, monkeypatch) -> None:
-    store, working = repository
-    write(working, store, "CREATE TABLE lake.main.towns AS SELECT 1 AS id")
-    write(working, store, "CREATE TABLE lake.main.other AS SELECT 1 AS id")
-    commit(working, "-m", "m", "--author", "t")
-    parent = repo.head(store)
-    key = layout.version_dir(parent.id) + parent.files.path
-    files = json.loads(store.get(key))
-    for table in files["tables"].values():
-        table.pop("columns", None)
-    store.put(key, json.dumps(files).encode())
-    write(working, store, "INSERT INTO lake.main.other VALUES (2)")
-
-    built: list[str] = []
-    original = profiles.build
-
-    def spy(working, wanted, **kwargs):
-        wanted = list(wanted)
-        built.extend(t["name"] for t in wanted)
-        return original(working, wanted, **kwargs)
-
-    monkeypatch.setattr(profiles, "build", spy)
-    commit(working, "-m", "again", "--author", "t")
-    assert built == ["other"]
-    assert profile_of(store, "towns")["rows"] == 1
 
 
 def test_a_column_dropped_and_added_again_is_profiled_again(repository) -> None:
@@ -369,26 +341,14 @@ def test_a_wide_table_is_measured_a_few_columns_at_a_time(repository, monkeypatc
 
 def test_a_table_or_view_with_profile_false_gets_no_profile(repository, monkeypatch) -> None:
     store, working = repository
-    Path("dataset.json").write_text(
-        json.dumps(
-            {
-                "name": "towns",
-                "tables": [
-                    {"schema": "main", "name": "raw_towns", "profile": False},
-                    {"schema": "main", "name": "stg_towns", "profile": False},
-                ],
-            }
-        )
-    )
     write(working, store, "CREATE TABLE lake.main.raw_towns AS SELECT 1 AS id")
     write(working, store, "CREATE VIEW lake.main.stg_towns AS SELECT id FROM lake.main.raw_towns")
     write(working, store, "CREATE TABLE lake.main.towns AS SELECT 1 AS id")
+    run("declare", "profile", working, "main.raw_towns", "false")
+    run("declare", "profile", working, "main.stg_towns", "false")
     built = _spy_builds(monkeypatch)
     commit(working, "-m", "m", "--author", "t")
     assert built == ["towns"]
     head = repo.head(store)
     assert store.list(f"{layout.version_dir(head.id)}profiles/") == [f"{layout.version_dir(head.id)}profiles/main/towns.json"]
     assert repo.missing_profiles(store, head) == []
-    frozen = tags.read(Path(store.root) / layout.version_metadata(head), head.ducklake.snapshot_id)
-    assert frozen["main.raw_towns"] == {tags.PROFILE: False}
-    assert frozen["main.stg_towns"] == {tags.PROFILE: False}

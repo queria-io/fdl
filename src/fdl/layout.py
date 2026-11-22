@@ -23,26 +23,17 @@ DEFAULT_BRANCH = "refs/heads/main"
 DEFAULT_DATA_DIR = "tables/"
 
 VERSION_RECORD = "version.json"
-#: The frozen DuckLake metadata. Versions written by 0.26 and earlier name it
-#: `ducklake.duckdb`; readers open the name `version.json` records.
+#: The frozen DuckLake metadata.
 METADATA = "metadata.db"
-#: What the version holds, described (see `fdl.dataset`).
-DATASET = "dataset.json"
-#: The index of each table's files, made from the metadata (optional).
-FILES = "files.json"
+#: The index of each table and view: files, columns and what the version declares.
+TABLES = "tables.json"
 EXPIRED = "expired.json"
 #: The same metadata in other DuckLake formats, under the version (optional).
 METADATA_DIR = "metadata/"
-#: Where versions written by fdl-cli 0.26 and earlier keep the other formats.
-LEGACY_METADATA_DIR = "catalogs/"
-#: The other files of a version (its README, say), by path to the asset that holds each (optional).
-TREE = "tree.json"
 #: A summary of each table, made from the data, under the version (optional).
 PROFILES_DIR = "profiles/"
 #: Files the rows of a table point at, by sha256 (shared).
 ASSETS_DIR = "assets/"
-#: The files a version's `tree.json` lists, by sha256 (shared).
-OBJECTS_DIR = "objects/"
 
 #: What a symbolic ref starts with. HEAD is the only one.
 SYMBOLIC = "ref: "
@@ -60,7 +51,7 @@ _VERSION_ID = re.compile(r"[0-9a-f]{8}-[0-9a-f]{4}-7[0-9a-f]{3}-[89ab][0-9a-f]{3
 
 #: The names of shared objects (see `is_shared_object`).
 _DATA_FILE = re.compile(r"ducklake-[^/]+\.parquet")
-_HASHED = re.compile(r"(?:assets|objects)/[0-9a-f]{64}")
+_HASHED = re.compile(r"assets/[0-9a-f]{64}")
 
 
 class LayoutError(ValueError):
@@ -123,7 +114,7 @@ def is_data_dir(value: object) -> bool:
 
 
 def is_shared_object(key: str, data_dir: str) -> bool:
-    """Whether ``key`` is named as a shared object: a data file, an asset or a tree's file.
+    """Whether ``key`` is named as a shared object: a data file or an asset.
 
     Deleting is only for these, so a stray file under the data directory is
     left alone.

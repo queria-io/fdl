@@ -9,8 +9,8 @@ pushed.
 
 from __future__ import annotations
 
+import dataclasses
 import datetime as dt
-import hashlib
 import json
 import os
 import re
@@ -21,7 +21,8 @@ from urllib.parse import urlparse
 
 import typer
 
-from . import catalog, config, dataset, layout, objects, profiles, refs, repo
+from . import catalog, config, layout, objects, profiles, refs, repo
+from . import declared as declaring
 from . import merge as merging
 from . import diff as diffs
 from .stores import S3Store, StoreError, open_store
@@ -65,7 +66,7 @@ ERRORS = (
     layout.LayoutError,
     VersionError,
     StoreError,
-    dataset.DatasetError,
+    declaring.DeclarationError,
     objects.ObjectError,
 )
 
@@ -128,75 +129,30 @@ def clone(
     try:
         # Read before the clone: a data_dir moved meanwhile then fails the commit.
         config = repo.read_config(store)
-        files = _described_files(store, ref)
-        # Written after the clone, a file of the tree would overwrite the working metadata.
-        clashing = sorted(
-            path.as_posix()
-            for path in files
-            if objects.is_beside(path.resolve().as_posix(), working.resolve().as_posix())
-        )
-        if clashing:
-            raise repo.RepoError(
-                f"the version holds {', '.join(clashing)}, where the working metadata goes: name it otherwise"
-            )
         version = repo.clone(store, working, ref=ref, local_data=local, storage=storage)
-        for path, body in files.items():
-            path.parent.mkdir(parents=True, exist_ok=True)
-            path.write_bytes(body)
         if storage:
             data = repo.storage_data_path(storage, config)
         else:
             data = repo.data_url(store) if local is None else local.resolve().as_posix() + "/"
+        # What the version declares; a commit takes it over, with what fdl declare changes.
+        facts = repo.declarations(store, version) if version else declaring.Facts()
     except ERRORS as exc:
         raise _fail(exc) from exc
-    state = {"remote": remote, "ref": ref, "base": version.id if version else None, "data_dir": config.data_dir}
+    state = {
+        "remote": remote,
+        "ref": ref,
+        "base": version.id if version else None,
+        "data_dir": config.data_dir,
+        "declared": facts.to_json(),
+    }
     if local:
         state["data"] = str(local)
     if storage:
         state["storage"] = storage
     _write_state(working, state)
     typer.echo(f"{working} at {version.id if version else 'empty metadata'}")
-    if files:
-        typer.echo("Wrote its description here: " + ", ".join(sorted(path.as_posix() for path in files)))
     typer.echo("Write to it with:")
     typer.echo("  " + catalog.attach_sql(working, alias="lake", data_path=data)[-1] + ";")
-
-
-def _described_files(store, ref: str) -> dict[Path, bytes]:
-    """What `fdl commit` reads from here, as the version ``ref`` holds it: its
-    `dataset.json` (without what the commit fills in) and the files of its `tree.json`.
-
-    Nothing when the branch has no version yet, or when a description is
-    already here: that one is the writer's, and the commit reads it. A file in
-    the way is refused rather than overwritten.
-    """
-    version = repo.head(store, ref)
-    if version is None or Path(layout.DATASET).exists():
-        return {}
-    described = diffs.described(store, version)
-    if described is None:
-        return {}
-    entries = (diffs.listed(store, version) or {}).get("entries", [])
-    objects.check_tree(entries)
-    files = {
-        Path(layout.DATASET): dataset.to_json(merging.declared(described)),
-        **{
-            Path(item["path"]): _tree_file(store, item)
-            for item in entries
-        },
-    }
-    present = sorted(path.as_posix() for path in files if path.exists())
-    if present:
-        raise repo.RepoError(f"{', '.join(present)} already here: clone into a folder without them")
-    return files
-
-
-def _tree_file(store, item: dict) -> bytes:
-    """A file of `tree.json`, checked against its sha256."""
-    body = store.get(objects.tree_key(item["sha256"]))
-    if hashlib.sha256(body).hexdigest() != item["sha256"]:
-        raise repo.RepoError(f"{item['path']}: the file's sha256 is not the one tree.json records")
-    return body
 
 
 @app.command("config")
@@ -221,11 +177,6 @@ def commit(
     working: Path = Working,
     message: str = typer.Option(..., "-m", "--message", help="What changed"),
     author: str | None = typer.Option(None, help="Who made it (default: fdl config author.name)"),
-    describe: Path | None = typer.Option(
-        None,
-        "--dataset",
-        help="The dataset.json that describes what the version holds (default: the one here). Every other file in its folder goes in the version's tree",
-    ),
     allow_empty: bool = typer.Option(
         False, "--allow-empty", help="Make a version even if nothing changed since the last one"
     ),
@@ -239,28 +190,20 @@ def commit(
 ) -> None:
     """Freeze the working metadata into a version, kept beside it until you push it.
 
-    Nothing is made when the tables, their rows and the description are what
-    the last pushed version holds. Committing again before pushing replaces
-    the version not pushed yet.
+    The declarations (fdl declare) are checked against the tables and views
+    first. Nothing is made when the tables, their rows, the views and the
+    declarations are what the last pushed version holds. Committing again before pushing replaces the version not
+    pushed yet.
     """
     state = _read_state(working)
     store = _store(state["remote"])
     try:
-        description = describe or dataset.find()
-        declared = dataset.read(description)
-        root = Path(description).resolve().parent
-        listed = objects.tree(
-            root, leave_out=[description, working, *_workings(root), *([assets_dir] if assets_dir else [])]
-        )
         version = _commit(
             store,
             working,
             state,
             message=message,
             author=config.author(author),
-            declared=declared,
-            listed=listed,
-            local_objects={item["sha256"]: str(root / item["path"]) for item in listed},
             assets_dir=assets_dir,
             allow_empty=allow_empty,
         )
@@ -271,17 +214,6 @@ def commit(
         raise _fail(exc) from exc
     typer.echo(f"Committed {version.id} (version {version.seq}). Push it to {state['ref']} with:")
     typer.echo(f"  fdl push {working}")
-
-
-def _workings(root: Path) -> list[Path]:
-    """Every working metadata below ``root``, found by the state `fdl clone` keeps beside it.
-
-    Another clone in the description's folder (of another branch, say) holds
-    the writer's metadata and data, not the version's files.
-    """
-    return [
-        path.with_name(path.name.removesuffix(STATE_SUFFIX)) for path in root.rglob(f"*{STATE_SUFFIX}")
-    ]
 
 
 def _pending_dir(working: Path) -> Path:
@@ -296,24 +228,26 @@ def _commit(
     *,
     message: str,
     author: dict,
-    declared: dict,
-    listed: list[dict],
-    local_objects: dict[str, str],
     assets_dir: Path | None,
     allow_empty: bool,
+    facts: declaring.Facts | None = None,
     merged=None,
 ):
     """Freeze the working metadata into a version beside it, to push later.
 
     Its parent is the version the working metadata was cloned at (or last
-    pushed). Any version committed before and not pushed is replaced.
+    pushed). Any version committed before and not pushed is replaced. ``facts``
+    are the declarations to commit instead of those kept beside the working
+    metadata (a revert's or a merge's); they are kept there after.
     """
     _check_data_dir(store, working, state)
     out = Path(tempfile.mkdtemp(prefix=".fdl-commit-", dir=working.resolve().parent))
     try:
         parent = repo.read_version(store, state["base"]) if state["base"] else None
-        parent_dataset = diffs.described(store, parent) if parent else None
+        facts = facts if facts is not None else _declared(store, state, working)
+        inherited = repo.declarations(store, parent) if parent else None
         written = _written(store, state)
+        reading, setup = _reading(store, state)
 
         def make(allow_empty: bool):
             return repo.commit(
@@ -323,11 +257,11 @@ def _commit(
                 data_path=repo.data_url(store),
                 author=author,
                 message=message,
-                dataset=declared,
-                tree=listed,
                 allow_empty=allow_empty,
                 working_data=written,
-                parent_dataset=parent_dataset,
+                setup=setup,
+                facts=facts,
+                inherited=inherited,
                 merged=merged,
             )
 
@@ -336,10 +270,9 @@ def _commit(
         except repo.CannotCompare as exc:
             typer.echo(f"warning: could not tell whether anything changed ({exc}); committing", err=True)
             version = make(True)
-        reading, setup = _reading(store, state)
-        described = json.loads((out / version.id / layout.DATASET).read_text(encoding="utf-8"))
+        index = json.loads((out / version.id / layout.TABLES).read_text(encoding="utf-8"))
         held = objects.asset_values(
-            working, objects.asset_columns(described), data_path=reading, setup=setup
+            working, objects.indexed_asset_columns(index), data_path=reading, setup=setup
         )
         pending = _pending_dir(working)
         shutil.rmtree(pending, ignore_errors=True)
@@ -347,7 +280,8 @@ def _commit(
     except repo.NothingToCommit:
         # The working metadata holds what the last pushed version holds, so a
         # version committed before and not pushed no longer matches it.
-        _drop_pending(working, state)
+        # It also declares what the last pushed version declares.
+        _drop_pending(working, state, declared=(inherited or declaring.Facts()).to_json())
         raise
     finally:
         shutil.rmtree(out, ignore_errors=True)
@@ -355,15 +289,28 @@ def _commit(
         working,
         {
             **state,
+            # What the version declares: a table dropped took its declarations with it,
+            # so a table made again under its name does not get them back.
+            "declared": declaring.from_index(index).to_json(),
             "pending": {
                 "id": version.id,
                 "assets": sorted(held),
-                "objects": local_objects,
+                "objects": {},
                 "assets_dir": str(assets_dir.resolve()) if assets_dir else None,
             },
         },
     )
     return version
+
+
+def _declared(store, state: dict, working: Path) -> declaring.Facts:
+    """The declarations kept beside the working metadata.
+
+    A working metadata cloned before they were kept there declares what its base declares.
+    """
+    if "declared" in state:
+        return declaring.Facts.from_json(state["declared"])
+    return repo.declarations(store, repo.read_version(store, state["base"])) if state.get("base") else declaring.Facts()
 
 
 def _check_data_dir(store, working: Path, state: dict) -> None:
@@ -491,17 +438,14 @@ def revert(
         # By first parent: a revert brings back an earlier version of this branch.
         if base is None or not repo.in_history(store, target.id, base):
             raise repo.RepoError(f"{target.id} is not in the first-parent history of {base.id if base else 'the working metadata'}")
-        # Read before the working metadata is written back, so a refusal leaves it as it was.
-        declared = diffs.described(store, target)
-        if declared is None:
-            raise repo.RepoError(f"{target.id} has no dataset.json to bring back")
-        listed = (diffs.listed(store, target) or {}).get("entries", [])
         reading, setup = _reading(store, state)
         # Read from the version's own metadata: a frozen metadata holds only its last snapshot.
         with tempfile.TemporaryDirectory(prefix="fdl-revert-") as tmp:
             frozen = Path(tmp) / "target.duckdb"
             frozen.write_bytes(store.get(layout.version_metadata(target)))
             repo.check_catalog(frozen, target)
+            # What the earlier version declared comes back with its tables.
+            facts = repo.declarations(store, target)
             catalog.restore(
                 working, frozen, data_path=reading, repository_data=repo.data_url(store), setup=setup
             )
@@ -511,11 +455,9 @@ def revert(
             state,
             message=message or f"Revert to version {target.seq}",
             author=config.author(author),
-            declared=declared,
-            listed=listed,
-            local_objects={},
             assets_dir=None,
             allow_empty=False,
+            facts=facts,
         )
     except repo.NothingToCommit:
         typer.echo(f"Nothing to revert: {base.id} already holds what {target.id} (version {target.seq}) held")
@@ -535,10 +477,10 @@ def merge(
 ) -> None:
     """Merge another branch into the working metadata's branch.
 
-    Tables, rows and descriptions only the other branch changed come over.
-    Rows of a table both branches changed are merged by the primary key both
-    declare in dataset.json; anything both changed differently is a conflict,
-    and then nothing is changed. The merge version waits beside the working
+    Tables and rows only the other branch changed come over. A table both
+    branches changed is merged cell by cell, by the primary key both declare
+    for it; anything both changed differently is a conflict, and then nothing
+    is changed. The merge version waits beside the working
     metadata until you push it.
     """
     state = _read_state(working)
@@ -552,6 +494,8 @@ def merge(
             raise repo.RepoError(f"{state['ref']} holds no version yet, so there is nothing to merge into")
         if catalog.last_snapshot(working) != ours.ducklake.snapshot_id:
             raise repo.RepoError(f"the working metadata has changes not committed: commit and push them, or clone again")
+        if _declared(store, state, working) != repo.declarations(store, ours):
+            raise repo.RepoError("the declarations have changes not committed (fdl declare): commit and push them, or clone again")
         bases = repo.merge_bases(store, ours, theirs)
         if not bases:
             raise repo.RepoError(f"{ours.id} and {theirs.id} have no version in common")
@@ -583,12 +527,6 @@ def merge(
         typer.echo(f"  rows merged  {'.'.join(key)} ({count:,} row(s) added, changed or deleted by theirs)")
     for slot in plan.comments:
         typer.echo(f"warning: both sides changed the comment of {slot} differently; ours is kept", err=True)
-    if plan.described:
-        typer.echo(
-            f"warning: theirs changed {' and '.join(plan.described)}. Bring those changes into your local "
-            "description before the next fdl commit, which reads it from there",
-            err=True,
-        )
     typer.echo(f"Committed {version.id} (version {version.seq}), merging {theirs.id}. Push it with:")
     typer.echo(f"  fdl push {working}")
 
@@ -597,61 +535,59 @@ def _fast_forward(store, working: Path, state: dict, theirs) -> None:
     """Rebuild the working metadata from ``theirs``, for push to move the branch there."""
     local = Path(state["data"]) if state.get("data") else None
     repo.clone(store, working, local_data=local, version=theirs, storage=state.get("storage"))
-    _write_state(working, {**state, "base": theirs.id, "forward": True})
+    facts = repo.declarations(store, theirs)
+    _write_state(working, {**state, "base": theirs.id, "forward": True, "declared": facts.to_json()})
     typer.echo(f"Fast-forward to {theirs.id} (version {theirs.seq}). Move {state['ref']} there with:")
     typer.echo(f"  fdl push {working}")
 
 
 def _merge(store, working: Path, state: dict, ours, theirs, base, *, message: str, author: dict):
     """Write the merge into the working metadata and commit it, or raise `merging.Conflicts`."""
-    described = {name: diffs.described(store, version) for name, version in (("base", base), ("ours", ours), ("theirs", theirs))}
-    listed = {name: diffs.listed(store, version) for name, version in (("base", base), ("ours", ours), ("theirs", theirs))}
-    declared, conflicts = merging.values(*(merging.declared(described[name]) for name in ("base", "ours", "theirs")))
-    tree, tree_conflicts = merging.values(*(listed[name] or merging.MISSING for name in ("base", "ours", "theirs")))
-    conflicts = [f"dataset.json: {item}" for item in conflicts] + [f"tree.json: {item}" for item in tree_conflicts]
     with tempfile.TemporaryDirectory(prefix="fdl-merge-") as tmp:
         frozen = {}
         for name, version in (("base", base), ("theirs", theirs)):
             frozen[name] = Path(tmp) / f"{name}.duckdb"
             frozen[name].write_bytes(store.get(layout.version_metadata(version)))
             repo.check_catalog(frozen[name], version)
+        said = {
+            "base": repo.declarations(store, base),
+            "ours": repo.declarations(store, ours),
+            "theirs": repo.declarations(store, theirs),
+        }
+        held = {"base": repo.tables_of(store, base), "ours": repo.tables_of(store, ours), "theirs": repo.tables_of(store, theirs)}
+        # What one side changed of the declarations since the base comes over.
+        facts, found = declaring.merged(said["base"], said["ours"], said["theirs"])
+        conflicts = [f"declarations: {item}" for item in found]
         plan = merging.tables(
             working,
             frozen["base"],
             frozen["theirs"],
-            keys=merging.primary_keys(described["base"], described["ours"], described["theirs"]),
+            keys=merging.primary_keys(*((said[side], held[side]) for side in ("base", "ours", "theirs"))),
             data_path=_written(store, state),
             repository_data=repo.data_url(store),
             setup=_read_setup(store) + _storage_setup(state.get("storage")),
             # Written only when a version can be committed from it.
-            write=not conflicts and declared is not merging.MISSING,
+            write=not conflicts,
         )
     conflicts += plan.conflicts
     if conflicts:
         raise merging.Conflicts(conflicts)
-    if declared is merging.MISSING:
-        raise repo.RepoError(f"{ours.id} has no dataset.json")
-    version = _commit(
-        store,
-        working,
-        state,
-        message=message,
-        author=author,
-        declared=declared,
-        listed=[] if tree is merging.MISSING else tree.get("entries", []),
-        local_objects={},
-        assets_dir=None,
-        allow_empty=True,
-        merged=theirs,
-    )
-    plan.described = [
-        name
-        for name, merged, own in (
-            ("dataset.json", declared, merging.declared(described["ours"])),
-            ("tree.json", tree, listed["ours"] or merging.MISSING),
+    try:
+        version = _commit(
+            store,
+            working,
+            state,
+            message=message,
+            author=author,
+            assets_dir=None,
+            allow_empty=True,
+            facts=facts,
+            merged=theirs,
         )
-        if merged != own
-    ]
+    except declaring.DeclarationError as exc:
+        # The merge holds what the declarations refuse: one side dropped a column the other made a key, say.
+        repo.clone(store, working, local_data=Path(state["data"]) if state.get("data") else None, version=ours, storage=state.get("storage"))
+        raise merging.Conflicts([f"declarations: {problem}" for problem in exc.problems]) from exc
     return version, plan
 
 
@@ -712,12 +648,120 @@ def _read_setup(store) -> list[str]:
     return [f"CREATE SECRET fdl_remote (TYPE http, BEARER_TOKEN '{secret}', SCOPE '{scope}')"]
 
 
+declare_app = typer.Typer(no_args_is_help=True)
+app.add_typer(
+    declare_app,
+    name="declare",
+    help="Set what the next commit declares of the tables and views: primary keys, asset columns, "
+    "profiles and the other datasets the views read. A commit starts from its parent's declarations.",
+)
+
+Table = typer.Argument(help="The table or view, as schema.name")
+
+
+def _change_declarations(working: Path, change) -> None:
+    """Apply ``change`` to the declarations kept beside the working metadata, refusing
+    what the tables and views refuse that they did not refuse before."""
+    state = _read_state(working)
+    store = _store(state["remote"])
+    try:
+        before = _declared(store, state, working)
+        after = change(before)
+        reading, setup = _reading(store, state)
+        found = declaring.found_in(working, data_path=reading, setup=setup)
+        old = set(declaring.check(before, found))
+        problems = [p for p in declaring.check(after, found) if p not in old]
+        if problems:
+            raise declaring.DeclarationError(problems)
+    except (*ERRORS, catalog.CatalogError) as exc:
+        raise _fail(exc) from exc
+    _write_state(working, {**state, "declared": after.to_json()})
+
+
+def _with(found: dict, name: str, value) -> dict:
+    return {**{k: v for k, v in found.items() if k != name}, **({name: value} if value else {})}
+
+
+@declare_app.command("list")
+def declare_list(
+    working: Path = Working,
+    as_json: bool = typer.Option(False, "--json", help="Print them as JSON"),
+) -> None:
+    """What the next commit declares, one declaration a line."""
+    state = _read_state(working)
+    store = _store(state["remote"])
+    try:
+        facts = _declared(store, state, working)
+    except ERRORS as exc:
+        raise _fail(exc) from exc
+    if as_json:
+        typer.echo(json.dumps(facts.to_json(), ensure_ascii=False, indent=2))
+        return
+    for name, columns in sorted(facts.primary_keys.items()):
+        typer.echo(f"{name} primary_key {' '.join(columns)}")
+    for name, columns in sorted(facts.assets.items()):
+        typer.echo(f"{name} assets {' '.join(columns)}")
+    for name in sorted(facts.unprofiled):
+        typer.echo(f"{name} profile false")
+    for name, entry in sorted(facts.dependencies.items()):
+        typer.echo(f"dependency {name} {entry['url']}" + (f" {entry['version']}" if entry.get("version") else ""))
+
+
+@declare_app.command("primary-key")
+def declare_primary_key(
+    working: Path = Working,
+    name: str = Table,
+    columns: list[str] = typer.Argument(None, help="The columns that identify a row. None removes the primary key"),
+) -> None:
+    """Declare the columns that identify a row of a table, used to merge it cell by cell."""
+    _change_declarations(
+        working, lambda f: dataclasses.replace(f, primary_keys=_with(f.primary_keys, name, list(columns or [])))
+    )
+
+
+@declare_app.command("assets")
+def declare_assets(
+    working: Path = Working,
+    name: str = Table,
+    columns: list[str] = typer.Argument(None, help="The VARCHAR columns that hold a file's sha256. None removes them"),
+) -> None:
+    """Declare the columns of a table that point at files by sha256 (see fdl assets)."""
+    _change_declarations(working, lambda f: dataclasses.replace(f, assets=_with(f.assets, name, list(columns or []))))
+
+
+@declare_app.command("profile")
+def declare_profile(
+    working: Path = Working,
+    name: str = Table,
+    profiled: bool = typer.Argument(..., help="false: make no profile for it"),
+) -> None:
+    """Declare whether a push profiles a table or view."""
+    _change_declarations(
+        working,
+        lambda f: dataclasses.replace(f, unprofiled=f.unprofiled - {name} if profiled else f.unprofiled | {name}),
+    )
+
+
+@declare_app.command("dependency")
+def declare_dependency(
+    working: Path = Working,
+    name: str = typer.Argument(help="The name the views' SQL reads the other dataset under"),
+    url: str | None = typer.Argument(None, help="The URL of its root, ending in /. Without it, the dependency is removed"),
+    version: str | None = typer.Option(None, "--version", help="The version to read. Without it, the one main holds"),
+) -> None:
+    """Declare another dataset the views read (a dependency)."""
+    if version and not url:
+        raise _fail(declaring.DeclarationError(["--version needs the url"]))
+    entry = {"url": url, **({"version": version} if version else {})} if url else None
+    _change_declarations(working, lambda f: dataclasses.replace(f, dependencies=_with(f.dependencies, name, entry)))
+
+
 @app.command()
 def assets(folder: Path = typer.Argument(..., help="The folder of files the rows will point at")) -> None:
     """List the files below a folder as CSV: path, sha256, bytes, media_type.
 
-    Read it into the table that points at them (DuckDB's read_csv, say), and
-    mark its sha256 column with ``asset: true``. `fdl commit --assets <folder>`
+    Read it into a table (DuckDB's read_csv, say) and declare its sha256 column
+    an asset column with `fdl declare assets`. `fdl commit --assets <folder>`
     then uploads the files the repository lacks.
     """
     import csv
@@ -796,7 +840,7 @@ def diff(
     against: str | None = typer.Option(None, help="The version or ref to compare with (default: the target's parent)"),
     as_json: bool = typer.Option(False, "--json", help="Print the differences as JSON"),
 ) -> None:
-    """What changed in a version: tables, rows, columns, data files and dataset.json.
+    """What changed in a version: tables, rows, columns and data files.
 
     Compared with the version's parent, or with --against.
     """
@@ -822,7 +866,7 @@ def show(
         version = _version(store, target)
         parent = repo.read_version(store, version.parents[0]) if version.parents else None
         expired = repo.is_expired(store, version.id)
-        described = None if expired else diffs.described(store, version)
+        listed = None if expired else _tables_of(store, version)
         result = None if expired else diffs.versions(store, parent, version)
     except ERRORS as exc:
         raise _fail(exc) from exc
@@ -840,15 +884,25 @@ def show(
     typer.echo(f"date      {version.created_at}")
     typer.echo("")
     typer.echo(f"    {version.message}")
-    if described:
+    if listed:
         typer.echo("")
-        for table in described.get("tables", []):
-            rows = f"{table['rows']:,} row{'' if table['rows'] == 1 else 's'}" if isinstance(table.get("rows"), int) else table.get("kind", "")
-            typer.echo(f"  {table.get('schema')}.{table.get('name')}  {rows}")
+        for name, rows in listed:
+            shown = f"{rows:,} row{'' if rows == 1 else 's'}" if isinstance(rows, int) else rows
+            typer.echo(f"  {name}  {shown}")
     if result is not None:
         typer.echo("")
         for line in diffs.lines(result) or ["No changes from the parent"]:
             typer.echo(line)
+
+
+def _tables_of(store, version) -> list[tuple[str, int | str]]:
+    """Each table with its rows, and each view, of a version, from its `tables.json`."""
+    index = diffs.indexed(store, version) or {}
+    tables = [
+        (name, sum(f["rows"] - f.get("deletes", {}).get("rows", 0) for f in table.get("files", [])))
+        for name, table in index.get("tables", {}).items()
+    ]
+    return sorted(tables) + [(name, "view") for name in sorted(index.get("views", {}))]
 
 
 @app.command()
@@ -871,6 +925,14 @@ def status(
             else None
         )
         result = diffs.working(working, pending or base)
+        if pending:
+            committed = declaring.from_index(json.loads((_pending_dir(working) / pending_id / layout.TABLES).read_text()))
+        else:
+            committed = repo.declarations(store, base) if base else declaring.Facts()
+        now = _declared(store, state, working)
+        named = {*committed.primary_keys, *committed.assets, *committed.unprofiled, *now.primary_keys, *now.assets, *now.unprofiled}
+        result["declarations"] = declaring.changed(committed, now, named)
+        result["dependencies"] = declaring.dependencies_changed(committed, now)
     except (*ERRORS, catalog.CatalogError, OSError) as exc:
         raise _fail(exc) from exc
     if as_json:
@@ -975,8 +1037,6 @@ def _profile_pending(store, working: Path, state: dict, folder: Path, version) -
     holds what was committed, or the tables cannot be read, it warns and the
     version goes without them (`fdl profile <remote>` adds them later).
     """
-    described_path = folder / layout.DATASET
-
     def unprofiled(wanted: list[dict]) -> list[str]:
         return [
             f"{table['schema']}.{table['name']}"
@@ -985,9 +1045,9 @@ def _profile_pending(store, working: Path, state: dict, folder: Path, version) -
         ]
 
     try:
-        if not described_path.is_file():
-            return
-        wanted = profiles.tables(json.loads(described_path.read_text(encoding="utf-8")))
+        reading, setup = _reading(store, state)
+        index = json.loads((folder / layout.TABLES).read_text(encoding="utf-8"))
+        wanted = profiles.indexed(index, declaring.from_index(index).unprofiled)
         if not unprofiled(wanted):
             return  # no tables, or all profiled by a push that stopped before it finished
         if catalog.last_snapshot(working) != version.ducklake.snapshot_id:
@@ -998,7 +1058,6 @@ def _profile_pending(store, working: Path, state: dict, folder: Path, version) -
             )
             return
         parent = repo.read_version(store, version.parents[0]) if version.parents else None
-        reading, setup = _reading(store, state)
         repo.write_profiles(store, folder, parent, working, data_path=reading, setup=setup)
     except Exception as exc:  # noqa: BLE001 - a profile is never worth a failed push
         typer.echo(f"warning: tables were not profiled ({exc})", err=True)

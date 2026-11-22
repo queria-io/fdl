@@ -9,7 +9,7 @@ A mirror is a copy of a repository on another host. Since versions and data file
 
 Copy in the same order a push writes, so a reader of the mirror never follows a ref to a version that is not all there:
 
-1. data files under `tables/`, assets under `assets/` and tree files under `objects/` that the mirror lacks
+1. data files under `tables/` and assets under `assets/` that the mirror lacks
 2. version folders under `versions/` that the mirror lacks, `version.json` last in each
 3. `fdl.json`, if it changed
 4. `refs/`, `HEAD` and `refs.json`
@@ -17,7 +17,6 @@ Copy in the same order a push writes, so a reader of the mirror never follows a 
 ```bash
 aws s3 sync s3://origin/towns/tables/   s3://mirror/towns/tables/
 aws s3 sync s3://origin/towns/assets/   s3://mirror/towns/assets/
-aws s3 sync s3://origin/towns/objects/  s3://mirror/towns/objects/
 aws s3 sync s3://origin/towns/versions/ s3://mirror/towns/versions/
 aws s3 cp   s3://origin/towns/fdl.json  s3://mirror/towns/fdl.json
 aws s3 sync s3://origin/towns/refs/     s3://mirror/towns/refs/ --delete

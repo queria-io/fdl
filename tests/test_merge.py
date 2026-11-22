@@ -1,4 +1,4 @@
-"""fdl branch and fdl merge: the three-way merge of tables, rows and descriptions."""
+"""fdl branch and fdl merge: the three-way merge of tables, rows, cells and declarations."""
 
 from __future__ import annotations
 
@@ -11,25 +11,10 @@ from typer.testing import CliRunner
 
 from fdl import catalog, merge, repo
 from fdl.cli import app
+from fdl.declared import Facts
 from fdl.stores import LocalStore
 
 runner = CliRunner()
-
-DESCRIBED = {
-    "name": "towns",
-    "title": "Towns",
-    "tables": [{"schema": "main", "name": "towns", "primary_key": ["id"]}],
-}
-
-
-@pytest.fixture(autouse=True)
-def described(tmp_path: Path, monkeypatch) -> Path:
-    path = tmp_path / "about" / "dataset.json"
-    path.parent.mkdir()
-    path.write_text(json.dumps(DESCRIBED))
-    monkeypatch.chdir(path.parent)
-    return path
-
 
 def run(*args, code: int = 0) -> str:
     result = runner.invoke(app, [str(a) for a in args])
@@ -48,6 +33,15 @@ def sql(working: Path, store: LocalStore, statement: str) -> list[tuple]:
     return rows
 
 
+def keyed(working: Path, table: str, *columns: str) -> None:
+    """Declare the primary key of ``main.<table>``: ``id``, or none with ``()``."""
+    run("declare", "primary-key", working, f"main.{table}", *(columns if columns != ((),) else ()))
+
+
+def unkeyed(working: Path, table: str) -> None:
+    run("declare", "primary-key", working, f"main.{table}")
+
+
 def save(working: Path, message: str) -> None:
     run("commit", working, "-m", message, "--author", "tester")
     run("push", working)
@@ -62,6 +56,7 @@ def branches(tmp_path: Path):
     main, feature = tmp_path / "main.sqlite", tmp_path / "feature.sqlite"
     run("clone", remote, main)
     sql(main, store, "CREATE TABLE lake.main.towns AS SELECT * FROM (VALUES (1, 'a'), (2, 'b'), (3, 'c')) t(id, name)")
+    keyed(main, "towns", "id")
     save(main, "first")
     run("branch", remote, "feature")
     run("clone", remote, feature, "--branch", "feature")
@@ -120,24 +115,86 @@ def test_the_same_change_on_both_sides_is_no_conflict(branches) -> None:
     assert towns(main, store) == [(2, "b"), (3, "c")]
 
 
-def test_a_table_without_a_primary_key_is_not_merged_by_rows(branches, described: Path) -> None:
+def test_a_table_whose_primary_key_differs_between_the_sides_is_a_conflict(branches) -> None:
     store, main, feature = branches
-    described.write_text(json.dumps({"name": "towns", "title": "Towns"}))
     sql(feature, store, "INSERT INTO lake.main.towns VALUES (5, 'e')")
+    unkeyed(feature, "towns")
     save(feature, "feature")
     sql(main, store, "INSERT INTO lake.main.towns VALUES (4, 'd')")
     save(main, "main")
 
     out = run("merge", "refs/heads/feature", main, "--author", "tester", code=1)
-    assert "main.towns: both sides changed the table, and it has no primary key both declare" in out
+    assert "main.towns: both sides changed the table, and its primary key differs between the sides" in out
 
 
-def test_a_dropped_table_the_other_side_changed_is_a_conflict(branches, described: Path) -> None:
+@pytest.fixture
+def unkeyed_branches(tmp_path: Path):
+    """main and feature at a first version holding a table without a primary key."""
+    remote = tmp_path / "remote"
+    store = LocalStore(remote)
+    run("init", remote)
+    main, feature = tmp_path / "main.sqlite", tmp_path / "feature.sqlite"
+    run("clone", remote, main)
+    sql(main, store, "CREATE TABLE lake.main.notes AS SELECT * FROM (VALUES ('a'), ('a'), ('b'), ('c')) t(text)")
+    save(main, "first")
+    run("branch", remote, "feature")
+    run("clone", remote, feature, "--branch", "feature")
+    return store, main, feature
+
+
+def notes(working: Path, store: LocalStore) -> list[tuple]:
+    return sql(working, store, "SELECT text FROM lake.main.notes ORDER BY ALL")
+
+
+def test_rows_of_a_table_without_a_primary_key_are_merged_as_a_multiset(unkeyed_branches) -> None:
+    store, main, feature = unkeyed_branches
+    # Theirs deletes one 'a' and changes 'c'; ours adds 'd' and changes 'c' too, the same way.
+    sql(feature, store, "CREATE OR REPLACE TABLE lake.main.notes AS SELECT * FROM (VALUES ('a'), ('b'), ('C')) t(text)")
+    save(feature, "feature")
+    sql(main, store, "UPDATE lake.main.notes SET text = 'C' WHERE text = 'c'; INSERT INTO lake.main.notes VALUES ('d')")
+    save(main, "main")
+
+    run("merge", "refs/heads/feature", main, "--author", "tester")
+    assert notes(main, store) == [("C",), ("a",), ("b",), ("d",)]
+
+
+def test_a_row_both_sides_changed_differently_without_a_primary_key_keeps_both(unkeyed_branches) -> None:
+    store, main, feature = unkeyed_branches
+    sql(feature, store, "UPDATE lake.main.notes SET text = 'x' WHERE text = 'c'")
+    save(feature, "feature")
+    sql(main, store, "UPDATE lake.main.notes SET text = 'y' WHERE text = 'c'")
+    save(main, "main")
+
+    run("merge", "refs/heads/feature", main, "--author", "tester")
+    assert notes(main, store) == [("a",), ("a",), ("b",), ("x",), ("y",)]
+
+
+def test_counts_both_sides_changed_differently_without_a_primary_key_are_a_conflict(unkeyed_branches) -> None:
+    store, main, feature = unkeyed_branches
+    sql(feature, store, "INSERT INTO lake.main.notes VALUES ('b')")
+    save(feature, "feature")
+    sql(main, store, "INSERT INTO lake.main.notes VALUES ('b'), ('b')")
+    save(main, "main")
+
+    out = run("merge", "refs/heads/feature", main, "--author", "tester", code=1)
+    assert "main.notes: both sides changed 1 row(s) of the table, which has no primary key, differently" in out
+
+
+def test_columns_that_differ_without_a_primary_key_are_a_conflict(unkeyed_branches) -> None:
+    store, main, feature = unkeyed_branches
+    sql(feature, store, "ALTER TABLE lake.main.notes ADD COLUMN n INTEGER")
+    save(feature, "feature")
+    sql(main, store, "INSERT INTO lake.main.notes VALUES ('d')")
+    save(main, "main")
+
+    out = run("merge", "refs/heads/feature", main, "--author", "tester", code=1)
+    assert "main.notes: both sides changed the table, which has no primary key, and its columns differ" in out
+
+
+def test_a_dropped_table_the_other_side_changed_is_a_conflict(branches) -> None:
     store, main, feature = branches
-    described.write_text(json.dumps({"name": "towns", "title": "Towns"}))
     sql(feature, store, "DROP TABLE lake.main.towns; CREATE TABLE lake.main.other AS SELECT 1 AS id")
     save(feature, "feature")
-    described.write_text(json.dumps(DESCRIBED))
     sql(main, store, "INSERT INTO lake.main.towns VALUES (4, 'd')")
     save(main, "main")
 
@@ -157,22 +214,68 @@ def test_a_view_one_side_added_comes_over(branches) -> None:
     assert sql(main, store, "SELECT count(*) FROM lake.main.named") == [(4,)]
 
 
-def test_descriptions_are_merged_key_by_key(branches, described: Path) -> None:
+def test_declarations_each_side_changed_are_merged(branches, tmp_path: Path) -> None:
     store, main, feature = branches
-    described.write_text(json.dumps({**DESCRIBED, "description": "Towns of a city"}))
+    other = (tmp_path / "remote").resolve().as_uri() + "/"
     sql(feature, store, "INSERT INTO lake.main.towns VALUES (5, 'e')")
+    run("declare", "profile", feature, "main.towns", "false")
     save(feature, "feature")
-    described.write_text(json.dumps({**DESCRIBED, "title": "All towns"}))
     sql(main, store, "INSERT INTO lake.main.towns VALUES (4, 'd')")
+    run("declare", "dependency", main, "other", other)
     save(main, "main")
 
-    out = run("merge", "refs/heads/feature", main, "--author", "tester")
-    assert "warning: theirs changed dataset.json" in out
+    run("merge", "refs/heads/feature", main, "--author", "tester")
     run("push", main)
-    merged = repo.head(store, "refs/heads/main")
-    written = json.loads(store.get(f"versions/{merged.id}/dataset.json"))
-    assert (written["title"], written["description"]) == ("All towns", "Towns of a city")
-    assert written["tables"][0]["rows"] == 5
+    index = tables_json(store)
+    assert (index["tables"]["main.towns"]["primary_key"], index["tables"]["main.towns"]["profile"]) == (["id"], False)
+    assert index["dependencies"] == {"other": {"url": other}}
+
+
+def test_a_declaration_both_sides_changed_differently_is_a_conflict(branches) -> None:
+    store, main, feature = branches
+    run("declare", "primary-key", feature, "main.towns", "name")
+    save(feature, "feature")
+    run("declare", "primary-key", main, "main.towns", "id", "name")
+    save(main, "main")
+
+    out = run("merge", "refs/heads/feature", main, "--author", "tester", code=1)
+    assert "declarations: main.towns: both sides changed the primary key differently" in out
+
+
+def test_a_merge_with_declarations_not_committed_is_refused(branches) -> None:
+    store, main, feature = branches
+    sql(feature, store, "INSERT INTO lake.main.towns VALUES (5, 'e')")
+    save(feature, "feature")
+    run("declare", "profile", main, "main.towns", "false")
+
+    out = run("merge", "refs/heads/feature", main, "--author", "tester", code=1)
+    assert "the declarations have changes not committed" in out
+    assert "main.towns profile false" in run("declare", "list", main)
+
+
+def test_a_table_made_again_does_not_get_the_declarations_of_the_dropped_one(branches) -> None:
+    store, main, _ = branches
+    sql(main, store, "DROP TABLE lake.main.towns")
+    save(main, "dropped")
+    assert "primary_key" not in run("declare", "list", main)
+    sql(main, store, "CREATE TABLE lake.main.towns (code VARCHAR)")
+    save(main, "made again")
+    assert "primary_key" not in tables_json(store)["tables"]["main.towns"]
+
+
+def test_a_merge_whose_declarations_the_tables_refuse_is_a_conflict(branches) -> None:
+    store, main, feature = branches
+    sql(feature, store, "ALTER TABLE lake.main.towns DROP COLUMN name")
+    save(feature, "feature")
+    run("declare", "primary-key", main, "main.towns", "id", "name")
+    save(main, "main")
+    before = repo.head(store, "refs/heads/main")
+
+    out = run("merge", "refs/heads/feature", main, "--author", "tester", code=1)
+    assert "declarations: main.towns: the primary key names columns it lacks: name" in out
+    assert "Nothing to push" in run("push", main)
+    assert repo.head(store, "refs/heads/main") == before
+    assert towns(main, store) == [(1, "a"), (2, "b"), (3, "c")]
 
 
 def test_a_branch_behind_the_other_moves_forward_without_a_version(branches) -> None:
@@ -224,31 +327,16 @@ def test_branches_are_listed_created_and_deleted(branches, tmp_path: Path) -> No
 # -- the pieces ------------------------------------------------------------------------
 
 
-def test_values_one_side_changed_take_that_side() -> None:
-    base = {"title": "a", "tables": [{"schema": "s", "name": "t", "description": "x"}]}
-    ours = {"title": "b", "tables": [{"schema": "s", "name": "t", "description": "x"}]}
-    theirs = {"title": "a", "tables": [{"schema": "s", "name": "t", "description": "y"}, {"schema": "s", "name": "u"}]}
-    merged, conflicts = merge.values(base, ours, theirs)
-    assert conflicts == []
-    assert merged == {"title": "b", "tables": [{"schema": "s", "name": "t", "description": "y"}, {"schema": "s", "name": "u"}]}
-
-
-def test_values_both_sides_changed_differently_conflict() -> None:
-    base = {"keywords": ["a"], "tables": [{"schema": "s", "name": "t", "title": "x"}]}
-    ours = {"keywords": ["b"], "tables": [{"schema": "s", "name": "t", "title": "y"}]}
-    theirs = {"keywords": ["c"], "tables": []}
-    _, conflicts = merge.values(base, ours, theirs)
-    assert conflicts == ["keywords", "tables[s.t]"]
-
-
 def test_primary_keys_must_agree() -> None:
-    def described(*keys):
-        return {"tables": [{"schema": "s", "name": name, "primary_key": key} for name, key in keys]}
+    def declared(**keys):
+        return Facts(primary_keys={f"s.{name}": key for name, key in keys.items()}), {f"s.{name}" for name in keys}
 
-    base = described(("same", ["id"]), ("changed", ["id"]))
-    ours = described(("same", ["id"]), ("changed", ["code"]), ("new", ["id"]), ("differ", ["id"]))
-    theirs = described(("same", ["id"]), ("changed", ["code"]), ("new", ["id"]), ("differ", ["code"]))
-    assert merge.primary_keys(base, ours, theirs) == {("s", "same"): ["id"], ("s", "new"): ["id"]}
+    base = declared(same=["id"], changed=["id"])
+    ours = declared(same=["id"], changed=["code"], new=["id"], differ=["id"])
+    theirs = declared(same=["id"], changed=["code"], new=["id"], differ=["code"])
+    found = merge.primary_keys(base, ours, theirs)
+    # A primary key that differs between the three is None: a conflict.
+    assert found == {("s", "same"): ["id"], ("s", "new"): ["id"], ("s", "changed"): None, ("s", "differ"): None}
 
 
 def test_a_merge_base_is_the_newest_common_ancestor(tmp_path: Path) -> None:
@@ -287,11 +375,10 @@ def test_a_merge_base_is_the_newest_common_ancestor(tmp_path: Path) -> None:
     assert {v.id for v in repo.merge_bases(store, x, y)} == {a1.id, b1.id}
 
 
-def test_conflicts_in_two_tables_merged_by_rows_are_both_listed(branches, described: Path) -> None:
+def test_conflicts_in_two_tables_merged_by_rows_are_both_listed(branches) -> None:
     store, main, feature = branches
-    two = {**DESCRIBED, "tables": [*DESCRIBED["tables"], {"schema": "main", "name": "s", "primary_key": ["id"]}]}
-    described.write_text(json.dumps(two))
     sql(main, store, "CREATE TABLE lake.main.s AS SELECT * FROM (VALUES (1, 'a'), (2, 'b')) t(id, name)")
+    keyed(main, "s", "id")
     save(main, "s")
     run("merge", "refs/heads/main", feature, "--author", "tester")
     run("push", feature)
@@ -305,11 +392,10 @@ def test_conflicts_in_two_tables_merged_by_rows_are_both_listed(branches, descri
     assert "main.towns: both sides changed 1 row(s) differently: id=2" in out
 
 
-def test_rows_of_a_table_named_s_are_merged_by_key(branches, described: Path) -> None:
+def test_rows_of_a_table_named_s_are_merged_by_key(branches) -> None:
     store, main, feature = branches
-    two = {**DESCRIBED, "tables": [*DESCRIBED["tables"], {"schema": "main", "name": "s", "primary_key": ["id"]}]}
-    described.write_text(json.dumps(two))
     sql(main, store, "CREATE TABLE lake.main.s AS SELECT * FROM (VALUES (1, 'a'), (2, 'b'), (3, 'c')) t(id, name)")
+    keyed(main, "s", "id")
     save(main, "s")
     run("merge", "refs/heads/main", feature, "--author", "tester")
     run("push", feature)
@@ -399,3 +485,175 @@ def test_a_comment_ours_changed_on_a_view_theirs_made_a_table(branches) -> None:
     save(main, "main")
     output = run("merge", "refs/heads/feature", main, "--author", "tester")
     assert "comment of main.named" in output
+
+
+def test_cells_of_one_row_changed_on_each_side_are_merged(branches) -> None:
+    store, main, feature = branches
+    sql(feature, store, "ALTER TABLE lake.main.towns ADD COLUMN note VARCHAR")
+    save(feature, "note")
+    run("merge", "refs/heads/feature", main, "--author", "tester")
+    run("push", main)
+    sql(feature, store, "UPDATE lake.main.towns SET note = 'n' WHERE id = 2")
+    save(feature, "feature")
+    sql(main, store, "UPDATE lake.main.towns SET name = 'y' WHERE id = 2")
+    save(main, "main")
+
+    run("merge", "refs/heads/feature", main, "--author", "tester")
+    assert sql(main, store, "SELECT id, name, note FROM lake.main.towns WHERE id = 2") == [(2, "y", "n")]
+
+
+def test_a_row_dropped_on_one_side_and_changed_on_the_other_is_a_conflict(branches) -> None:
+    store, main, feature = branches
+    sql(feature, store, "DELETE FROM lake.main.towns WHERE id = 2")
+    save(feature, "feature")
+    sql(main, store, "UPDATE lake.main.towns SET name = 'y' WHERE id = 2")
+    save(main, "main")
+
+    out = run("merge", "refs/heads/feature", main, "--author", "tester", code=1)
+    assert "main.towns: both sides changed 1 row(s) differently: id=2" in out
+
+
+def tables_json(store: LocalStore) -> dict:
+    version = repo.head(store)
+    return json.loads(store.get(f"versions/{version.id}/{version.tables.path}"))
+
+
+def test_columns_each_side_added_or_dropped_are_merged(branches) -> None:
+    store, main, feature = branches
+    sql(feature, store, "ALTER TABLE lake.main.towns ADD COLUMN note VARCHAR; UPDATE lake.main.towns SET note = 'n' WHERE id = 1")
+    sql(feature, store, "INSERT INTO lake.main.towns VALUES (5, 'e', 'new')")
+    save(feature, "feature")
+    sql(main, store, "ALTER TABLE lake.main.towns ADD COLUMN size INTEGER DEFAULT 0; UPDATE lake.main.towns SET name = 'B' WHERE id = 2")
+    sql(main, store, "INSERT INTO lake.main.towns VALUES (4, 'd', 7)")
+    save(main, "main")
+
+    run("merge", "refs/heads/feature", main, "--author", "tester")
+    run("push", main)
+    assert sql(main, store, "SELECT id, name, size, note FROM lake.main.towns ORDER BY id") == [
+        (1, "a", 0, "n"),
+        (2, "B", 0, None),
+        (3, "c", 0, None),
+        (4, "d", 7, None),
+        (5, "e", 0, "new"),
+    ]
+
+
+def test_a_column_dropped_on_one_side_and_changed_on_the_other_is_a_conflict(branches) -> None:
+    store, main, feature = branches
+    sql(feature, store, "ALTER TABLE lake.main.towns DROP COLUMN name; INSERT INTO lake.main.towns VALUES (5)")
+    save(feature, "feature")
+    sql(main, store, "UPDATE lake.main.towns SET name = 'y' WHERE id = 2")
+    save(main, "main")
+
+    out = run("merge", "refs/heads/feature", main, "--author", "tester", code=1)
+    assert "main.towns: both sides changed 1 row(s) differently: id=2" in out
+
+
+def test_a_row_both_sides_added_differently_is_a_conflict(branches) -> None:
+    store, main, feature = branches
+    sql(feature, store, "INSERT INTO lake.main.towns VALUES (4, 'x'), (5, 'same')")
+    save(feature, "feature")
+    sql(main, store, "INSERT INTO lake.main.towns VALUES (4, NULL), (5, 'same')")
+    save(main, "main")
+
+    out = run("merge", "refs/heads/feature", main, "--author", "tester", code=1)
+    assert "main.towns: both sides changed 1 row(s) differently: id=4" in out
+
+
+def test_a_column_renamed_on_one_side_takes_cells_changed_on_the_other(branches) -> None:
+    store, main, feature = branches
+    sql(feature, store, "ALTER TABLE lake.main.towns RENAME COLUMN name TO title")
+    save(feature, "feature")
+    sql(main, store, "UPDATE lake.main.towns SET name = 'y' WHERE id = 2")
+    save(main, "main")
+
+    run("merge", "refs/heads/feature", main, "--author", "tester")
+    assert sql(main, store, "SELECT id, title FROM lake.main.towns ORDER BY id") == [(1, "a"), (2, "y"), (3, "c")]
+
+
+def test_columns_one_side_swapped_take_cells_changed_on_the_other(branches) -> None:
+    store, main, feature = branches
+    sql(feature, store, "ALTER TABLE lake.main.towns ADD COLUMN kind VARCHAR; UPDATE lake.main.towns SET kind = 'k'")
+    save(feature, "kind")
+    run("merge", "refs/heads/feature", main, "--author", "tester")
+    run("push", main)
+    sql(
+        feature,
+        store,
+        "ALTER TABLE lake.main.towns RENAME COLUMN name TO tmp; "
+        "ALTER TABLE lake.main.towns RENAME COLUMN kind TO name; "
+        "ALTER TABLE lake.main.towns RENAME COLUMN tmp TO kind",
+    )
+    save(feature, "feature")
+    sql(main, store, "UPDATE lake.main.towns SET name = 'y' WHERE id = 2")
+    save(main, "main")
+
+    run("merge", "refs/heads/feature", main, "--author", "tester")
+    assert sql(main, store, "SELECT id, name, kind FROM lake.main.towns ORDER BY id") == [
+        (1, "k", "a"),
+        (2, "k", "y"),
+        (3, "k", "c"),
+    ]
+
+
+def test_a_name_both_sides_gave_to_different_columns_is_a_conflict(branches) -> None:
+    store, main, feature = branches
+    sql(feature, store, "ALTER TABLE lake.main.towns RENAME COLUMN name TO title")
+    save(feature, "feature")
+    sql(main, store, "ALTER TABLE lake.main.towns ADD COLUMN title VARCHAR")
+    save(main, "main")
+
+    out = run("merge", "refs/heads/feature", main, "--author", "tester", code=1)
+    assert "main.towns: the two sides give the name(s) title to different columns" in out
+
+
+def test_cells_changed_on_one_side_are_cast_to_the_type_the_other_gave(branches) -> None:
+    store, main, feature = branches
+    sql(feature, store, "ALTER TABLE lake.main.towns ALTER COLUMN id SET DATA TYPE BIGINT")
+    sql(feature, store, "ALTER TABLE lake.main.towns ADD COLUMN size INTEGER; UPDATE lake.main.towns SET size = 1")
+    save(feature, "size")
+    run("merge", "refs/heads/feature", main, "--author", "tester")
+    run("push", main)
+    sql(feature, store, "ALTER TABLE lake.main.towns ALTER COLUMN size SET DATA TYPE BIGINT")
+    save(feature, "feature")
+    sql(main, store, "UPDATE lake.main.towns SET size = 2 WHERE id = 2")
+    save(main, "main")
+
+    run("merge", "refs/heads/feature", main, "--author", "tester")
+    assert sql(main, store, "SELECT id, size, typeof(size) FROM lake.main.towns ORDER BY id") == [
+        (1, 1, "BIGINT"),
+        (2, 2, "BIGINT"),
+        (3, 1, "BIGINT"),
+    ]
+
+
+def test_a_cell_that_does_not_cast_to_the_new_type_is_a_conflict(branches) -> None:
+    store, main, feature = branches
+    sql(feature, store, "ALTER TABLE lake.main.towns ADD COLUMN size VARCHAR; UPDATE lake.main.towns SET size = '1'")
+    save(feature, "size")
+    run("merge", "refs/heads/feature", main, "--author", "tester")
+    run("push", main)
+    # Made again, so the column is found by name, in a type its values do not all cast to.
+    sql(feature, store, "CREATE OR REPLACE TABLE lake.main.towns AS SELECT id, name, size::INTEGER AS size FROM lake.main.towns")
+    save(feature, "feature")
+    sql(main, store, "UPDATE lake.main.towns SET size = 'big' WHERE id = 2")
+    save(main, "main")
+
+    out = run("merge", "refs/heads/feature", main, "--author", "tester", code=1)
+    assert "main.towns: both sides changed 1 row(s) differently: id=2" in out
+
+
+def test_a_not_null_column_one_side_added_while_the_other_added_rows_is_a_conflict(branches) -> None:
+    store, main, feature = branches
+    sql(feature, store, "INSERT INTO lake.main.towns VALUES (4, 'd')")
+    save(feature, "feature")
+    sql(
+        main,
+        store,
+        "CREATE OR REPLACE TABLE lake.main.towns (id INTEGER, name VARCHAR, size INTEGER NOT NULL); "
+        "INSERT INTO lake.main.towns VALUES (1, 'a', 1), (2, 'b', 1), (3, 'c', 1)",
+    )
+    save(main, "main")
+
+    out = run("merge", "refs/heads/feature", main, "--author", "tester", code=1)
+    assert "main.towns: ours added the column size NOT NULL with no default, and theirs added rows" in out

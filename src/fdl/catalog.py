@@ -653,7 +653,7 @@ def table_files(catalog_path: Path, snapshot_id: int, *, absolute: bool = False)
 
 
 def _column_tree(rows: list[tuple]) -> dict[tuple[int, int | None], list[dict]]:
-    """Columns as files.json writes them, keyed by (table_id, parent column_id).
+    """Columns as tables.json writes them, keyed by (table_id, parent column_id).
 
     The top-level columns of a table are under ``(table_id, None)``.
     """
@@ -720,6 +720,31 @@ def table_columns(catalog_path: Path, snapshot: int) -> dict[str, dict[str, str]
     for table, column, kind in rows:
         found.setdefault(table, {})[column] = kind
     return found
+
+
+def object_names(catalog_path: Path, snapshot: int) -> set[str]:
+    """The tables and views alive at ``snapshot``, ``schema.name``."""
+    live = "begin_snapshot <= ? AND (end_snapshot IS NULL OR end_snapshot > ?)"
+    con = _open(Path(catalog_path))
+    try:
+        rows = con.execute(
+            f"""
+            SELECT s.schema_name || '.' || o.name
+            FROM (
+                SELECT schema_id, table_name AS name FROM ducklake_table WHERE {live}
+                UNION ALL
+                SELECT schema_id, view_name FROM ducklake_view WHERE {live}
+            ) o
+            JOIN ducklake_schema s ON s.schema_id = o.schema_id
+            WHERE s.begin_snapshot <= ? AND (s.end_snapshot IS NULL OR s.end_snapshot > ?)
+            """,
+            [snapshot] * 6,
+        ).fetchall()
+    except Exception as exc:  # noqa: BLE001 - duckdb raises several types
+        raise CatalogError(f"{catalog_path} is not a DuckLake catalog: {exc}") from exc
+    finally:
+        con.close()
+    return {name for (name,) in rows}
 
 
 def has_snapshot(catalog_path: Path, snapshot: int) -> bool:
@@ -905,6 +930,20 @@ def keep_last_snapshot(catalog_path: Path) -> None:
 # -- whether anything changed --------------------------------------------------
 
 
+def recorded_data_path(catalog_path: Path) -> str:
+    """The data path a frozen catalog records."""
+    con = _open(Path(catalog_path))
+    try:
+        row = con.execute(
+            "SELECT value FROM ducklake_metadata WHERE key = ? AND scope IS NULL", [DATA_PATH_KEY]
+        ).fetchone()
+    finally:
+        con.close()
+    if not row:
+        raise CatalogError(f"{catalog_path} records no data path")
+    return row[0]
+
+
 def working_data_path(working: Path) -> str:
     import sqlite3
 
@@ -936,7 +975,13 @@ def last_snapshot(working: Path) -> int:
         con.close()
 
 
-def same_contents(working: Path, since: int, *, data_path: str | None = None) -> bool:
+def same_contents(
+    working: Path,
+    since: int,
+    *,
+    data_path: str | None = None,
+    setup: Iterable[str] = (),
+) -> bool:
     """Whether the working catalog's last snapshot holds what snapshot ``since`` held.
 
     ``data_path`` is where the working catalog's new data files are, when not
@@ -947,7 +992,7 @@ def same_contents(working: Path, since: int, *, data_path: str | None = None) ->
     rows, in any order. A table rebuilt from the same input is written to new
     files, so files are compared first and rows only where the files differ.
     Reading those rows needs the data files: one the writer cannot read raises
-    `CatalogError`.
+    `CatalogError`. ``setup`` runs first, for the keys reading them needs.
     """
     import duckdb
 
@@ -957,12 +1002,15 @@ def same_contents(working: Path, since: int, *, data_path: str | None = None) ->
         return True
     con = duckdb.connect()
     try:
-        for statement in attach_sql(
-            working,
-            alias="lake",
-            data_path=data_path or working_data_path(working),
-            read_only=True,
-        ):
+        for statement in [
+            *setup,
+            *attach_sql(
+                working,
+                alias="lake",
+                data_path=data_path or working_data_path(working),
+                read_only=True,
+            ),
+        ]:
             if statement:
                 con.execute(statement)
         meta = "__ducklake_metadata_lake.main"

@@ -20,7 +20,7 @@ FDL keeps the roles and names of Git, and stores things its own way. Anyone who 
 | `refs/tags/<name>` | Tag | Created once, never moved |
 | `HEAD` | `HEAD` | Names the default branch |
 | `refs.json` | `info/refs` | Lets a reader over plain HTTP find refs by name |
-| `versions/<ID>/files.json` | Reachability bitmap | An index made from the metadata. A reader can do without it |
+| `versions/<ID>/tables.json` | Reachability bitmap | An index made from the metadata: each table's data files and columns, each view's SQL, and the declarations (primary key, asset columns, profile, other datasets read) |
 | `version.json.sig` | Signed commit | An SSH signature made with `ssh-keygen -Y sign` |
 | Working metadata (SQLite) | Working tree and index | Made from a version and turned into the next one |
 | `POST <root>/?batch` | Git LFS batch API | Hands out URLs for uploading straight to storage |
@@ -30,7 +30,7 @@ Three things differ on purpose:
 
 - A version's ID is a UUIDv7, not a hash of its content. Two DuckDB releases can write the same metadata as different bytes, so a content hash would change with the tool. The sha256 in `version.json` checks the content instead
 - There are no packfiles. Each file is its own object in the store, so a reader fetches only the parts of a Parquet file it needs
-- A merge matches rows by the primary key that `dataset.json` declares, not by lines or files. Two branches that changed the same table without one are a conflict (see [Merging](/spec/writing#merging))
+- A merge matches rows by the primary key `tables.json` declares, and merges each cell, not lines or files. A table without one is merged as a multiset of rows (see [Merging](/spec/writing#merging))
 
 ## Writing a version
 
@@ -49,7 +49,7 @@ The writer runs SQL on the working metadata with DuckDB, directly or through a t
 
 ### Commit
 
-`fdl commit` copies the working metadata into a DuckDB file, sets its `data_path` to the repository's data folder, makes `dataset.json` from it, and writes `version.json` with a new ID and the previous version as its parent. If the tables hold the same rows as the parent's, there is no commit. The new version exists only on the writer's machine until it is pushed.
+`fdl commit` copies the working metadata into a DuckDB file, sets its `data_path` to the repository's data folder, checks the declarations against its tables, writes `tables.json` from it, and writes `version.json` with a new ID and the previous version as its parent. If the tables hold the same rows and declarations as the parent's, there is no commit. The new version exists only on the writer's machine until it is pushed.
 
 ### Push
 
@@ -57,7 +57,7 @@ A push writes files in the order that keeps readers safe: whatever a file points
 
 1. The new data files the repository lacks
 2. `versions/<ID>/metadata.db`
-3. `versions/<ID>/dataset.json` and `files.json`
+3. `versions/<ID>/tables.json`
 4. `versions/<ID>/version.json`
 5. The ref, with `If-Match: <ETag read before step 1>`, or `If-None-Match: *` for the first version
 6. `refs.json`, rewritten from a fresh read of `HEAD` and every ref
@@ -71,7 +71,7 @@ Readers start from a ref, and the ref is written in step 5. A push that stops be
 Over HTTP, every key is a path under the repository's URL, and the host answers `GET`, `PUT` and the rest for it (see [Pushing over HTTP](/spec/http)). The order is the same as above. Two steps change:
 
 - Before step 1, the writer sends `POST <root>/?batch` with the keys and sizes of the files it is about to upload. For each file, the host answers with an upload URL, says the file is already there, or answers 413 to have it sent through the host. Files with a URL go straight to storage with `PUT`, and the host is not in the path of the data. A host without batches answers 404, 405 or 501, and every file goes through the host
-- In step 5, the host checks the push before it moves the ref: the version is complete, its parent is the version the ref holds now, the metadata matches `version.json`, and every data file the metadata names is in the repository. It answers 409 with the reason when a check fails. A host that moves refs itself also writes `refs.json`, and answers 403 when the writer tries to
+- In step 5, the host checks the push before it moves the ref: the version is complete, its parent is the version the ref holds now, the metadata and `tables.json` match `version.json`, `tables.json` lists the data files and delete files the metadata names, and every one of them is in the repository. It answers 409 with the reason when a check fails. A host that moves refs itself also writes `refs.json`, and answers 403 when the writer tries to
 
 A host can also keep writers from moving refs at all. The writer then uploads the version and stops after step 4, and the host moves the ref later, for example after someone approves the change.
 

@@ -9,7 +9,7 @@ description: リポジトリを別のホストに写し、最新に保ち、写�
 
 push と同じ順に写します。そうすれば、ミラーの読み手が、まだ揃っていないバージョンを ref からたどることはありません。
 
-1. ミラーに無い `tables/` の下のデータファイル、`assets/` の下のアセット、`objects/` の下の tree のファイル
+1. ミラーに無い `tables/` の下のデータファイルと `assets/` の下のアセット
 2. ミラーに無い `versions/` の下のバージョンのフォルダ。各フォルダで `version.json` を最後に
 3. 変わっていれば `fdl.json`
 4. `refs/`、`HEAD`、`refs.json`
@@ -17,7 +17,6 @@ push と同じ順に写します。そうすれば、ミラーの読み手が、
 ```bash
 aws s3 sync s3://origin/towns/tables/   s3://mirror/towns/tables/
 aws s3 sync s3://origin/towns/assets/   s3://mirror/towns/assets/
-aws s3 sync s3://origin/towns/objects/  s3://mirror/towns/objects/
 aws s3 sync s3://origin/towns/versions/ s3://mirror/towns/versions/
 aws s3 cp   s3://origin/towns/fdl.json  s3://mirror/towns/fdl.json
 aws s3 sync s3://origin/towns/refs/     s3://mirror/towns/refs/ --delete

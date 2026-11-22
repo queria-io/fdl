@@ -6,17 +6,26 @@ version that comes out the other side.
 
 from __future__ import annotations
 
+import dataclasses
 import datetime as dt
+import hashlib
+import importlib.util
 import json
+import re
 import uuid
 from pathlib import Path
 
 import duckdb
 import pytest
 
-from fdl import catalog, diff, layout, refs, repo, tags
+from fdl import catalog, declared, diff, layout, refs, repo
 from fdl.stores import LocalStore
 from fdl.version import is_id, new_id, parse
+
+_SCRIPT = Path(__file__).parents[1] / "scripts" / "migrate_to_tables_json.py"
+_spec = importlib.util.spec_from_file_location("migrate_to_tables_json", _SCRIPT)
+migrating = importlib.util.module_from_spec(_spec)
+_spec.loader.exec_module(migrating)
 
 REAL_READ = refs.read
 
@@ -44,7 +53,7 @@ def build(working: Path, store: LocalStore, sql: str) -> None:
     con.close()
 
 
-def commit(tmp_path: Path, store, parent=None, message="m"):
+def commit(tmp_path: Path, store, parent=None, message="m", **options):
     return repo.commit(
         tmp_path / "work.sqlite",
         tmp_path / "local",
@@ -52,6 +61,7 @@ def commit(tmp_path: Path, store, parent=None, message="m"):
         data_path=data_path(store),
         author=AUTHOR,
         message=message,
+        **options,
     )
 
 
@@ -201,6 +211,22 @@ def test_push_refuses_a_catalog_whose_data_files_are_gone(tmp_path: Path, remote
     assert remote.head(layout.version_record(first.id)) is None
 
 
+def test_push_refuses_a_tables_json_that_does_not_match(tmp_path: Path, remote) -> None:
+    build(tmp_path / "work.sqlite", remote, "CREATE TABLE lake.main.towns AS SELECT 1 AS id")
+    first = commit(tmp_path, remote)
+    written = tmp_path / "local" / first.id / layout.TABLES
+    index = json.loads(written.read_text())
+    index["tables"]["main.towns"]["files"] = []
+    written.write_text(json.dumps(index))
+    with pytest.raises(repo.RepoError, match="tables.json is not the one version.json names"):
+        repo.push(remote, tmp_path / "local" / first.id, first)
+    content = written.read_bytes()
+    tables = repo.File(path=layout.TABLES, bytes=len(content), sha256=hashlib.sha256(content).hexdigest())
+    with pytest.raises(repo.RepoError, match="tables.json and the metadata name different files"):
+        repo.push(remote, tmp_path / "local" / first.id, dataclasses.replace(first, tables=tables))
+    assert remote.head(layout.version_record(first.id)) is None
+
+
 def test_version_ids_are_v7_and_ordered() -> None:
     earlier, later = new_id(1_000), new_id(2_000)
     assert is_id(earlier) and is_id(later)
@@ -258,8 +284,6 @@ def pushed_chain(tmp_path: Path, store, count: int) -> list:
 def test_expire_marks_and_drops_the_metadata_but_keeps_the_record(tmp_path: Path, remote) -> None:
     first, second = pushed_chain(tmp_path, remote, 2)
     remote.put(layout.version_dir(first.id) + "metadata/sqlite.db", b"x")
-    # Where fdl-cli 0.26 and earlier kept the other formats.
-    remote.put(layout.version_dir(first.id) + "catalogs/sqlite.duckdb", b"x")
     repo.expire(remote, first.id)
 
     assert json.loads(remote.get(layout.version_expired(first.id)))["reason"] == "retention"
@@ -309,8 +333,8 @@ def test_prune_keeps_what_was_made_since_and_within_the_grace_period(tmp_path: P
 
 
 def files_index(store: LocalStore, version) -> dict:
-    data = store.get(layout.version_dir(version.id) + version.files.path)
-    assert len(data) == version.files.bytes
+    data = store.get(layout.version_dir(version.id) + version.tables.path)
+    assert len(data) == version.tables.bytes
     return json.loads(data)["tables"]
 
 
@@ -324,7 +348,7 @@ def test_a_version_indexes_each_tables_files(tmp_path: Path, remote) -> None:
     version = commit(tmp_path, remote)
     repo.push(remote, tmp_path / "local" / version.id, version)
 
-    assert parse(remote.get(layout.version_record(version.id))).files == version.files
+    assert parse(remote.get(layout.version_record(version.id))).tables == version.tables
     (data_file,) = files_index(remote, version)["main.towns"]["files"]
     assert data_file["rows"] == 3
     assert (remote.root / layout.DEFAULT_DATA_DIR / data_file["path"]).stat().st_size == (
@@ -467,7 +491,7 @@ def test_withdraw_removes_the_data_from_live_versions(tmp_path: Path, remote) ->
     assert set(plan.deleted) == leaked and set(plan.still_read) == kept
     assert set(remote.list("tables/")) == kept
     assert repo.tags(remote) == {}
-    named = {"data": sorted(key.removeprefix("tables/") for key in leaked), "assets": [], "objects": []}
+    named = {"data": sorted(key.removeprefix("tables/") for key in leaked), "assets": []}
     for version_id in (first.id, second.id):
         mark = json.loads(remote.get(layout.version_expired(version_id)))
         assert mark["reason"] == "withdrawn" and mark["deleted"] == named
@@ -553,18 +577,6 @@ def _pushed(tmp_path: Path, remote) -> str:
     return version.id
 
 
-def test_a_version_written_by_0_26_is_read_at_the_name_it_records(tmp_path: Path, remote) -> None:
-    version_id = _pushed(tmp_path, remote)
-    folder = remote.root / layout.version_dir(version_id)
-    (folder / layout.METADATA).rename(folder / "ducklake.duckdb")
-    record = json.loads(remote.get(layout.version_record(version_id)))
-    record["catalog"] = {**record.pop("metadata"), "path": "ducklake.duckdb"}
-    (remote.root / layout.version_record(version_id)).write_text(json.dumps(record))
-    assert repo.read_version(remote, version_id).metadata.path == "ducklake.duckdb"
-    repo.clone(remote, tmp_path / "again.sqlite")
-    assert read_rows(remote, version_id) == [(1,)]
-
-
 def test_clone_refuses_a_catalog_that_is_not_the_one_recorded(tmp_path: Path, remote) -> None:
     version_id = _pushed(tmp_path, remote)
     path = remote.root / layout.version_metadata(repo.read_version(remote, version_id))
@@ -624,44 +636,41 @@ def test_a_rebuilt_table_is_compared_by_column_name(tmp_path: Path, remote) -> N
 
 
 def test_a_version_records_what_changed_since_its_parent(tmp_path: Path, remote) -> None:
-    def described(title: str) -> dict:
-        return {
-            "name": "towns",
-            "title": "Towns",
-            "tables": [{"schema": "main", "name": "towns", "fields": [{"name": "id", "title": title}]}],
-        }
-
     build(tmp_path / "work.sqlite", remote, "CREATE TABLE lake.main.towns AS SELECT 1 AS id")
-    first = repo.commit(
-        tmp_path / "work.sqlite", tmp_path / "local", parent=None, data_path=data_path(remote),
-        author=AUTHOR, message="m", dataset=described("ID"),
-    )
+    first = commit(tmp_path, remote)
     repo.push(remote, tmp_path / "local" / first.id, first)
     assert first.diff["tables"] == {"added": ["main.towns"], "dropped": []}
 
     build(
         tmp_path / "work.sqlite",
         remote,
-        "INSERT INTO lake.main.towns VALUES (2); CREATE TABLE lake.main.roads AS SELECT 1 AS id",
+        "INSERT INTO lake.main.towns VALUES (2); CREATE TABLE lake.main.roads AS SELECT 1 AS id;"
+        "CREATE TABLE lake.main.about AS SELECT 'Towns' AS title",
     )
-    second = repo.commit(
-        tmp_path / "work.sqlite", tmp_path / "local", parent=first, data_path=data_path(remote),
-        author=AUTHOR, message="m", dataset={**described("Town ID"), "tables": described("Town ID")["tables"]
-        + [{"schema": "main", "name": "roads"}]},
-        parent_dataset=json.loads(remote.get(layout.version_dir(first.id) + layout.DATASET)),
-    )
+    second = commit(tmp_path, remote, parent=first, facts=declared.Facts(primary_keys={"main.towns": ["id"]}))
     recorded = json.loads((tmp_path / "local" / second.id / layout.VERSION_RECORD).read_text())
     assert recorded["diff"] == {
-        "tables": {"added": ["main.roads"], "dropped": []},
+        "tables": {"added": ["main.about", "main.roads"], "dropped": []},
         "rows": [{"table": "main.towns", "from": 1, "to": 2}],
         "columns": [],
         "data": ["main.towns"],
-        "tags": [],
-        "dataset": True,
+        "declarations": ["main.towns"],
+        "dependencies": [],
     }
     repo.push(remote, tmp_path / "local" / second.id, second)
     # fdl diff reads it from the record.
     assert diff.versions(remote, first, repo.read_version(remote, second.id)) == recorded["diff"]
+    # And compares the files of two versions otherwise.
+    del recorded["diff"]
+    bare = parse(json.dumps(recorded).encode())
+    assert diff.versions(remote, first, bare) == recorded_diff(remote, first, bare)
+
+
+def recorded_diff(remote, first, bare) -> dict:
+    found = diff.versions(remote, first, bare)
+    assert found["tables"] == {"added": ["main.about", "main.roads"], "dropped": []}
+    assert found["declarations"] == ["main.towns"]
+    return found
 
 
 def test_a_record_with_a_path_outside_its_folder_is_refused(tmp_path: Path, remote) -> None:
@@ -699,31 +708,14 @@ def test_a_version_names_only_the_files_of_its_last_snapshot(tmp_path: Path, rem
     build(tmp_path / "work.sqlite", remote, "CREATE OR REPLACE TABLE lake.main.towns AS SELECT 2 AS id")
     version = commit(tmp_path, remote)
     repo.push(remote, tmp_path / "local" / version.id, version)
-    index = json.loads(remote.get(layout.version_dir(version.id) + layout.FILES))
+    index = json.loads(remote.get(layout.version_dir(version.id) + layout.TABLES))
     read = {file["path"] for table in index["tables"].values() for file in table["files"]}
-    assert set(index["named"]) == read
+    assert "named" not in index
 
     later = dt.datetime.now(dt.timezone.utc) + dt.timedelta(days=1)
     plan = repo.plan_collection(remote, grace=dt.timedelta(0), now=later)
     assert first and first <= set(plan.deleted)
-    assert not {"tables/" + key for key in index["named"]} & set(plan.deleted)
-
-
-def test_collection_reads_the_catalog_for_a_files_json_without_named(tmp_path: Path, remote) -> None:
-    import datetime as dt
-
-    build(tmp_path / "work.sqlite", remote, "CREATE TABLE lake.main.towns AS SELECT 1 AS id")
-    build(tmp_path / "work.sqlite", remote, "CREATE OR REPLACE TABLE lake.main.towns AS SELECT 2 AS id")
-    version = commit(tmp_path, remote)
-    repo.push(remote, tmp_path / "local" / version.id, version)
-    key = layout.version_dir(version.id) + layout.FILES
-    index = json.loads(remote.get(key))
-    # As written before `named`. The record's sha256 no longer matches, which collect does not check.
-    remote.put(key, json.dumps({"tables": index["tables"]}).encode())
-
-    later = dt.datetime.now(dt.timezone.utc) + dt.timedelta(days=1)
-    plan = repo.plan_collection(remote, grace=dt.timedelta(0), now=later)
-    assert not {"tables/" + key for key in index["named"]} & set(plan.deleted)
+    assert not {"tables/" + key for key in read} & set(plan.deleted)
 
 
 def test_a_push_sent_again_rewrites_refs_json(tmp_path: Path, remote) -> None:
@@ -735,106 +727,243 @@ def test_a_push_sent_again_rewrites_refs_json(tmp_path: Path, remote) -> None:
     assert version.id in remote.get(layout.REFS_INDEX).decode()
 
 
-def test_dataset_in_diff_is_what_the_writer_wrote() -> None:
-    old = {
-        "name": "t",
-        "tables": [
-            {"schema": "main", "name": "towns", "rows": 1, "fields": [{"name": "id", "type": "int32", "nullable": True}]},
-            {"schema": "main", "name": "v", "kind": "view", "sql": "SELECT 1"},
-        ],
-    }
-    # More rows, another type, a new table and a view's new query: none is the writer's.
-    grown = {
-        "name": "t",
-        "tables": [
-            {"schema": "main", "name": "towns", "rows": 9, "fields": [{"name": "id", "type": "int64", "nullable": False}, {"name": "x", "type": "varchar"}]},
-            {"schema": "main", "name": "roads", "rows": 3},
-            {"schema": "main", "name": "v", "kind": "view", "sql": "SELECT 2"},
-        ],
-    }
-    assert diff.with_dataset({}, old, grown) == {"tags": [], "dataset": False}
-    retitled = {**grown, "tables": [{**grown["tables"][0], "title": "Towns"}, *grown["tables"][1:]]}
-    assert diff.with_dataset({}, old, retitled) == {"tags": [], "dataset": True}
-    keyed = {**grown, "tables": [{**grown["tables"][0], "primary_key": ["id"]}, *grown["tables"][1:]]}
-    assert diff.with_dataset({}, grown, keyed) == {"tags": ["main.towns"], "dataset": True}
-    assert diff.with_dataset({}, None, grown) == {}
-
-
-def test_a_version_keeps_primary_keys_assets_and_catalogs_as_tags(tmp_path: Path, remote) -> None:
-    def described(key: list[str]) -> dict:
-        return {
-            "name": "reports",
-            "catalogs": {"census": "https://example.org/census/"},
-            "tables": [
-                {
-                    "schema": "main",
-                    "name": "reports",
-                    "primary_key": key,
-                    "fields": [{"name": "pdf", "asset": True}],
-                },
-                {"schema": "main", "name": "latest"},
-            ],
-        }
+def test_a_version_writes_its_declarations_and_views(tmp_path: Path, remote) -> None:
+    # Another dataset, which a view reads under the name `census`.
+    census = LocalStore(tmp_path / "census")
+    repo.init(census)
+    build(tmp_path / "census.sqlite", census, "CREATE TABLE lake.main.towns AS SELECT 'a' AS town")
+    made = repo.commit(
+        tmp_path / "census.sqlite", tmp_path / "census-local", parent=None, data_path=data_path(census),
+        author=AUTHOR, message="m",
+    )
+    repo.push(census, tmp_path / "census-local" / made.id, made)
 
     build(
         tmp_path / "work.sqlite",
         remote,
+        f"ATTACH 'ducklake:{census.root / layout.version_metadata(made)}' AS census (DATA_PATH '{data_path(census)}', READ_ONLY);"
+        "ATTACH ':memory:' AS gone; CREATE TABLE gone.main.x AS SELECT 1 AS y;"
         "CREATE TABLE lake.main.reports AS SELECT 1 AS id, 2 AS year, NULL::VARCHAR AS pdf;"
-        "COMMENT ON TABLE lake.main.reports IS 'kept';"
-        "CREATE VIEW lake.main.latest AS SELECT * FROM lake.main.reports",
+        "CREATE VIEW lake.main.latest AS SELECT id, year FROM lake.main.reports;"
+        "CREATE VIEW lake.main.towns AS SELECT town FROM census.main.towns;"
+        "CREATE VIEW lake.main.lost AS SELECT y FROM gone.main.x;",
     )
-    first = repo.commit(
-        tmp_path / "work.sqlite", tmp_path / "local", parent=None, data_path=data_path(remote),
-        author=AUTHOR, message="m", dataset=described(["id"]),
+    facts = declared.Facts(
+        primary_keys={"main.reports": ["id"]},
+        assets={"main.reports": ["pdf"]},
+        unprofiled=frozenset({"main.latest"}),
+        dependencies={"census": {"url": census.root.as_uri() + "/", "version": made.id}},
     )
+    first = commit(tmp_path, remote, facts=facts)
+    index = json.loads((tmp_path / "local" / first.id / layout.TABLES).read_text())
+    assert first.tables.path == layout.TABLES
+    reports = index["tables"]["main.reports"]
+    assert (reports["primary_key"], reports["assets"]) == (["id"], ["pdf"])
+    latest = index["views"]["main.latest"]
+    assert latest["columns"] == [{"name": "id", "type": "INTEGER"}, {"name": "year", "type": "INTEGER"}]
+    assert latest["profile"] is False and "main.reports" in latest["sql"]
+    # The placeholder DuckLake writes for the metadata's own name is left out.
+    assert "DUCKLAKE_CATALOG" not in json.dumps(index)
+    assert index["views"]["main.towns"]["columns"] == [{"name": "town", "type": "VARCHAR"}]
+    # A view that reads what no dependency holds is listed without its columns.
+    assert "columns" not in index["views"]["main.lost"] and "gone" in index["views"]["main.lost"]["sql"]
+    assert index["dependencies"] == facts.dependencies
     repo.push(remote, tmp_path / "local" / first.id, first)
+    assert repo.declarations(remote, first) == facts
 
-    con = duckdb.connect()
-    con.execute("INSTALL ducklake; LOAD ducklake;")
-    metadata = remote.root / layout.version_dir(first.id) / first.metadata.path
-    con.execute(f"ATTACH 'ducklake:{metadata}' AS lake (DATA_PATH '{data_path(remote)}', READ_ONLY)")
-    assert con.execute("SELECT count(*) FROM lake.main.latest").fetchone() == (1,)
-    assert con.execute("SELECT comment, tags FROM duckdb_tables() WHERE database_name = 'lake'").fetchall() == [
-        ("kept", {"fdl.assets": '["pdf"]', "fdl.primary_key": '["id"]'})
-    ]
-    assert con.execute("SELECT tags FROM duckdb_views() WHERE database_name = 'lake'").fetchall() == [
-        ({"fdl.catalogs": '{"census":"https://example.org/census/"}'},)
-    ]
+
+@pytest.mark.parametrize(
+    ("facts", "refused"),
+    [
+        (declared.Facts(primary_keys={"main.reports": ["nope"]}), "the primary key names columns it lacks: nope"),
+        (declared.Facts(primary_keys={"main.reports": ["id", "id"]}), "names a column twice"),
+        (declared.Facts(primary_keys={"main.v": ["id"]}), "main.v is a view, which has no primary key"),
+        (declared.Facts(assets={"main.reports": ["year"]}), "has to be VARCHAR"),
+        (declared.Facts(assets={"main.v": ["id"]}), "main.v is a view, which has no asset columns"),
+        (declared.Facts(dependencies={"c": {"url": "relative/"}}), "url has to be an absolute URL ending in /"),
+        (declared.Facts(dependencies={"Census": {"url": "https://example.org/c/"}}), "a name is lower-case letters"),
+        (declared.Facts(dependencies={"temp": {"url": "https://example.org/c/"}}), "not memory, system or temp"),
+        (declared.Facts(dependencies={"c": {"url": "https://example.org/c/", "version": "v1"}}), "is not a version ID"),
+    ],
+)
+def test_declarations_the_tables_refuse_are_not_committed(tmp_path: Path, remote, facts, refused: str) -> None:
+    build(
+        tmp_path / "work.sqlite",
+        remote,
+        "CREATE TABLE lake.main.reports AS SELECT 1 AS id, 2 AS year;"
+        "CREATE VIEW lake.main.v AS SELECT id FROM lake.main.reports;",
+    )
+    with pytest.raises(declared.DeclarationError, match=re.escape(refused)):
+        commit(tmp_path, remote, facts=facts)
+    assert not (tmp_path / "local").exists() or not any((tmp_path / "local").iterdir())
+
+
+def test_a_change_of_dependencies_is_in_the_diff(tmp_path: Path, remote) -> None:
+    build(tmp_path / "work.sqlite", remote, "CREATE TABLE lake.main.towns AS SELECT 1 AS id")
+    old = declared.Facts(dependencies={"a": {"url": "https://example.org/a/"}, "b": {"url": "https://example.org/b/"}})
+    first = commit(tmp_path, remote, facts=old)
+    repo.push(remote, tmp_path / "local" / first.id, first)
+    new = declared.Facts(dependencies={"a": {"url": "https://example.org/a/", "version": new_id()}, "c": {"url": "https://example.org/c/"}})
+    second = commit(tmp_path, remote, parent=first, allow_empty=False, facts=new, inherited=old)
+    repo.push(remote, tmp_path / "local" / second.id, second)
+    assert second.diff["dependencies"] == ["a", "b", "c"]
+    assert diff.versions(remote, first, second)["dependencies"] == ["a", "b", "c"]
+    assert "~ dependency b" in diff.lines(second.diff)
+
+
+@pytest.mark.parametrize(
+    ("pinned", "kept"),
+    [({"census"}, {"main.towns", "main.mine"}), (set(), {"main.mine"})],
+)
+def test_a_view_reading_another_dataset_keeps_its_profile_only_when_pinned(pinned, kept) -> None:
+    views = {"main.towns": "SELECT * FROM census.main.towns", "main.mine": "SELECT * FROM main.t"}
+    found = repo._unchanged_views(views, dict(views), {"main.t"}, set(), dependencies={"census"}, pinned=pinned)
+    assert found == kept
+
+
+def test_declarations_follow_a_renamed_column_and_leave_with_a_dropped_table(tmp_path: Path, remote) -> None:
+    working = tmp_path / "work.sqlite"
+    build(working, remote, "CREATE TABLE lake.main.towns AS SELECT 1 AS id; CREATE TABLE lake.main.roads AS SELECT 1 AS id")
+    facts = declared.Facts(primary_keys={"main.towns": ["id"], "main.roads": ["id"]})
+    first = commit(tmp_path, remote, facts=facts)
+    repo.push(remote, tmp_path / "local" / first.id, first)
+    build(working, remote, "ALTER TABLE lake.main.towns RENAME COLUMN id TO code; DROP TABLE lake.main.roads")
+    second = commit(tmp_path, remote, parent=first, facts=facts, inherited=facts)
+    repo.push(remote, tmp_path / "local" / second.id, second)
+    assert repo.declarations(remote, second) == declared.Facts(primary_keys={"main.towns": ["code"]})
+
+
+def test_a_change_of_declarations_alone_makes_a_version(tmp_path: Path, remote) -> None:
+    build(tmp_path / "work.sqlite", remote, "CREATE TABLE lake.main.towns AS SELECT 1 AS id")
+    first = commit(tmp_path, remote)
+    repo.push(remote, tmp_path / "local" / first.id, first)
+    with pytest.raises(repo.NothingToCommit):
+        commit(tmp_path, remote, parent=first, allow_empty=False, inherited=declared.Facts())
+    keyed = declared.Facts(primary_keys={"main.towns": ["id"]})
+    second = commit(tmp_path, remote, parent=first, allow_empty=False, facts=keyed, inherited=declared.Facts())
+    assert second.diff["declarations"] == ["main.towns"]
+
+
+# -- migrating versions written before tables.json ---------------------------------------
+
+
+def _as_earlier(remote: LocalStore, version, tags: dict[str, dict], *, keyed: dict | None = None) -> None:
+    """Rewrite a pushed version the way fdl-cli 0.33 and earlier wrote it: `files.json`,
+    `fdl.` tags in a metadata named `ducklake.duckdb`, and the record's `catalog`."""
+    folder = remote.root / layout.version_dir(version.id)
+    index = json.loads((folder / layout.TABLES).read_text())
+    tables = {
+        name: {**{k: v for k, v in table.items() if k not in ("primary_key", "assets", "profile")}, **(keyed or {}).get(name, {})}
+        for name, table in index["tables"].items()
+    }
+    (folder / layout.TABLES).unlink()
+    (folder / "files.json").write_text(json.dumps({"tables": tables, "named": []}))
+    metadata = folder / "ducklake.duckdb"
+    (folder / layout.METADATA).rename(metadata)
+    con = duckdb.connect(str(metadata))
+    for name, values in tags.items():
+        schema, table = name.split(".", 1)
+        (object_id,) = con.execute(
+            "SELECT coalesce((SELECT table_id FROM ducklake_table t JOIN ducklake_schema s USING (schema_id) "
+            "WHERE s.schema_name = ? AND t.table_name = ? AND t.end_snapshot IS NULL), "
+            "(SELECT view_id FROM ducklake_view v JOIN ducklake_schema s USING (schema_id) "
+            "WHERE s.schema_name = ? AND v.view_name = ? AND v.end_snapshot IS NULL))",
+            [schema, table, schema, table],
+        ).fetchone()
+        for key, value in values.items():
+            con.execute(
+                "INSERT INTO ducklake_tag VALUES (?, ?, NULL, ?, ?)",
+                [object_id, version.ducklake.snapshot_id, key, json.dumps(value)],
+            )
     con.close()
-    indexed = files_index(remote, first)["main.reports"]
-    assert (indexed["primary_key"], indexed["assets"]) == (["id"], ["pdf"])
+    record = json.loads((folder / layout.VERSION_RECORD).read_text())
+    held = record.pop("metadata")
+    record["catalog"] = {
+        **held, "path": "ducklake.duckdb", "bytes": metadata.stat().st_size,
+        "sha256": hashlib.sha256(metadata.read_bytes()).hexdigest(),
+    }
+    files = folder / "files.json"
+    del record["tables"]
+    record["files"] = {"path": "files.json", "bytes": files.stat().st_size, "sha256": hashlib.sha256(files.read_bytes()).hexdigest()}
+    record["inputs"] = [{"path": "towns.csv"}]
+    if record.get("diff") is not None:
+        record["diff"]["tags"] = record["diff"].pop("declarations", [])
+    (folder / layout.VERSION_RECORD).write_text(json.dumps(record))
+    (folder / "version.json.sig").write_text("signed")
 
-    build(tmp_path / "work.sqlite", remote, "INSERT INTO lake.main.reports VALUES (1, 3, NULL)")
-    second = repo.commit(
-        tmp_path / "work.sqlite", tmp_path / "local", parent=first, data_path=data_path(remote),
-        author=AUTHOR, message="m", dataset=described(["id", "year"]),
-        parent_dataset=json.loads(remote.get(layout.version_dir(first.id) + layout.DATASET)),
+
+def test_migrate_moves_files_json_and_tags_to_tables_json(tmp_path: Path, remote) -> None:
+    working = tmp_path / "work.sqlite"
+    build(
+        working, remote,
+        "CREATE TABLE lake.main.towns AS SELECT 1 AS id, NULL::VARCHAR AS photo;"
+        "CREATE VIEW lake.main.names AS SELECT id FROM lake.main.towns",
     )
-    assert second.diff["tags"] == ["main.reports"]
-    assert files_index_local(tmp_path, second)["main.reports"]["primary_key"] == ["id", "year"]
-
-
-def test_tags_changed_alone_get_a_snapshot_of_their_own(tmp_path: Path, remote) -> None:
-    def described(key: list[str]) -> dict:
-        return {"name": "towns", "tables": [{"schema": "main", "name": "towns", "primary_key": key}]}
-
-    build(tmp_path / "work.sqlite", remote, "CREATE TABLE lake.main.towns AS SELECT 1 AS id, 2 AS year")
-    first = repo.commit(
-        tmp_path / "work.sqlite", tmp_path / "local", parent=None, data_path=data_path(remote),
-        author=AUTHOR, message="m", dataset=described(["id"]),
-    )
+    first = commit(tmp_path, remote)
     repo.push(remote, tmp_path / "local" / first.id, first)
-    repo.clone(remote, tmp_path / "again.sqlite", version=first)
-    second = repo.commit(
-        tmp_path / "again.sqlite", tmp_path / "local", parent=first, data_path=data_path(remote),
-        author=AUTHOR, message="m", dataset=described(["id", "year"]),
-        parent_dataset=json.loads(remote.get(layout.version_dir(first.id) + layout.DATASET)),
+    build(working, remote, "INSERT INTO lake.main.towns VALUES (2, NULL)")
+    second = commit(tmp_path, remote, parent=first)
+    repo.push(remote, tmp_path / "local" / second.id, second)
+    other = (tmp_path / "other").as_uri() + "/"
+    _as_earlier(
+        remote, second,
+        {"main.towns": {"fdl.primary_key": ["id"], "fdl.assets": ["photo"]},
+         "main.names": {"fdl.profile": False, "fdl.catalogs": {"other": other}}},
+        keyed={"main.towns": {"primary_key": ["id"], "assets": ["photo"]}},
     )
-    assert second.ducklake.snapshot_id > first.ducklake.snapshot_id
-    assert second.diff["tags"] == ["main.towns"]
-    metadata = tmp_path / "local" / second.id / second.metadata.path
-    assert tags.read(metadata, second.ducklake.snapshot_id) == {"main.towns": {tags.PRIMARY_KEY: ["id", "year"]}}
+    # A version past retention keeps only its record.
+    repo.expire(remote, first.id)
+    key = layout.version_record(first.id)
+    record = json.loads(remote.get(key))
+    record["catalog"] = {**record.pop("metadata"), "path": "ducklake.duckdb"}
+    record["files"] = record.pop("tables")
+    remote.put(key, json.dumps(record).encode())
+
+    assert migrating.migrate(remote, echo=lambda _: None) == sorted([first.id, second.id])
+    migrated = repo.read_version(remote, second.id)
+    assert (migrated.metadata.path, migrated.tables.path) == (layout.METADATA, layout.TABLES)
+    assert repo.declarations(remote, migrated) == declared.Facts(
+        primary_keys={"main.towns": ["id"]},
+        assets={"main.towns": ["photo"]},
+        dependencies={"other": {"url": other}},
+        unprofiled=frozenset({"main.names"}),
+    )
+    record = json.loads(remote.get(layout.version_record(second.id)))
+    assert {"files", "catalog", "inputs"}.isdisjoint(record) and "tags" not in record["diff"]
+    folder = remote.root / layout.version_dir(second.id)
+    assert sorted(p.name for p in folder.iterdir()) == [layout.METADATA, layout.TABLES, layout.VERSION_RECORD]
+    con = duckdb.connect(str(folder / layout.METADATA), read_only=True)
+    assert con.execute("SELECT count(*) FROM ducklake_tag WHERE key LIKE 'fdl.%'").fetchone() == (0,)
+    con.close()
+    # The record of a version past retention is written again, without tables.
+    expired = repo.read_version(remote, first.id)
+    assert expired.tables is None and expired.metadata.path == "ducklake.duckdb"
+    # It reads as any version does, and a second run finds nothing to do.
+    repo.clone(remote, tmp_path / "again.sqlite")
+    assert read_rows(remote, second.id) == [(1, None), (2, None)]
+    assert migrating.migrate(remote, echo=lambda _: None) == []
 
 
-def files_index_local(tmp_path: Path, version) -> dict:
-    return json.loads((tmp_path / "local" / version.id / version.files.path).read_text())["tables"]
+def test_migrate_reads_dataset_json_and_deletes_objects(tmp_path: Path, remote) -> None:
+    build(tmp_path / "work.sqlite", remote, "CREATE TABLE lake.main.towns AS SELECT 1 AS id")
+    version = commit(tmp_path, remote)
+    repo.push(remote, tmp_path / "local" / version.id, version)
+    folder = remote.root / layout.version_dir(version.id)
+    (folder / layout.TABLES).unlink()
+    described = {"tables": [{"schema": "main", "name": "towns", "primary_key": ["id"], "fields": [{"name": "id"}]}]}
+    (folder / "dataset.json").write_text(json.dumps(described))
+    (folder / "tree.json").write_text(json.dumps({"entries": [{"path": "README.md", "sha256": "a" * 64, "bytes": 1}]}))
+    remote.put("objects/" + "a" * 64, b"x")
+    record = json.loads((folder / layout.VERSION_RECORD).read_text())
+    del record["tables"]
+    for name in ("dataset", "tree"):
+        data = (folder / f"{name}.json").read_bytes()
+        record[name] = {"path": f"{name}.json", "bytes": len(data), "sha256": hashlib.sha256(data).hexdigest()}
+    (folder / layout.VERSION_RECORD).write_text(json.dumps(record))
+
+    migrating.migrate(remote, echo=lambda _: None)
+    assert repo.declarations(remote, repo.read_version(remote, version.id)) == declared.Facts(
+        primary_keys={"main.towns": ["id"]}
+    )
+    assert remote.list("objects/") == []
+    assert not (folder / "dataset.json").exists() and not (folder / "tree.json").exists()

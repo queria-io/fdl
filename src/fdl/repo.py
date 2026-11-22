@@ -18,8 +18,7 @@ from pathlib import Path
 from typing import Callable, Iterable, Iterator, Mapping
 
 from . import catalog, layout, objects, profiles, refs
-from . import tags as fdl_tags
-from . import dataset as dataset_json
+from . import declared as declared_
 from . import diff as diffs
 from .store import Store, is_conflict, is_missing
 from .version import DuckLake, File, Metadata, Version, VersionError, new_id, parse, utc_now
@@ -135,23 +134,25 @@ def commit(
     author: dict,
     message: str,
     annotations: dict | None = None,
-    dataset: dict | None = None,
-    tree: list[dict] | None = None,
     allow_empty: bool = True,
     working_data: str | None = None,
-    parent_dataset: dict | None = None,
+    setup: Iterable[str] = (),
+    facts: declared_.Facts | None = None,
+    inherited: declared_.Facts | None = None,
     merged: Version | None = None,
 ) -> Version:
     """Freeze the working metadata into a version under ``out_dir/<ID>/``.
 
-    ``dataset`` is the writer's description (`dataset.json`), checked against
-    the frozen metadata and completed from it. ``tree`` lists the version's
-    other files (`tree.json`: path, sha256, bytes), such as its README.
+    ``facts`` are its declarations (primary keys, asset columns, profiles and
+    dependencies), as `fdl clone` and `fdl declare` keep them beside the working
+    metadata: they are checked against its tables and views first, and raise
+    `declared.DeclarationError`. A table or view no longer there takes its
+    declarations with it.
 
     ``allow_empty=False`` refuses a version that would hold what ``parent``
-    holds: the same tables, columns, rows and views, and the same
-    `dataset.json`. It raises `NothingToCommit`, or `CannotCompare` when the
-    rows could not be read to tell.
+    holds: the same tables, columns, rows and views, and the same declarations
+    as ``inherited`` (the parent's, see `declarations`). It raises
+    `NothingToCommit`, or `CannotCompare` when the rows could not be read to tell.
 
     ``data_path`` is where readers find the data files (the remote's root and
     data_dir), written into the frozen catalog. Every file reference must be
@@ -159,13 +160,14 @@ def commit(
     Nothing is uploaded: that is `push`.
 
     ``working_data`` is where the working metadata wrote its new data files,
-    when not where it records (see `clone`): comparing reads them there.
-
-    ``parent_dataset`` is the parent's `dataset.json`, which the version's
-    ``diff`` compares with (see `record`).
+    when not where it records (see `clone`): comparing and binding views read
+    them there, after ``setup`` (the keys to read the repository's files).
 
     ``merged`` is the version a merge brought in: the second parent.
     """
+    setup = list(setup)
+    reading = working_data or catalog.working_data_path(working)
+    described = declared_.describe(working, facts or declared_.Facts(), data_path=reading, setup=setup)
     Path(out_dir).mkdir(parents=True, exist_ok=True)
     frozen = Path(out_dir) / f".freezing-{new_id()}.duckdb"
     try:
@@ -179,22 +181,17 @@ def commit(
                 f"{len(absolute)} file(s) are recorded with an absolute path "
                 f"(first: {absolute[0].path}); rebuild so they sit under the data path"
             )
-        # The description first: it reads the metadata alone, while comparing
-        # the contents can read every row of a rebuilt table.
-        if (
-            not allow_empty
-            and parent is not None
-            and _same_description(frozen, dataset, parent)
-            and _same_tree(tree, parent)
-        ):
-            try:
-                unchanged = catalog.same_contents(
-                    working, parent.ducklake.snapshot_id, data_path=working_data
-                )
-            except catalog.CatalogError as exc:
-                raise CannotCompare(str(exc)) from exc
-            if unchanged:
-                raise NothingToCommit(parent)
+        if not allow_empty and parent is not None:
+            before = (inherited or declared_.Facts()).only(described.names)
+            if described.facts == before:
+                try:
+                    unchanged = catalog.same_contents(
+                        working, parent.ducklake.snapshot_id, data_path=working_data, setup=setup
+                    )
+                except catalog.CatalogError as exc:
+                    raise CannotCompare(str(exc)) from exc
+                if unchanged:
+                    raise NothingToCommit(parent)
         return record(
             frozen,
             out_dir,
@@ -202,32 +199,23 @@ def commit(
             author=author,
             message=message,
             annotations=annotations,
-            dataset=dataset,
-            tree=tree,
-            parent_dataset=parent_dataset,
+            described=described,
+            inherited=inherited,
             merged=merged,
         )
     finally:
         frozen.unlink(missing_ok=True)
 
 
-def _same_description(frozen: Path, dataset: dict | None, parent: Version) -> bool:
-    if dataset is None or parent.dataset is None:
-        return dataset is None and parent.dataset is None
-    written = dataset_json.to_json(dataset_json.describe(dataset, frozen))
-    return hashlib.sha256(written).hexdigest() == parent.dataset.sha256
+def declarations(store: Store, version: Version) -> declared_.Facts:
+    """What a pushed version declares, from its `tables.json`."""
+    return declared_.from_index(diffs.indexed(store, version))
 
 
-def _same_tree(tree: list[dict] | None, parent: Version) -> bool:
-    if not tree or parent.tree is None:
-        return not tree and parent.tree is None
-    return hashlib.sha256(_tree_json(tree)).hexdigest() == parent.tree.sha256
-
-
-def _tree_json(tree: list[dict]) -> bytes:
-    objects.check_tree(tree)
-    entries = sorted(tree, key=lambda item: item["path"])
-    return (json.dumps({"entries": entries}, ensure_ascii=False, indent=2) + "\n").encode()
+def tables_of(store: Store, version: Version) -> set[str]:
+    """The tables and views of a pushed version, ``schema.name``."""
+    index = diffs.indexed(store, version) or {}
+    return set(index.get("tables", {})) | set(index.get("views", {}))
 
 
 def clone(
@@ -333,9 +321,8 @@ def record(
     author: dict,
     message: str,
     annotations: dict | None = None,
-    dataset: dict | None = None,
-    tree: list[dict] | None = None,
-    parent_dataset: dict | None = None,
+    described: declared_.Described | None = None,
+    inherited: declared_.Facts | None = None,
     merged: Version | None = None,
 ) -> Version:
     """Make a version out of a metadata file that is already frozen.
@@ -345,11 +332,10 @@ def record(
     the copy keeps only its last snapshot (see `catalog.keep_last_snapshot`).
 
     The version's ``diff`` compares the metadata at the parent's snapshot with
-    the frozen one, and says whether what the writer wrote in `dataset.json`
-    changed when both it and ``parent_dataset`` (the parent's) are given.
-
-    The primary keys, assets and catalogs ``dataset`` declares are written into
-    the metadata as `fdl.` tags (see `tags.write`).
+    the frozen one. ``described`` is what `declared.describe` read from it, for
+    `tables.json`: its declarations and its views; without it, the version declares
+    nothing and its views are read from the frozen metadata. ``inherited`` are the
+    parent's declarations, for the diff's ``declarations``.
 
     ``merged`` is the second parent of a merge version; ``seq`` follows the first.
     """
@@ -357,6 +343,8 @@ def record(
         raise RepoError("a merge version needs the version of its own branch as first parent")
     if not author.get("name"):
         raise RepoError("a version needs an author name")
+    if described is None:
+        described = declared_.describe(frozen, declared_.Facts(), data_path=catalog.recorded_data_path(frozen))
     version_id = new_id()
     target = Path(out_dir) / version_id
     target.mkdir(parents=True)
@@ -367,33 +355,18 @@ def record(
         if not recorded:
             raise RepoError(f"{frozen} records no DuckLake format")
         after = parent.ducklake.snapshot_id if parent else None
-        described = None
-        completed = None
-        if dataset is not None:
-            written = target / layout.DATASET
-            completed = dataset_json.describe(dataset, copied)
-            written.write_bytes(dataset_json.to_json(completed))
-            described = File(
-                path=layout.DATASET, bytes=written.stat().st_size, sha256=_sha256(written)
-            )
-            # The values FDL reads, kept in the metadata as `fdl.` tags beside `dataset.json`.
-            # Before the range: tags that change alone get a snapshot of their own.
-            fdl_tags.write(copied, fdl_tags.from_dataset(completed), after=after)
         first, last = catalog.snapshot_range(copied, after)
         difference = diffs.between(copied, after, last)
-        if difference is not None:
-            difference = diffs.with_dataset(difference, parent_dataset, completed)
+        if difference is not None and after is not None:
+            held = catalog.object_names(copied, after) & described.names
+            difference["declarations"] = declared_.changed(inherited or declared_.Facts(), described.facts, held)
+            difference["dependencies"] = declared_.dependencies_changed(inherited or declared_.Facts(), described.facts)
         # After the diff, which reads the parent's snapshot: the version keeps only its own.
         catalog.keep_last_snapshot(copied)
         # Attaching it through DuckLake must not have moved it to another format.
         if catalog.recorded_format(copied) != recorded:
             raise RepoError(f"keeping the last snapshot changed the DuckLake format of {frozen}")
-        indexed = _write_files_index(target, copied, last)
-        listed = None
-        if tree:
-            written = target / layout.TREE
-            written.write_bytes(_tree_json(tree))
-            listed = File(path=layout.TREE, bytes=written.stat().st_size, sha256=_sha256(written))
+        indexed = _write_tables_index(target, copied, last, described)
         version = Version(
             id=version_id,
             seq=parent.seq + 1 if parent else 1,
@@ -408,11 +381,9 @@ def record(
                 sha256=_sha256(copied),
             ),
             ducklake=DuckLake(format=recorded, snapshot_id=last, snapshots=(first, last)),
-            files=indexed,
+            tables=indexed,
             diff=difference,
             annotations=dict(annotations or {}),
-            dataset=described,
-            tree=listed,
         )
         (target / layout.VERSION_RECORD).write_bytes(version.to_json())
     except BaseException:
@@ -423,28 +394,19 @@ def record(
     return version
 
 
-def _write_files_index(target: Path, frozen: Path, snapshot_id: int) -> File:
-    """Write `files.json`: each table's files at the frozen snapshot, and every file the metadata names."""
-    written = target / layout.FILES
-    tagged = fdl_tags.read(frozen, snapshot_id)
+def _write_tables_index(target: Path, frozen: Path, snapshot_id: int, described: declared_.Described) -> File:
+    """Write `tables.json`: each table's files and columns at the frozen snapshot with
+    its declarations, each view's SQL and columns, and the other datasets the views read (`dependencies`)."""
+    written = target / layout.TABLES
+    facts = described.facts
+
     index = {
-        "tables": {
-            name: {**table, **_index_tags(tagged.get(name, {}))}
-            for name, table in catalog.table_files(frozen, snapshot_id).items()
-        },
-        "named": catalog.data_files(frozen),
+        "tables": {name: {**table, **facts.of(name)} for name, table in catalog.table_files(frozen, snapshot_id).items()},
+        **({"views": {name: {**view, **facts.of(name)} for name, view in described.views.items()}} if described.views else {}),
+        **({"dependencies": facts.dependencies} if facts.dependencies else {}),
     }
     written.write_bytes((json.dumps(index, ensure_ascii=False, indent=2) + "\n").encode())
-    return File(path=layout.FILES, bytes=written.stat().st_size, sha256=_sha256(written))
-
-
-def _index_tags(values: dict) -> dict:
-    """A table's `fdl.primary_key` and `fdl.assets`, as `files.json` keys them."""
-    return {
-        key: values[tag]
-        for key, tag in (("primary_key", fdl_tags.PRIMARY_KEY), ("assets", fdl_tags.ASSETS))
-        if tag in values
-    }
+    return File(path=layout.TABLES, bytes=written.stat().st_size, sha256=_sha256(written))
 
 
 def push(
@@ -471,7 +433,7 @@ def push(
     (see `clone`). Those the repository lacks are uploaded first.
 
     ``assets`` are the sha256 the version's asset columns hold (see
-    `objects.asset_values`). They and the files its `tree.json` lists must
+    `objects.asset_values`). They must
     be in the repository; those it lacks are uploaded from
     ``local_objects`` (sha256 to a file with that content), and a push that
     still lacks one is refused.
@@ -498,7 +460,8 @@ def push(
             f"repository (first: {missing[0]}). Rebuild from the working "
             f"metadata and commit again."
         )
-    _upload_objects(store, _needed_objects(Path(local), version, assets), local_objects or {})
+    _check_tables_index(Path(local), version, frozen)
+    _upload_objects(store, _needed_objects(assets), local_objects or {})
     upload(store, local, version)
     if not move_ref:
         return
@@ -514,6 +477,20 @@ def push(
         # have stopped after the move.
         _write_ref_again(store, now)
     update_refs_index(store)
+
+
+def _check_tables_index(local: Path, version: Version, frozen: Path) -> None:
+    """Refuse a version whose `tables.json` is not the one `version.json` names, or
+    does not list every data file and delete file its metadata names."""
+    if version.tables is None:
+        raise RepoError(f"{version.id}: version.json names no tables.json")
+    written = (local / version.tables.path).read_bytes()
+    if (len(written), hashlib.sha256(written).hexdigest()) != (version.tables.bytes, version.tables.sha256):
+        raise RepoError(f"{version.id}: tables.json is not the one version.json names")
+    listed, named = _named_files(json.loads(written)), set(catalog.data_files(frozen))
+    if listed != named:
+        first = sorted(listed ^ named)[0]
+        raise RepoError(f"{version.id}: tables.json and the metadata name different files (first: {first})")
 
 
 def _write_ref_again(store: Store, ref: refs.Ref) -> None:
@@ -585,37 +562,43 @@ def write_profiles(
 
     A table whose data files and columns are the parent's keeps the parent's
     profile, so profiling reads only the tables that changed. A view keeps it
-    when no view's query and no table's data files changed. Returns
-    how many were made from the data.
+    when its query and everything it reads are unchanged; one that reads another
+    dataset also needs the parent's `dependencies` and a ``version`` in each entry
+    it reads. Returns how many were made from the data.
     """
     local = Path(local)
-    described_path = local / layout.DATASET
-    if not described_path.is_file():
-        return 0
-    described = json.loads(described_path.read_text(encoding="utf-8"))
-    files_now = json.loads((local / layout.FILES).read_text(encoding="utf-8")).get("tables", {})
+    setup = list(setup)
+    index = json.loads((local / layout.TABLES).read_text(encoding="utf-8"))
+    files_now = index.get("tables", {})
     files_before: dict = {}
-    if parent is not None and parent.files is not None:
+    before_index: dict | None = None
+    if parent is not None and parent.tables is not None:
         try:
-            files_before = json.loads(store.get(layout.version_dir(parent.id) + parent.files.path)).get("tables", {})
+            before_index = json.loads(store.get(layout.version_dir(parent.id) + parent.tables.path))
         except Exception as exc:  # noqa: BLE001 - stores raise their own types
             if not is_missing(exc):
                 raise
-    views_now = _view_sql(described)
+        files_before = (before_index or {}).get("tables", {})
+    views_now = {name: view.get("sql") for name, view in index.get("views", {}).items()}
     views_before: dict[str, str | None] = {}
-    if views_now and parent is not None and parent.dataset is not None:
-        try:
-            views_before = _view_sql(json.loads(store.get(layout.version_dir(parent.id) + parent.dataset.path)))
-        except Exception as exc:  # noqa: BLE001 - stores raise their own types
-            if not is_missing(exc):
-                raise
+    if views_now and before_index is not None:
+        views_before = {name: view.get("sql") for name, view in before_index.get("views", {}).items()}
+    wanted = profiles.indexed(index, declared_.from_index(index).unprofiled)
     changed_tables = {
         key for key in {*files_before, *files_now} if not _same_files(files_before.get(key), files_now.get(key))
     }
-    unchanged_views = _unchanged_views(views_now, views_before, set(files_now), changed_tables)
+    dependencies = index.get("dependencies", {})
+    pinned = {
+        name
+        for name, entry in dependencies.items()
+        if entry.get("version") and before_index is not None and before_index.get("dependencies", {}) == dependencies
+    }
+    unchanged_views = _unchanged_views(
+        views_now, views_before, set(files_now), changed_tables, dependencies=set(dependencies), pinned=pinned
+    )
     kept: dict[str, bytes] = {}
     pending = []
-    for table in profiles.tables(described):
+    for table in wanted:
         key = f"{table['schema']}.{table['name']}"
         relative = profiles.path(table["schema"], table["name"])
         previous = None
@@ -642,14 +625,11 @@ def write_profiles(
 
 
 def _same_files(before: dict | None, now: dict | None) -> bool:
-    """Whether a table's entry in `files.json` is the parent's."""
+    """Whether a table's data files and columns in `tables.json` are the parent's."""
     if before is None or now is None:
         return False
-    if "columns" not in before:
-        # A parent written before files.json listed the columns: compare the
-        # rest, and leave the names and types to profiles.reusable.
-        now = {name: value for name, value in now.items() if name != "columns"}
-    return before == now
+    kept = ("files", "columns", "renamed_columns")
+    return all(before.get(key) == now.get(key) for key in kept)
 
 
 def _unchanged_views(
@@ -657,12 +637,17 @@ def _unchanged_views(
     views_before: dict[str, str | None],
     tables: set[str],
     changed_tables: set[str],
+    *,
+    dependencies: set[str] = frozenset(),
+    pinned: set[str] = frozenset(),
 ) -> set[str]:
     """The views whose query is the parent's and whose tables and views read are unchanged.
 
     A view whose tables cannot be told from its query (it does not parse or reads a
     table function) keeps its profile only while no table and no view changed. One
-    that names a table this version does not hold counts as changed.
+    that names a table this version does not hold counts as changed. One that reads
+    another dataset (a name of ``dependencies``) counts as unchanged only when that
+    entry is in ``pinned``: the parent's, naming a version.
     """
     reads = {key: _tables_read(sql) for key, sql in views_now.items()}
     known = tables | set(views_now)
@@ -681,9 +666,14 @@ def _unchanged_views(
             unchanged[key] = not changed_tables and views_before == views_now
             return unchanged[key]
         result = key in views_before and views_before[key] == views_now[key]
-        for schema, name in reads[key]:
+        for held, schema, name in reads[key]:
             if not result:
                 break
+            # Another dataset: `name.schema.table`, or `name.table` when no schema here is called so.
+            other = held or (schema if schema in dependencies and not any(k.startswith(f"{schema}.") for k in known) else "")
+            if other:
+                result = other in pinned
+                continue
             found = resolve(key, schema, name)
             if found is None:
                 result = False
@@ -697,23 +687,21 @@ def _unchanged_views(
     return {key for key in views_now if check(key, frozenset({key}))}
 
 
-def _tables_read(sql: str | None) -> set[tuple[str, str]] | None:
-    """The tables and views a view's query reads, as (schema, name) with an empty schema when
-    unqualified, or None when that cannot be told."""
+def _tables_read(sql: str | None) -> set[tuple[str, str, str]] | None:
+    """The tables and views a view's query reads, as (catalog, schema, name) with an empty
+    catalog or schema when not written, or None when that cannot be told."""
     if not sql:
         return None
     import duckdb
 
     con = duckdb.connect()
     try:
-        # DuckLake keeps the catalog in a view's query as a placeholder that does not parse.
-        query = sql.replace("{DUCKLAKE_CATALOG}", "lake")
-        tree = json.loads(con.execute("SELECT json_serialize_sql(?)", [query]).fetchone()[0])
+        tree = json.loads(con.execute("SELECT json_serialize_sql(?)", [sql]).fetchone()[0])
     finally:
         con.close()
     if tree.get("error"):
         return None
-    found: list[tuple[str, str]] = []
+    found: list[tuple[str, str, str]] = []
     ctes: set[str] = set()
     functions = False
 
@@ -727,7 +715,7 @@ def _tables_read(sql: str | None) -> set[tuple[str, str]] | None:
             return
         kind = node.get("type")
         if kind == "BASE_TABLE":
-            found.append((node.get("schema_name") or "", node["table_name"]))
+            found.append((node.get("catalog_name") or "", node.get("schema_name") or "", node["table_name"]))
         elif kind == "TABLE_FUNCTION":
             functions = True
         for entry in (node.get("cte_map") or {}).get("map", []):
@@ -738,28 +726,18 @@ def _tables_read(sql: str | None) -> set[tuple[str, str]] | None:
     walk(tree.get("statements", []))
     if functions:
         return None
-    return {(name_schema, name) for name_schema, name in found if name_schema or name not in ctes}
-
-
-def _view_sql(described: dict) -> dict[str, str | None]:
-    """Each view of a `dataset.json` (``schema.name``) and its query."""
-    return {
-        f"{t['schema']}.{t['name']}": t.get("sql") for t in described.get("tables", []) if t.get("kind") == "view"
-    }
+    return {(held, schema, name) for held, schema, name in found if held or schema or name not in ctes}
 
 
 def missing_profiles(store: Store, version: Version) -> list[dict]:
-    """The tables of ``version`` that get a profile and have none in the repository."""
-    if version.dataset is None:
-        return []
+    """The tables and views of ``version`` that get a profile and have none in the repository."""
     folder = layout.version_dir(version.id)
-    described = json.loads(store.get(folder + version.dataset.path))
+    index = diffs.indexed(store, version)
+    if index is None:
+        return []
+    wanted = profiles.indexed(index, declared_.from_index(index).unprofiled)
     there = set(store.list(folder + layout.PROFILES_DIR))
-    return [
-        table
-        for table in profiles.tables(described)
-        if folder + profiles.path(table["schema"], table["name"]) not in there
-    ]
+    return [table for table in wanted if folder + profiles.path(table["schema"], table["name"]) not in there]
 
 
 def add_profiles(store: Store, version: Version, *, setup: Iterable[str] = ()) -> tuple[list[str], list[str]]:
@@ -798,12 +776,8 @@ def upload(store: Store, local: Path, version: Version) -> None:
     local = Path(local)
     _put_once(store, layout.version_metadata(version), local / version.metadata.path)
     # Before the record, which is what makes a version there at all.
-    if version.dataset is not None:
-        _put_once(store, layout.version_dir(version.id) + version.dataset.path, local / version.dataset.path)
-    if version.files is not None:
-        _put_once(store, layout.version_dir(version.id) + version.files.path, local / version.files.path)
-    if version.tree is not None:
-        _put_once(store, layout.version_dir(version.id) + version.tree.path, local / version.tree.path)
+    if version.tables is not None:
+        _put_once(store, layout.version_dir(version.id) + version.tables.path, local / version.tables.path)
     profiled = local / layout.PROFILES_DIR
     if profiled.is_dir():
         for written in sorted(profiled.rglob("*.json")):
@@ -941,19 +915,17 @@ def expire(
         [
             layout.version_metadata(version),
             # The index names files the grace period may delete.
-            layout.version_dir(version_id) + layout.FILES,
-            layout.version_dir(version_id) + layout.TREE,
+            layout.version_dir(version_id) + layout.TABLES,
             *store.list(layout.version_dir(version_id) + layout.METADATA_DIR),
-            *store.list(layout.version_dir(version_id) + layout.LEGACY_METADATA_DIR),
             *store.list(layout.version_dir(version_id) + layout.PROFILES_DIR),
         ]
     )
 
 
-#: What `deleted` of `expired.json` names: data files, assets and the files of trees.
-DELETED_KINDS = ("data", "assets", "objects")
+#: What `deleted` of `expired.json` names: data files and assets.
+DELETED_KINDS = ("data", "assets")
 #: Where each kind of hashed object is stored.
-_HASHED_DIRS = {"assets": layout.ASSETS_DIR, "objects": layout.OBJECTS_DIR}
+_HASHED_DIRS = {"assets": layout.ASSETS_DIR}
 
 
 def _union_deleted(*lists: object) -> dict[str, list[str]]:
@@ -966,7 +938,7 @@ def _union_deleted(*lists: object) -> dict[str, list[str]]:
 
 
 def deleted_names(keys: Iterable[str], data_dir: str) -> dict[str, list[str]]:
-    """Shared objects as `expired.json` names them: data files from `data_dir`, assets and tree files by sha256."""
+    """Shared objects as `expired.json` names them: data files from `data_dir`, assets by sha256."""
     named: dict[str, list[str]] = {kind: [] for kind in DELETED_KINDS}
     for key in keys:
         kind = next((kind for kind, prefix in _HASHED_DIRS.items() if key.startswith(prefix)), None)
@@ -1045,8 +1017,7 @@ def plan_withdrawal(
             continue
         tags.append(name)
 
-    # Store keys: data files under the data directory, assets under assets/,
-    # tree files under objects/.
+    # Store keys: data files under the data directory, assets under assets/.
     # Named objects still there go whether or not a version reaches them.
     candidates: set[str] = {key for key in named if store.head(key) is not None}
     kept: set[str] = set()
@@ -1128,23 +1099,13 @@ def _reaching(
 
 
 def _reached_by(store: Store, config: Config, version: Version, tmp: Path, setup: list[str]) -> set[str]:
-    """The shared objects a live version reaches, as store keys.
-
-    A version reaches every data file its metadata names, at any snapshot the
-    metadata keeps, not only those it reads at its own snapshot.
-    """
-    # files.json names them without the metadata, when it holds `named`.
-    named = _named_files(store, version)
-    local = None
-    if named is None or _asset_columns(store, version):
-        local = _fetch_catalog(store, version, tmp)
-    reached: set[str] = set()
-    if named is not None:
-        reached.update(config.data_dir + key for key in named)
-    elif local is not None:
-        reached.update(config.data_dir + key for key in catalog.data_files(local))
-    else:
-        raise RepoError(f"{version.id} is live but has neither files.json with `named` nor a metadata file to say what it reaches")
+    """The shared objects a live version reaches, as store keys: the data files its
+    `tables.json` names and the assets its asset columns hold."""
+    index = diffs.indexed(store, version)
+    if index is None:
+        raise RepoError(f"{version.id} is live but has no tables.json to say what it reaches")
+    reached = {config.data_dir + key for key in _named_files(index)}
+    local = _fetch_catalog(store, version, tmp) if objects.indexed_asset_columns(index) else None
     reached.update(_reached_assets(store, version, local, setup))
     if local is not None:
         local.unlink()
@@ -1216,29 +1177,13 @@ def collect(store: Store, *, plan: Collection, setup: Iterable[str] = ()) -> lis
 
 
 def _asset_columns(store: Store, version: Version) -> list[tuple[str, str, str]]:
-    """The asset columns the version's `dataset.json` marks."""
-    if version.dataset is None:
-        return []
-    try:
-        described = json.loads(store.get(layout.version_dir(version.id) + version.dataset.path))
-    except Exception as exc:  # noqa: BLE001 - stores raise their own types
-        if is_missing(exc):
-            return []
-        raise
-    return objects.asset_columns(described)
+    """The asset columns its `tables.json` declares."""
+    return objects.indexed_asset_columns(diffs.indexed(store, version))
 
 
 def _reached_assets(store: Store, version: Version, local: Path | None, setup: list[str]) -> set[str]:
-    """The keys of the files the version reaches: its `tree.json` and its asset columns."""
+    """The keys of the assets the version's asset columns hold."""
     reached: set[str] = set()
-    if version.tree is not None:
-        try:
-            listed = json.loads(store.get(layout.version_dir(version.id) + version.tree.path))
-        except Exception as exc:  # noqa: BLE001 - stores raise their own types
-            if not is_missing(exc):
-                raise
-        else:
-            reached.update(objects.tree_key(item["sha256"]) for item in listed["entries"])
     columns = _asset_columns(store, version)
     if columns and local is not None:
         values = objects.asset_values(local, columns, data_path=data_url(store), setup=setup)
@@ -1270,7 +1215,7 @@ def withdraw(
         refs.delete(store, name)
     if plan.tags:
         update_refs_index(store)
-    # Assets and tree files first: the data files are what says which assets
+    # Assets first: the data files are what says which assets
     # the versions' rows reach, so a run that stops half way can still work them out.
     hashed = [key for key in plan.deleted if key.startswith(tuple(_HASHED_DIRS.values()))]
     store.delete(hashed)
@@ -1303,22 +1248,16 @@ def _fetch_catalog(store: Store, version: Version, tmp: Path) -> Path | None:
     return local
 
 
-def _named_files(store: Store, version: Version) -> set[str] | None:
-    """Every data file the version's metadata names, from `named` in its `files.json`.
-
-    ``None`` without a `files.json`, or with one written before `named`: its
-    `tables` hold only the files at the version's snapshot.
-    """
-    if version.files is None:
-        return None
-    try:
-        index = json.loads(store.get(layout.version_dir(version.id) + version.files.path))
-    except Exception as exc:  # noqa: BLE001 - stores raise their own types
-        if is_missing(exc):
-            return None
-        raise
-    named = index.get("named")
-    return None if named is None else set(named)
+def _named_files(index: dict) -> set[str]:
+    """Every data file and delete file a `tables.json` names. A version keeps only
+    its last snapshot, so these are every file its metadata names."""
+    return {
+        path
+        for table in index.get("tables", {}).values()
+        for item in table.get("files", [])
+        for path in (item["path"], (item.get("deletes") or {}).get("path"))
+        if path
+    }
 
 
 def plan_retention(
@@ -1551,20 +1490,13 @@ def _upload_data_files(store: Store, config: Config, frozen: Path, local_data: P
                 raise
 
 
-def _needed_objects(local: Path, version: Version, assets: Iterable[str]) -> dict[str, str]:
-    """The assets and tree files a version reaches: store key to media type, where it is known."""
-    needed: dict[str, str] = {}
-    if version.tree is not None:
-        listed = json.loads((local / version.tree.path).read_text(encoding="utf-8"))
-        for item in listed["entries"]:
-            needed[objects.tree_key(item["sha256"])] = objects.media_type(item["path"])
-    for sha256 in assets:
-        needed.setdefault(objects.asset_key(sha256), "")
-    return needed
+def _needed_objects(assets: Iterable[str]) -> dict[str, str]:
+    """The assets a version reaches: store key to media type, where it is known."""
+    return {objects.asset_key(sha256): "" for sha256 in assets}
 
 
 def _upload_objects(store: Store, needed: dict[str, str], local: Mapping[str, Path]) -> None:
-    """Put the assets and tree files the repository lacks, or refuse the push."""
+    """Put the assets the repository lacks, or refuse the push."""
     if not needed:
         return
     present = {key for prefix in _HASHED_DIRS.values() for key in store.list(prefix)}

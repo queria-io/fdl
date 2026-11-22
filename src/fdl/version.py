@@ -76,12 +76,9 @@ class Version:
     #: What changed since the first parent, as `fdl diff --json` prints it. Optional.
     diff: dict | None = None
     annotations: dict = field(default_factory=dict)
-    #: The version's `files.json`, the index of each table's files. Optional.
-    files: File | None = None
-    #: The version's `dataset.json`. None only in versions written before it was required.
-    dataset: File | None = None
-    #: The version's `tree.json`, the other files it holds by path. Optional.
-    tree: File | None = None
+    #: The version's `tables.json`: each table's files and columns, each view, and the
+    #: declarations. None only in the record of a version past retention written before it.
+    tables: File | None = None
     fdl: str = layout.FDL_VERSION
 
     @property
@@ -104,42 +101,20 @@ class Version:
                 "bytes": self.metadata.bytes,
                 "sha256": self.metadata.sha256,
             },
-            **(
-                {
-                    "dataset": {
-                        "path": self.dataset.path,
-                        "bytes": self.dataset.bytes,
-                        "sha256": self.dataset.sha256,
-                    }
-                }
-                if self.dataset
-                else {}
-            ),
             "ducklake": {
                 "format": self.ducklake.format,
                 "snapshot_id": self.ducklake.snapshot_id,
                 "snapshots": list(self.ducklake.snapshots),
             },
-            **(
-                {
-                    "files": {
-                        "path": self.files.path,
-                        "bytes": self.files.bytes,
-                        "sha256": self.files.sha256,
-                    }
-                }
-                if self.files
-                else {}
-            ),
-            **(
-                {"tree": {"path": self.tree.path, "bytes": self.tree.bytes, "sha256": self.tree.sha256}}
-                if self.tree
-                else {}
-            ),
+            **({"tables": _entry(self.tables)} if self.tables else {}),
             **({"diff": self.diff} if self.diff is not None else {}),
             "annotations": self.annotations,
         }
         return (json.dumps(record, ensure_ascii=False, indent=2) + "\n").encode()
+
+
+def _entry(file: File) -> dict:
+    return {"path": file.path, "bytes": file.bytes, "sha256": file.sha256}
 
 
 def parse(data: bytes, *, expected_id: str | None = None) -> Version:
@@ -151,10 +126,9 @@ def parse(data: bytes, *, expected_id: str | None = None) -> Version:
             raise VersionError(f"written for fdl {record['fdl']}, this reads {layout.FDL_VERSION}")
         if expected_id is not None and record["id"] != expected_id:
             raise VersionError(f"records id {record['id']} but sits under {expected_id}")
-        # Versions written by 0.26 and earlier record it as `catalog`.
-        metadata = record["metadata"] if "metadata" in record else record["catalog"]
+        metadata = record["metadata"]
         ducklake = record["ducklake"]
-        dataset = record.get("dataset")
+        tables = record.get("tables")
         return Version(
             fdl=record["fdl"],
             id=layout.check_version_id(record["id"]),
@@ -175,12 +149,10 @@ def parse(data: bytes, *, expected_id: str | None = None) -> Version:
                 snapshots=tuple(ducklake["snapshots"]),
             ),
             diff=record.get("diff"),
-            annotations=dict(record.get("annotations", record.get("extensions", {}))),
-            files=_file(record.get("files")),
-            tree=_file(record.get("tree")),
-            dataset=(
-                File(path=layout.check_file_name(dataset["path"]), bytes=int(dataset["bytes"]), sha256=dataset["sha256"])
-                if dataset
+            annotations=dict(record.get("annotations", {})),
+            tables=(
+                File(path=layout.check_file_name(tables["path"]), bytes=int(tables["bytes"]), sha256=tables["sha256"])
+                if tables
                 else None
             ),
         )
@@ -188,12 +160,6 @@ def parse(data: bytes, *, expected_id: str | None = None) -> Version:
         raise
     except (KeyError, TypeError, ValueError) as exc:
         raise VersionError(f"not a version record: {exc}") from exc
-
-
-def _file(entry: dict | None) -> File | None:
-    if not entry:
-        return None
-    return File(path=layout.check_file_name(entry["path"]), bytes=int(entry["bytes"]), sha256=entry["sha256"])
 
 
 def utc_now() -> str:

@@ -63,19 +63,15 @@ SELECT * FROM '../towns.csv';
 
 `DATA_INLINING_ROW_LIMIT 0` を付けると、DuckLake はすべての行を Parquet に書きます。既定のままだと小さな表をメタデータの中に持ちますが、バージョンは行を、読み手が取得できるデータファイルとして持つ必要があります。
 
-## 説明を書く
+## 宣言する
 
-バージョンにはそれぞれ、中身を説明する `dataset.json` を付けます。`fdl commit` を実行するフォルダに置いてください。
+行を識別する列を FDL に伝えます。マージは主キーで行を照合し、読み手は主キーで行を引けます。
 
-```json dataset.json
-{
-  "name": "towns",
-  "title": "Towns",
-  "tables": [{ "schema": "main", "name": "towns", "title": "Towns and their codes" }]
-}
+```bash
+fdl declare primary-key lake.sqlite main.towns code
 ```
 
-必須なのは `name` だけです。`fdl commit` がこのファイルをメタデータと照らし合わせ、表ごとの行数と列ごとの型を書き足します。フォルダにあるほかのファイル（`README.md` など）も、隠しファイルと、作業メタデータと `fdl` がその隣に置くファイルを除いて、すべてバージョンに入ります。
+宣言はコミットまで作業メタデータと一緒に保存され、コミットがテーブルと照らし合わせて確認します（[宣言](/ja/spec/versions#宣言)）。宣言は省略できます。宣言の無いバージョンはテーブルだけを持ちます。
 
 ## コミットして push する
 
@@ -93,8 +89,7 @@ towns/
   refs/heads/main                       019a3c4e-…
   versions/019a3c4e-…/
     metadata.db
-    dataset.json
-    files.json
+    tables.json
     profiles/main/towns.json
     version.json
   tables/main/towns/ducklake-….parquet
@@ -140,8 +135,6 @@ INSERT INTO lake.main.towns SELECT * FROM '../towns-2026.csv';
 fdl commit lake.sqlite -m "Add 2026" --author alice
 fdl push lake.sqlite
 ```
-
-今のフォルダには `dataset.json` があるので、クローンはそれをそのままにします。空のフォルダでは、バージョンの `dataset.json` とバージョンが持つほかのファイルもそこに書き出すので、リポジトリをクローンした人はデータだけでなく説明も変えられます。
 
 新しいバージョンは、最初のバージョンを親として記録します。最初の Parquet ファイルは両方のメタデータが参照し、新しいファイルは 2 つめのメタデータだけが参照します。
 
