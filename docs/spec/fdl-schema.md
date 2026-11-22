@@ -36,7 +36,7 @@ What the dataset as a whole means. At most one row, and no primary key: when bot
 | `homepage` | VARCHAR | The publisher's page for the data |
 | `issued` | DATE | When the dataset was first published |
 | `update_frequency` | VARCHAR | How often it is updated (`daily`, `monthly`, `irregular`, ...) |
-| `licenses` | STRUCT(id VARCHAR, spdx VARCHAR, url VARCHAR, title VARCHAR, commercial_use BOOLEAN, share_alike BOOLEAN, attribution_required BOOLEAN)[] | Licenses. `spdx` is an SPDX identifier when there is one |
+| `licenses` | STRUCT(id VARCHAR, spdx VARCHAR, url VARCHAR, title VARCHAR)[] | Licenses. `spdx` is an SPDX identifier when there is one |
 | `sources` | STRUCT(title VARCHAR, path VARCHAR)[] | Where the data comes from. `path` is a URL |
 | `contributors` | STRUCT(title VARCHAR, path VARCHAR, roles VARCHAR[])[] | Who made or provides it |
 | `temporal_coverage` | STRUCT(start VARCHAR, "end" VARCHAR) | The period the data covers |
@@ -69,8 +69,6 @@ One row per table or view. Primary key: `schema`, `name`.
 | `profile` | BOOLEAN | `false`: no profile is made for it. NULL is `true` |
 | `sql` | VARCHAR | The SQL the table was made from, for a table built by a query. A view's SQL is in the metadata and is not repeated here |
 | `depends_on` | VARCHAR[] | The tables and views it reads: `schema.name`, or `<repository URL>#schema.name` for another dataset |
-| `materialized` | VARCHAR | How the writer's build tool made it (`table`, `view`, `incremental`, ...) |
-| `source_path` | VARCHAR | The path of its definition in the writer's project |
 
 ## _fdl.columns
 
@@ -83,7 +81,6 @@ One row per column described. Primary key: `schema`, `table`, `name`.
 | `name` | VARCHAR | Column name |
 | `title` | VARCHAR | Title |
 | `description` | VARCHAR | Description, in Markdown |
-| `entity` | VARCHAR | What the values identify, when the column is a key other datasets share, by the name of the code system (`corporate_number`, `lg_code`) |
 | `asset` | BOOLEAN | `true`: each value is the sha256 of an [asset](/spec/versions#assets). Tables only |
 
 ## _fdl.files

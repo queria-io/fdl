@@ -36,7 +36,7 @@ DuckLake が記録する構造のほかに FDL がデータセットについて
 | `homepage` | VARCHAR | 提供元のデータのページ |
 | `issued` | DATE | データセットを最初に公開した日 |
 | `update_frequency` | VARCHAR | 更新の頻度（`daily`、`monthly`、`irregular` など） |
-| `licenses` | STRUCT(id VARCHAR, spdx VARCHAR, url VARCHAR, title VARCHAR, commercial_use BOOLEAN, share_alike BOOLEAN, attribution_required BOOLEAN)[] | ライセンス。`spdx` は SPDX の識別子があるときに書く |
+| `licenses` | STRUCT(id VARCHAR, spdx VARCHAR, url VARCHAR, title VARCHAR)[] | ライセンス。`spdx` は SPDX の識別子があるときに書く |
 | `sources` | STRUCT(title VARCHAR, path VARCHAR)[] | データの出典。`path` は URL |
 | `contributors` | STRUCT(title VARCHAR, path VARCHAR, roles VARCHAR[])[] | 作った人・提供する人 |
 | `temporal_coverage` | STRUCT(start VARCHAR, "end" VARCHAR) | データが対象とする期間 |
@@ -69,8 +69,6 @@ DuckLake が記録する構造のほかに FDL がデータセットについて
 | `profile` | BOOLEAN | `false`: profile を作らない。NULL は `true` |
 | `sql` | VARCHAR | クエリで作ったテーブルの、作った SQL。ビューの SQL はメタデータにあるので、ここには書かない |
 | `depends_on` | VARCHAR[] | 読むテーブルとビュー。`schema.name`、ほかのデータセットのものは `<リポジトリの URL>#schema.name` |
-| `materialized` | VARCHAR | 書き手のビルドツールがどう作ったか（`table`、`view`、`incremental` など） |
-| `source_path` | VARCHAR | 書き手のプロジェクトでの定義のパス |
 
 ## _fdl.columns
 
@@ -83,7 +81,6 @@ DuckLake が記録する構造のほかに FDL がデータセットについて
 | `name` | VARCHAR | 列名 |
 | `title` | VARCHAR | タイトル |
 | `description` | VARCHAR | 説明（Markdown） |
-| `entity` | VARCHAR | ほかのデータセットと共有するキーの列のとき、値が識別するもの。コード体系の名前で書く（`corporate_number`、`lg_code`） |
 | `asset` | BOOLEAN | `true`: 各値は[アセット](/ja/spec/versions#アセット)の sha256。テーブルだけ |
 
 ## _fdl.files
