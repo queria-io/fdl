@@ -398,6 +398,12 @@ class _Merging:
         if clashes:
             plan.conflicts.append(f"{label}: both sides changed the column(s) {', '.join(clashes)} differently")
             return
+        # One side renamed a column to a name the other side gave another column, say.
+        names = [column.name for column in merged if column]
+        twice = sorted({name for name in names if names.count(name) > 1})
+        if twice:
+            plan.conflicts.append(f"{label}: the two sides give the name(s) {', '.join(twice)} to different columns")
+            return
         primary = self.keys[key]
         by_name = {column.name: n for n, column in enumerate(merged) if column}
         sides = ("base", "lake", "theirs") if has_base else ("lake", "theirs")
@@ -597,7 +603,8 @@ class _Merging:
     def _alterations(self, key: tuple[str, str], slots, merged: list[_Column | None]) -> list[str]:
         """The ALTER TABLE statements that give our table the merged columns."""
         table = self.name("lake", key)
-        drops, renames, retypes, adds = [], [], [], []
+        drops, moves, retypes, adds = [], [], [], []
+        kept: set[str] = set()
         for slot, column in zip(slots, merged):
             ours = slot["lake"]
             if ours is not None and column is None:
@@ -606,10 +613,22 @@ class _Merging:
                 default = f" DEFAULT {column.default}" if column.default else ""
                 adds.append(f"ALTER TABLE {table} ADD COLUMN {_quoted(column.name)} {column.type}{default}")
             elif ours is not None and column is not None:
+                kept.add(ours.name)
                 if ours.name != column.name:
-                    renames.append(f"ALTER TABLE {table} RENAME COLUMN {_quoted(ours.name)} TO {_quoted(column.name)}")
+                    moves.append((ours.name, column.name))
                 if ours.type != column.type:
                     retypes.append(f"ALTER TABLE {table} ALTER COLUMN {_quoted(column.name)} SET DATA TYPE {column.type}")
+        renames = [f"ALTER TABLE {table} RENAME COLUMN {_quoted(old)} TO {_quoted(new)}" for old, new in moves]
+        if any(new in kept for _, new in moves):
+            # A rename to a name another kept column holds until its own rename (a swap, say):
+            # each goes through a name of its own first.
+            renames = [
+                f"ALTER TABLE {table} RENAME COLUMN {_quoted(old)} TO {_quoted(f'__fdl_rename_{n}')}"
+                for n, (old, _) in enumerate(moves)
+            ] + [
+                f"ALTER TABLE {table} RENAME COLUMN {_quoted(f'__fdl_rename_{n}')} TO {_quoted(new)}"
+                for n, (_, new) in enumerate(moves)
+            ]
         return drops + renames + retypes + adds
 
     # Writing it.

@@ -242,6 +242,27 @@ def test_a_declaration_both_sides_changed_differently_is_a_conflict(branches) ->
     assert "declarations: main.towns: both sides changed the primary key differently" in out
 
 
+def test_a_merge_with_declarations_not_committed_is_refused(branches) -> None:
+    store, main, feature = branches
+    sql(feature, store, "INSERT INTO lake.main.towns VALUES (5, 'e')")
+    save(feature, "feature")
+    run("declare", "profile", main, "main.towns", "false")
+
+    out = run("merge", "refs/heads/feature", main, "--author", "tester", code=1)
+    assert "the declarations have changes not committed" in out
+    assert "main.towns profile false" in run("declare", "list", main)
+
+
+def test_a_table_made_again_does_not_get_the_declarations_of_the_dropped_one(branches) -> None:
+    store, main, _ = branches
+    sql(main, store, "DROP TABLE lake.main.towns")
+    save(main, "dropped")
+    assert "primary_key" not in run("declare", "list", main)
+    sql(main, store, "CREATE TABLE lake.main.towns (code VARCHAR)")
+    save(main, "made again")
+    assert "primary_key" not in tables_json(store)["tables"]["main.towns"]
+
+
 def test_a_merge_whose_declarations_the_tables_refuse_is_a_conflict(branches) -> None:
     store, main, feature = branches
     sql(feature, store, "ALTER TABLE lake.main.towns DROP COLUMN name")
@@ -548,6 +569,42 @@ def test_a_column_renamed_on_one_side_takes_cells_changed_on_the_other(branches)
 
     run("merge", "refs/heads/feature", main, "--author", "tester")
     assert sql(main, store, "SELECT id, title FROM lake.main.towns ORDER BY id") == [(1, "a"), (2, "y"), (3, "c")]
+
+
+def test_columns_one_side_swapped_take_cells_changed_on_the_other(branches) -> None:
+    store, main, feature = branches
+    sql(feature, store, "ALTER TABLE lake.main.towns ADD COLUMN kind VARCHAR; UPDATE lake.main.towns SET kind = 'k'")
+    save(feature, "kind")
+    run("merge", "refs/heads/feature", main, "--author", "tester")
+    run("push", main)
+    sql(
+        feature,
+        store,
+        "ALTER TABLE lake.main.towns RENAME COLUMN name TO tmp; "
+        "ALTER TABLE lake.main.towns RENAME COLUMN kind TO name; "
+        "ALTER TABLE lake.main.towns RENAME COLUMN tmp TO kind",
+    )
+    save(feature, "feature")
+    sql(main, store, "UPDATE lake.main.towns SET name = 'y' WHERE id = 2")
+    save(main, "main")
+
+    run("merge", "refs/heads/feature", main, "--author", "tester")
+    assert sql(main, store, "SELECT id, name, kind FROM lake.main.towns ORDER BY id") == [
+        (1, "k", "a"),
+        (2, "k", "y"),
+        (3, "k", "c"),
+    ]
+
+
+def test_a_name_both_sides_gave_to_different_columns_is_a_conflict(branches) -> None:
+    store, main, feature = branches
+    sql(feature, store, "ALTER TABLE lake.main.towns RENAME COLUMN name TO title")
+    save(feature, "feature")
+    sql(main, store, "ALTER TABLE lake.main.towns ADD COLUMN title VARCHAR")
+    save(main, "main")
+
+    out = run("merge", "refs/heads/feature", main, "--author", "tester", code=1)
+    assert "main.towns: the two sides give the name(s) title to different columns" in out
 
 
 def test_cells_changed_on_one_side_are_cast_to_the_type_the_other_gave(branches) -> None:

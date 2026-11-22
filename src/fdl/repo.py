@@ -729,7 +729,7 @@ def _tables_read(sql: str | None) -> set[tuple[str, str, str]] | None:
     return {(held, schema, name) for held, schema, name in found if held or schema or name not in ctes}
 
 
-def missing_profiles(store: Store, version: Version, *, setup: Iterable[str] = ()) -> list[dict]:
+def missing_profiles(store: Store, version: Version) -> list[dict]:
     """The tables and views of ``version`` that get a profile and have none in the repository."""
     folder = layout.version_dir(version.id)
     index = diffs.indexed(store, version)
@@ -748,7 +748,7 @@ def add_profiles(store: Store, version: Version, *, setup: Iterable[str] = ()) -
     under the version, and the tables (``schema.name``) that could not be read.
     Refused for a version past retention, which has no metadata to clone.
     """
-    wanted = missing_profiles(store, version, setup=setup)
+    wanted = missing_profiles(store, version)
     if not wanted:
         return [], []
     with tempfile.TemporaryDirectory(prefix=".fdl-profile-") as scratch:

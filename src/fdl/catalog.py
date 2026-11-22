@@ -981,7 +981,6 @@ def same_contents(
     *,
     data_path: str | None = None,
     setup: Iterable[str] = (),
-    ignore_schema: str | None = None,
 ) -> bool:
     """Whether the working catalog's last snapshot holds what snapshot ``since`` held.
 
@@ -994,8 +993,6 @@ def same_contents(
     files, so files are compared first and rows only where the files differ.
     Reading those rows needs the data files: one the writer cannot read raises
     `CatalogError`. ``setup`` runs first, for the keys reading them needs.
-
-    The tables and views of ``ignore_schema`` are left out of the comparison.
     """
     import duckdb
 
@@ -1030,12 +1027,11 @@ def same_contents(
                 """,
                 {"s": snapshot},
             ).fetchall()
-            return {(schema, name): table_id for schema, name, table_id in rows if schema != ignore_schema}
+            return {(schema, name): table_id for schema, name, table_id in rows}
 
         def views(snapshot: int) -> set[tuple]:
             return set(
-                row
-                for row in con.execute(
+                con.execute(
                     f"""
                     SELECT s.schema_name, v.view_name, v.dialect, v.sql
                     FROM {meta}.ducklake_view v JOIN {meta}.ducklake_schema s USING (schema_id)
@@ -1043,7 +1039,6 @@ def same_contents(
                     """,
                     {"s": snapshot},
                 ).fetchall()
-                if row[0] != ignore_schema
             )
 
         def files(table_id: int, snapshot: int) -> set[tuple]:

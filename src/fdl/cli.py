@@ -280,7 +280,8 @@ def _commit(
     except repo.NothingToCommit:
         # The working metadata holds what the last pushed version holds, so a
         # version committed before and not pushed no longer matches it.
-        _drop_pending(working, state, declared=facts.to_json())
+        # It also declares what the last pushed version declares.
+        _drop_pending(working, state, declared=(inherited or declaring.Facts()).to_json())
         raise
     finally:
         shutil.rmtree(out, ignore_errors=True)
@@ -288,7 +289,9 @@ def _commit(
         working,
         {
             **state,
-            "declared": facts.to_json(),
+            # What the version declares: a table dropped took its declarations with it,
+            # so a table made again under its name does not get them back.
+            "declared": declaring.from_index(index).to_json(),
             "pending": {
                 "id": version.id,
                 "assets": sorted(held),
@@ -301,8 +304,13 @@ def _commit(
 
 
 def _declared(store, state: dict, working: Path) -> declaring.Facts:
-    """The declarations kept beside the working metadata."""
-    return declaring.Facts.from_json(state.get("declared", {}))
+    """The declarations kept beside the working metadata.
+
+    A working metadata cloned before they were kept there declares what its base declares.
+    """
+    if "declared" in state:
+        return declaring.Facts.from_json(state["declared"])
+    return repo.declarations(store, repo.read_version(store, state["base"])) if state.get("base") else declaring.Facts()
 
 
 def _check_data_dir(store, working: Path, state: dict) -> None:
@@ -486,6 +494,8 @@ def merge(
             raise repo.RepoError(f"{state['ref']} holds no version yet, so there is nothing to merge into")
         if catalog.last_snapshot(working) != ours.ducklake.snapshot_id:
             raise repo.RepoError(f"the working metadata has changes not committed: commit and push them, or clone again")
+        if _declared(store, state, working) != repo.declarations(store, ours):
+            raise repo.RepoError("the declarations have changes not committed (fdl declare): commit and push them, or clone again")
         bases = repo.merge_bases(store, ours, theirs)
         if not bases:
             raise repo.RepoError(f"{ours.id} and {theirs.id} have no version in common")

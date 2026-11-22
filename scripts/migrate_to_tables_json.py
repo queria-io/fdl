@@ -39,8 +39,11 @@ from fdl.store import Store, is_missing
 from fdl.stores import open_store
 from fdl.version import DuckLake, File, Metadata, Version
 
+#: The earlier metadata, kept until the record is written again: `metadata.db` is
+#: written over in place, so a run stopped before the record reads it from here.
+_KEPT = "metadata.premigrate"
 #: What earlier versions kept beside the record, deleted once migrated.
-_EARLIER_FILES = ("files.json", "dataset.json", "tree.json", "version.json.sig", "ducklake.duckdb")
+_EARLIER_FILES = ("files.json", "dataset.json", "tree.json", "version.json.sig", "ducklake.duckdb", _KEPT)
 _EARLIER_DIRS = ("catalogs/",)
 _OBJECTS_DIR = "objects/"
 
@@ -117,9 +120,12 @@ def _migrate_live(store: Store, record: dict, setup: list[str]) -> None:
         target = Path(tmp) / "version"
         target.mkdir()
         frozen = target / layout.METADATA
-        frozen.write_bytes(store.get(folder + held.path))
+        source = folder + (_KEPT if store.head(folder + _KEPT) is not None else held.path)
+        frozen.write_bytes(store.get(source))
         if hashlib.sha256(frozen.read_bytes()).hexdigest() != held.sha256:
             raise repo.RepoError(f"{version_id}: the metadata's sha256 is not the one version.json records")
+        if source != folder + _KEPT:
+            store.put_file(folder + _KEPT, frozen, content_type="application/octet-stream")
         snapshot = int(record["ducklake"]["snapshot_id"])
         facts = _declarations(store, record, frozen, snapshot)
         catalog.keep_last_snapshot(frozen)
