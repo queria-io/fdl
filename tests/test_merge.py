@@ -397,3 +397,29 @@ def test_a_comment_ours_changed_on_a_view_theirs_made_a_table(branches) -> None:
     save(main, "main")
     output = run("merge", "refs/heads/feature", main, "--author", "tester")
     assert "comment of main.named" in output
+
+
+def test_cells_of_one_row_changed_on_each_side_are_merged(branches) -> None:
+    store, main, feature = branches
+    sql(feature, store, "ALTER TABLE lake.main.towns ADD COLUMN note VARCHAR")
+    save(feature, "note")
+    run("merge", "refs/heads/feature", main, "--author", "tester")
+    run("push", main)
+    sql(feature, store, "UPDATE lake.main.towns SET note = 'n' WHERE id = 2")
+    save(feature, "feature")
+    sql(main, store, "UPDATE lake.main.towns SET name = 'y' WHERE id = 2")
+    save(main, "main")
+
+    run("merge", "refs/heads/feature", main, "--author", "tester")
+    assert sql(main, store, "SELECT id, name, note FROM lake.main.towns WHERE id = 2") == [(2, "y", "n")]
+
+
+def test_a_row_dropped_on_one_side_and_changed_on_the_other_is_a_conflict(branches) -> None:
+    store, main, feature = branches
+    sql(feature, store, "DELETE FROM lake.main.towns WHERE id = 2")
+    save(feature, "feature")
+    sql(main, store, "UPDATE lake.main.towns SET name = 'y' WHERE id = 2")
+    save(main, "main")
+
+    out = run("merge", "refs/heads/feature", main, "--author", "tester", code=1)
+    assert "main.towns: both sides changed 1 row(s) differently: id=2" in out

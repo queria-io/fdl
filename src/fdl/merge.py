@@ -2,8 +2,9 @@
 
 Ours is the version the working catalog was checked out at, theirs the version
 being merged, and the base their common ancestor (see `repo.merge_bases`). A
-table or a row one side changed takes that side's change; one both sides
-changed differently is a conflict. Rows are matched only by a primary key that
+table, a row or a cell (a row's value in one column) one side changed takes that
+side's change; a cell both sides changed differently, or a row one side dropped
+and the other changed, is a conflict. Rows are matched only by a primary key that
 both sides give the table in `_fdl.tables`. The tables of `_fdl` are merged the
 same way, by the keys the specification fixes for them.
 """
@@ -138,7 +139,7 @@ class _Merging:
         self.con = con
         self.keys = keys
         self.repository_data = repository_data
-        self.staged: dict[tuple[str, str], str] = {}
+        self.staged: dict[tuple[str, str], tuple[str, list[str]]] = {}
         #: Temp tables made so far, kept or not, so each gets a name of its own.
         self.made = 0
 
@@ -318,33 +319,65 @@ class _Merging:
                 return
         staged = f"__fdl_merge_{self.made}"
         self.made += 1
+        names = [column for column, _ in columns]
+        cells = range(len(names))
+        # The key's cells are the same on every side of a joined row.
+        rest = [(n, c) for n, c in zip(cells, names) if c not in primary]
+
+        def side(alias: str, mark: str) -> str:
+            picked = ", ".join(f"{_quoted(c)} AS {mark}{n}" for n, c in zip(cells, names))
+            return f"SELECT {keys}, true AS {mark}p, {picked} FROM {sources[alias]}"
+
+        def differ(one: str, other: str, n: int) -> str:
+            return f"{one}{n} IS DISTINCT FROM {other}{n}"
+
+        # Merged by cell: a cell takes theirs where theirs changed it, ours otherwise.
+        # A row both have is merged cell by cell even when the base lacks it (its
+        # cells are then NULL there); a row one side dropped and the other changed
+        # is a conflict, as is a cell both changed differently.
+        merged = ", ".join(
+            f"CASE WHEN tp IS NULL THEN o{n} WHEN op IS NULL THEN t{n} "
+            f"WHEN {differ('t', 'b', n)} THEN t{n} ELSE o{n} END AS {_quoted(c)}"
+            for n, c in rest
+        )
+        clash_cells = " OR ".join(
+            f"({differ('o', 'b', n)} AND {differ('t', 'b', n)} AND {differ('o', 't', n)})" for n, _ in rest
+        ) or "false"
+        ours_changed = " OR ".join(differ("o", "b", n) for n in cells)
+        theirs_changed = " OR ".join(differ("t", "b", n) for n in cells)
         joined = f"""
-            WITH b AS (SELECT {keys}, {whole} AS r FROM {sources['base']}),
-                 o AS (SELECT {keys}, {whole} AS r FROM {sources['lake']}),
-                 t AS (SELECT {keys}, {whole} AS r FROM {sources['theirs']})
-            SELECT {keys}, b.r AS b, o.r AS o, t.r AS t
-            FROM b FULL JOIN o USING ({keys}) FULL JOIN t USING ({keys})
+            SELECT * FROM ({side('base', 'b')}) FULL JOIN ({side('lake', 'o')}) USING ({keys})
+                     FULL JOIN ({side('theirs', 't')}) USING ({keys})
         """
         self.con.execute(
             f"""
             CREATE TEMP TABLE {staged} AS
-            SELECT {keys},
-                   o IS DISTINCT FROM b AND t IS DISTINCT FROM b AND o IS DISTINCT FROM t AS conflict,
-                   t IS NOT NULL AS present
-            FROM ({joined})
-            WHERE t IS DISTINCT FROM b AND (o IS NOT DISTINCT FROM b OR o IS DISTINCT FROM t)
+            SELECT * FROM (
+                SELECT {keys}{", " + merged if merged else ""},
+                       (op AND tp AND ({clash_cells}))
+                       OR (bp AND op IS NULL AND tp AND ({theirs_changed}))
+                       OR (bp AND tp IS NULL AND op AND ({ours_changed})) AS __fdl_conflict,
+                       CASE WHEN bp THEN coalesce(op AND tp, false) ELSE coalesce(op, tp, false) END AS __fdl_present,
+                       coalesce(op, false) AS __fdl_ours,
+                       {", ".join(f"o{n}" for n in cells)}
+                FROM ({joined})
+            )
+            WHERE __fdl_conflict OR __fdl_present IS DISTINCT FROM __fdl_ours
+               OR (__fdl_present AND ({" OR ".join(f"{_quoted(c)} IS DISTINCT FROM o{n}" for n, c in rest) or "false"}))
             """
         )
-        clashes = self.con.execute(f"SELECT {keys} FROM {staged} WHERE conflict ORDER BY ALL LIMIT {LISTED_KEYS + 1}").fetchall()
+        clashes = self.con.execute(
+            f"SELECT {keys} FROM {staged} WHERE __fdl_conflict ORDER BY ALL LIMIT {LISTED_KEYS + 1}"
+        ).fetchall()
         if clashes:
-            total = self.con.execute(f"SELECT count(*) FROM {staged} WHERE conflict").fetchone()[0]
+            total = self.con.execute(f"SELECT count(*) FROM {staged} WHERE __fdl_conflict").fetchone()[0]
             listed = "; ".join(", ".join(f"{column}={value!r}" for column, value in zip(primary, row)) for row in clashes[:LISTED_KEYS])
             more = f" and {total - LISTED_KEYS} more" if total > LISTED_KEYS else ""
             plan.conflicts.append(f"{label}: both sides changed {total} row(s) differently: {listed}{more}")
             return
         taken = self.con.execute(f"SELECT count(*) FROM {staged}").fetchone()[0]
         if taken:
-            self.staged[key] = f"temp.main.{staged}"
+            self.staged[key] = (f"temp.main.{staged}", names)
             plan.rows[key] = taken
 
     # Writing it.
@@ -361,16 +394,16 @@ class _Merging:
             con.execute(f"CREATE SCHEMA IF NOT EXISTS lake.{_quoted(key[0])}")
             if key in self.ids["theirs"]:
                 self._take_table(key)
-        for key, staged in self.staged.items():
+        for key, (staged, names) in self.staged.items():
             primary = self.keys[key]
             # Aliased, so a table named like the staged one's alias still binds to the outer row.
             con.execute(
                 f"DELETE FROM {self.name('lake', key)} AS __fdl_target "
                 f"WHERE EXISTS (SELECT 1 FROM {staged} s WHERE {_same_key(primary, '__fdl_target')})"
             )
+            listed = ", ".join(map(_quoted, names))
             con.execute(
-                f"INSERT INTO {self.name('lake', key)} SELECT x.* FROM {self.name('theirs', key)} x "
-                f"WHERE EXISTS (SELECT 1 FROM {staged} s WHERE s.present AND {_same_key(primary, 'x')})"
+                f"INSERT INTO {self.name('lake', key)} ({listed}) SELECT {listed} FROM {staged} WHERE __fdl_present"
             )
         for key in plan.taken:
             if key in self.views["theirs"]:
