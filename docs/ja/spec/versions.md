@@ -173,7 +173,7 @@ description: バージョン ID、version.json の項目、固めたメタデー
 - `deletes` は、そのデータファイルから行を消したときの削除ファイルです
 - `columns` は、そのスナップショットでのテーブルの列をメタデータの順に並べたものです。`id` は DuckLake の列 ID で、DuckLake はこれをどの Parquet データファイルにも列の `field_id` として書きます。列の名前を変えても `id` は変わりません。`type` は DuckLake の型名で、`nullable` は `NOT NULL` の列で `false` になります。`default` は、列を追加する前に書いたデータファイルの行がその列に持つ値を文字列にしたもので、NULL でないときだけ書きます。`struct` はフィールドを、`list` は `element` を、`map` は `key` と `value` を `children` に持ちます
 - `renamed_columns` は、そのテーブルの列の名前を変えたことがあるときに `true` にします。名前を変える前に書いたデータファイルは、古い名前のままです
-- `views` には、そのスナップショットにあるすべてのビューを `schema.view` をキーにして入れます。`sql` はメタデータが記録しているビューの SQL です。`columns` はそのクエリが返す列を順に並べたもので、`name` と `type`（DuckDB の型名）を持ちます。書き手は、`dependencies` のそれぞれを ATTACH してクエリをバインドし、これを得ます
+- `views` には、そのスナップショットにあるすべてのビューを `schema.view` をキーにして入れます。`sql` はメタデータが記録しているビューの SQL から、DuckLake の `{DUCKLAKE_CATALOG}.` を外したものです。DuckLake はこの置き換え文字を、SQL がビュー自身のカタログを指すところに書きます。同じデータセットのテーブルは `main.population` のように書き、読み手はそのバージョンのメタデータを既定のカタログにして SQL を実行します。ほかのカタログの名前（`dependencies` が決めるもの）は書いたまま残します。`columns` はそのクエリが返す列を順に並べたもので、`name` と `type`（DuckDB の型名）を持ちます。書き手は、`dependencies` のそれぞれを ATTACH してクエリをバインドし、これを得ます
 - テーブルやビューの `primary_key`・`assets`・`profile` と、`dependencies` は宣言です。宣言の無いテーブルやビューはそのキーを書かず、ビューがほかのデータセットを読まないバージョンは `dependencies` を書きません
 
 書き手は、`files`・`columns`・`renamed_columns`・`sql` を固めるときにメタデータから作り、これらはメタデータと一致しなければなりません。宣言はここにだけあります。読み手は知らないキーを無視します。
