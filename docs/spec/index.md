@@ -27,7 +27,7 @@ FDL is a storage layout for keeping versions of [DuckLake](https://ducklake.sele
 - who can read a repository, and who may move `main`. Everything in one repository is readable by the same people
 - authentication, URL shapes and retention defaults
 - the content of the DuckLake metadata itself, which is DuckLake's specification
-- how to show the dataset's documents and the attributes of `_fdl.attributes` meant for it
+- how to show the dataset's documents, and what to do with the attributes of `_fdl.attributes` meant for the host
 
 The format names no host and no service. Fields a host adds go where the specification leaves room for them.
 

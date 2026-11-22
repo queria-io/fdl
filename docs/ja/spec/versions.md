@@ -166,7 +166,7 @@ description: バージョン ID、version.json の項目、固めたメタデー
 - `rows` と `bytes` は、メタデータが記録している行数と大きさです。`footer_bytes` は Parquet のフッターの大きさで、記録があるときだけ書きます
 - `deletes` は、そのデータファイルから行を消したときの削除ファイルです
 - `columns` は、そのスナップショットでの表の列をメタデータの順に並べたものです。`id` は DuckLake の列 ID で、DuckLake はこれをどの Parquet データファイルにも列の `field_id` として書きます。列の名前を変えても `id` は変わりません。`type` は DuckLake の型名で、`nullable` は `NOT NULL` の列で `false` になります。`default` は、列を追加する前に書いたデータファイルの行がその列に持つ値を文字列にしたもので、NULL でないときだけ書きます。`struct` はフィールドを、`list` は `element` を、`map` は `key` と `value` を `children` に持ちます。fdl-cli 0.24 より前の書き手は `columns` を書きません
-- `primary_key` と `assets` は、その表の `_fdl.tables` の `primary_key` と、`_fdl.columns` で `asset` が true の列です（[_fdl スキーマ](/ja/spec/fdl-schema)）。あるときだけ書きます。[tag](#以前のバージョンの-tag) を持つバージョンでは、その表の tag の `fdl.primary_key` と `fdl.assets` です
+- `primary_key` と `assets` は、その表の `_fdl.tables` の `primary_key` と、`_fdl.columns` で `asset` が true の列です（[_fdl スキーマ](/ja/spec/fdl-schema)）。あるときだけ書きます。`_fdl.files` の `assets` は `["sha256"]` です。`_fdl` より前に書かれたバージョン（[以前のバージョンの tag](#以前のバージョンの-tag)）では、その表の tag の `fdl.primary_key` と `fdl.assets` です
 - `renamed_columns` は、その表の列の名前を変えたことがあるときに `true` にします。名前を変える前に書いたデータファイルは、古い名前のままです
 - `views` には、そのスナップショットにあるすべてのビューを `schema.view` をキーにして入れます。`sql` はメタデータが記録しているビューの SQL、`columns` はそのクエリが返す列で、それぞれ `name` と `type`（DuckDB の型名）を持ちます。書き手は、`catalogs` のリポジトリを ATTACH してクエリをバインドし、列を求めます。クエリをバインドできないビューでは `columns` を省きます。以前の書き手は `views` を書きません
 - `catalogs` は `_fdl.catalogs` で、各 `name` をその `url` に対応させます。行があるときだけ書きます
@@ -252,7 +252,7 @@ DuckLake の `comment`（`COMMENT ON`）は FDL のものではありません�
 | `fdl.profile` | テーブルまたはビュー | `_fdl.tables.profile` |
 
 - 読み手はメタデータの `duckdb_tables()`・`duckdb_views()` の `tags` か、`ducklake_tag` の行から読む。テーブルの tag は `files.json` からも読める
-- このバージョンからコミット・元に戻す・マージで新しいバージョンを作る書き手は、`_fdl` にまだ無ければ読んだ値を `_fdl` に書き、`fdl.` の tag は書かない。`diff` と[変更がないとき](/ja/spec/writing#変更がないとき)の判定では、親から読んだ値と比べるので、主キーとアセットが同じテーブルは変わったことにならない
+- このバージョンからコミット・元に戻す・マージで新しいバージョンを作る書き手は、`_fdl` にまだ無ければ読んだ値を `_fdl` に書き、`fdl.` の tag は書かない。作業メタデータが親から引き継いだ tag は新しいバージョンにも残るが、そのメタデータには `_fdl` があるので、読み手はその tag を無視する。`diff` と[変更がないとき](/ja/spec/writing#変更がないとき)の判定では、親から読んだ値と比べるので、主キーとアセットが同じテーブルは変わったことにならない。親の tag が示していた値だけを持つ `_fdl` のテーブルは親のものとみなし、追加したテーブルとして記録せず、それだけではバージョンを作らない
 
 ### アセット
 
@@ -263,7 +263,7 @@ DuckLake の `comment`（`COMMENT ON`）は FDL のものではありません�
 SELECT title, pdf_sha256, pdf_media_type FROM lake.main.reports;
 ```
 
-- `_fdl.columns` で `asset` が true の列は、各行にファイルの sha256（小文字の 16 進）か null を持つ。型は `varchar`
+- `_fdl.columns` で `asset` が true の列と `_fdl.files` の `sha256` は、各行にファイルの sha256（小文字の 16 進）か null を持つ。型は `varchar`
 - 各ファイルはルートの `assets/<sha256>` に置く（[レイアウト](/ja/spec/layout#パス)）。同じ中身は 1 回だけ置き、複数のバージョンで共有する
 - ファイルの名前・大きさ・メディアタイプは、同じテーブルの列として持つ。列名は書き手が決める。読み手がファイルを取得する前に表示方法を判定できるよう、少なくともメディアタイプの列を持つのがよい
 - ファイルを差し替えるときは、新しい中身を置き、その sha256 を行に入れる。古いバージョンは古い中身を指したまま残る
@@ -308,4 +308,4 @@ objects/<sha256>     tree.json が並べるファイル（共有、変更しな�
 - このバージョンには tag も `_fdl` も無い。読み手と書き手は、主キーとアセットを `dataset.json` から読む。`tables` の要素（`schema` と `name` で対応を取る）の `primary_key` が `_fdl.tables.primary_key`、その `fields` のうち `"asset": true` の要素が `asset` が true の列になる。`dataset.json` の最上位の `catalogs` は `_fdl.catalogs`。このバージョンを基点にしたマージと、どのバージョンからも到達しないアセットの削除は、これに頼る
 - `tree.json` の `entries` には、`path`、ファイルの `sha256` と `bytes` を並べる。各ファイルは `objects/<sha256>` にあり、そのバージョンが到達する共有オブジェクト（[データファイル](/ja/spec/data-files#共有オブジェクト)）。fdl-cli 0.31 以前はこれらのファイルを `assets/<sha256>` に置いていた。そのバージョンを持つリポジトリは、それを `objects/<sha256>` に写す
 - `dataset.json` と `tree.json` は、バージョンを保持期間から外すときにメタデータと一緒に消す。`tree.json` を持つ有効なバージョンが無くなれば、`objects/` の下のファイルはどのバージョンからも到達せず、猶予期間のあとに消える
-- 書き手は、新しいバージョンにこれらのファイルを書かない。このバージョンからコミット・元に戻す・マージで新しいバージョンを作る書き手は、読んだ主キー・アセット・`catalogs` を `_fdl` に書く。`diff` と[変更がないとき](/ja/spec/writing#変更がないとき)の判定では、親の `dataset.json` から読んだ値と比べるので、主キーとアセットが同じテーブルは変わったことにならない
+- 書き手は、新しいバージョンにこれらのファイルを書かない。このバージョンからコミット・元に戻す・マージで新しいバージョンを作る書き手は、読んだ主キー・アセット・`catalogs` を `_fdl` に書く。`diff` と[変更がないとき](/ja/spec/writing#変更がないとき)の判定では、親の `dataset.json` から読んだ値と比べるので、主キーとアセットが同じテーブルは変わったことにならない。親の `dataset.json` が示していた値だけを持つ `_fdl` のテーブルは親のものとみなす

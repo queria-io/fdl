@@ -7,7 +7,7 @@ What FDL needs to know about a dataset beyond the structure DuckLake records, an
 
 - `_fdl` is written like any other schema, with SQL, by whatever tool the writer uses. FDL does not write it
 - A change to its rows makes a version, and its tables are merged like any table ([Writing](/spec/writing)). Each table's primary key is fixed by this page
-- Every table and every column of `_fdl` is optional. A dataset without `_fdl` has no primary keys and no assets, and nothing described
+- Every table of `_fdl`, and every column outside a table's primary key, is optional. A dataset without `_fdl` has no primary keys and no assets, and nothing described
 - A reader ignores tables of `_fdl` and columns of its tables that this page does not define
 
 `table` and `column` are DuckDB keywords; write them in double quotes in SQL (`"table"`).
@@ -131,6 +131,9 @@ A writer refuses to freeze the working metadata when:
 - a row of `_fdl.schemas`, `_fdl.tables` or `_fdl.columns` names a schema, table, view or column that is not there, or `_fdl.attributes` does with a name that is not `''`
 - a column of `primary_key` is not in the table, or is named twice
 - a column with `asset` true is not `varchar`
+- a row of `_fdl.tables` for a view has a `primary_key`, or a row of `_fdl.columns` for a view has `asset` true
 - `_fdl.dataset` has more than one row, or a table of `_fdl` lacks a column of its primary key
 
-The tables of `_fdl` describe themselves only as this page does: a writer adds no rows for them. They get no profile.
+The rows name schemas, tables and columns by name. A writer's tool that renames a schema, a table or a column, or makes one again under another name, writes the new name into the rows of `_fdl` that name it, before it commits. A merge version is checked the same way: a merge whose version fails these checks, such as one where one side dropped a table and the other added rows of `_fdl.columns` for it, is a conflict.
+
+The tables of `_fdl` describe themselves only as this page does: a writer adds no rows for them. `sha256` of `_fdl.files` is an asset column without a row in `_fdl.columns`. They get no profile.
