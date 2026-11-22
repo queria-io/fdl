@@ -10,7 +10,7 @@ Data files, assets, and the tree files of earlier versions are shared objects: w
 | Object | Path | A version reaches it when |
 | --- | --- | --- |
 | data file | `<data_dir><schema>/<table>/ducklake-<uuid>.parquet` | its metadata names it |
-| asset | `assets/<sha256>` | a column marked `asset` in `_fdl.columns`, or `sha256` of `_fdl.files`, holds the sha256 in a row ([The _fdl schema](/spec/fdl-schema)) |
+| asset | `assets/<sha256>` | a column marked `asset` in `fdl_columns`, or `sha256` of `fdl_files`, holds the sha256 in a row ([FDL tables](/spec/fdl-schema)) |
 | tree file | `objects/<sha256>` | its `tree.json` lists it. Only [earlier versions](/spec/versions#files-of-earlier-versions) have one |
 
 - A writer may place shared objects before making a version. Until a version reaches them, readers do not see them
