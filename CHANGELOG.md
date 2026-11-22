@@ -1,6 +1,21 @@
 # CHANGELOG
 
 
+## v0.34.0 (2026-11-22)
+
+### Documentation
+
+- **spec**: Declare keys and assets in tables.json, merge by cells, drop earlier formats
+  ([#83](https://github.com/queria-io/fdl/pull/83),
+  [`6cfb536`](https://github.com/queria-io/fdl/commit/6cfb5365b140340309d511ffcf2ee7dfdbb2c701))
+
+### Features
+
+- Declare keys, assets, profiles and dependencies in tables.json and merge by cells
+  ([#84](https://github.com/queria-io/fdl/pull/84),
+  [`0943f77`](https://github.com/queria-io/fdl/commit/0943f7756d63662177968709de3ec345dae0f9d9))
+
+
 ## v0.33.0 (2026-11-21)
 
 ### Bug Fixes
