@@ -68,7 +68,7 @@ A table is the same table in two versions when it has the same `schema.table`. E
 | Neither changed it, or both changed it the same way | That table |
 | Only one changed it, added it or dropped it | That side's table, or none if it dropped it |
 | One dropped it and the other changed it | A conflict |
-| Both changed it, or both added it, differently | Cells merged by primary key, below, or a conflict |
+| Both changed it, or both added it, differently | Cells merged by primary key or rows merged without one, below, or a conflict |
 
 A view is compared by its SQL and its declarations. When both sides changed a view differently, its SQL and each declaration are merged as values: one only one side changed takes that side's change, and one both changed differently is a conflict.
 
@@ -78,10 +78,10 @@ Comments (DuckLake's `comment`) are not compared, but the merge version keeps th
 
 ### Cells merged by primary key
 
-When both sides changed a table differently, the writer merges it cell by cell. A cell is the value one row holds in one column, and the row is found by the values of its primary key. The table must have the same `primary_key` in ours, theirs and the base, or the base must not hold the table.
+When both sides changed a table differently, the writer merges it cell by cell. A cell is the value one row holds in one column, and the row is found by the values of its primary key. The table must have the same `primary_key` in ours, theirs and the base, or the base must not hold the table. A table whose `primary_key` differs between them, or that has one on only some of them, is a conflict.
 
 - Each declaration other than `primary_key` is merged as a value, as for a view
-- Columns the base holds are found by their `id` in `tables.json`, so a rename is a change to that column. Columns added since the base are found by name. A column only one side added, renamed, dropped or changed the type of takes that side's change. A column both sides changed differently, or one side dropped and the other changed a cell of, is a conflict
+- Columns the base holds are found by their `id` in `tables.json`, so a rename is a change to that column. This holds only while the table has the same DuckLake table ID in the base and the side; a table made again under the same name is matched by column name. Columns added since the base are found by name. A column only one side added, renamed, dropped or changed the type of takes that side's change. A column both sides changed differently, or one side dropped and the other changed a cell of, is a conflict
 - A cell one side changed in a column the other side changed the type of is cast to the new type. A cell whose value does not cast is a conflict
 - A row only one side added or deleted takes that side's change. A row one side deleted and the other changed a cell of is a conflict. A row both sides added is kept when the two hold the same values, and is a conflict otherwise
 - In a row both sides kept, a cell only one side changed takes that side's value, and a cell both changed to different values is a conflict. Two `NULL`s are the same value
@@ -91,7 +91,7 @@ A table where a key holds `NULL` or appears more than once, in any of the three 
 
 ### Rows merged without a primary key
 
-When both sides changed a table without `primary_key` differently, the writer merges its rows as a multiset. A row is the values of all its columns, and the writer counts how many times each row appears in the base, ours and theirs.
+When both sides changed a table that has no `primary_key` in ours, theirs or the base differently, the writer merges its rows as a multiset. A row is the values of all its columns, and the writer counts how many times each row appears in the base, ours and theirs.
 
 - Each declaration is merged as a value, as for a view. The columns and their types must be the same in ours and theirs; a table whose columns differ between the two is a conflict
 - For each row, when only one side's count differs from the base, the merge version holds that side's count. When both differ from the base by the same count, it holds that count. When both differ and the counts are not the same, the row is a conflict
@@ -125,6 +125,8 @@ A push from stale working metadata is refused on two checks:
 
 1. The new version does not descend from the version the branch holds now. Someone else pushed first
 2. A data file the metadata names is missing from the dataset. A host may check the assets the rows hold as well. A file that no live version named for longer than the grace period may have been deleted, even if the writer found it there
+
+A host also refuses a push whose `tables.json` does not match `version.json`, or does not list the data files and delete files the metadata names ([Pushing over HTTP](/spec/http#requests)).
 
 A writer also refuses to commit or push when `fdl.json` names another `data_dir` than the one it checked out with ([Changing data_dir](/spec/layout#changing-data_dir)).
 
