@@ -1,11 +1,8 @@
 """Files stored by their sha256 beside the data.
 
-The rows of a table point at assets through a column marked ``asset`` in
-`_fdl.columns`, and `_fdl.files` points at the dataset's documents by its
-``sha256``; they sit at ``assets/<sha256>``. Versions written before `_fdl`
-name their other files in a `tree.json`; those sit at ``objects/<sha256>``.
-Both are written once and shared by versions, as Git LFS stores the files its
-pointers name.
+The rows of a table point at assets through a column its version declares in
+``assets`` (`tables.json`); they sit at ``assets/<sha256>``. They are written
+once and shared by versions, as Git LFS stores the files its pointers name.
 """
 
 from __future__ import annotations
@@ -123,19 +120,8 @@ class ByContent(Mapping[str, Path]):
         return len({**self._known, **self._below()})
 
 
-def asset_columns(described: dict[str, Any]) -> list[tuple[str, str, str]]:
-    """The columns the `dataset.json` of an earlier version marks as ``asset``: (schema, table, column)."""
-    return [
-        (table["schema"], table["name"], field["name"])
-        for table in described.get("tables", [])
-        if table.get("kind") != "view"
-        for field in table.get("fields", [])
-        if field.get("asset") is True
-    ]
-
-
 def indexed_asset_columns(index: dict[str, Any] | None) -> list[tuple[str, str, str]]:
-    """The asset columns a `files.json` lists: (schema, table, column)."""
+    """The asset columns a `tables.json` declares: (schema, table, column)."""
     return [
         (*name.split(".", 1), column)
         for name, table in (index or {}).get("tables", {}).items()
@@ -196,7 +182,3 @@ def asset_values(
 def asset_key(sha256: str) -> str:
     return layout.ASSETS_DIR + sha256
 
-
-def tree_key(sha256: str) -> str:
-    """Where a file of `tree.json` is stored."""
-    return layout.OBJECTS_DIR + sha256

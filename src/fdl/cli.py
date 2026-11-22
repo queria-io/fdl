@@ -9,6 +9,7 @@ pushed.
 
 from __future__ import annotations
 
+import dataclasses
 import datetime as dt
 import json
 import os
@@ -20,8 +21,8 @@ from urllib.parse import urlparse
 
 import typer
 
-from . import catalog, config, fdl_schema, layout, objects, profiles, refs, repo
-from . import meta as metas
+from . import catalog, config, layout, objects, profiles, refs, repo
+from . import declared as declaring
 from . import merge as merging
 from . import diff as diffs
 from .stores import S3Store, StoreError, open_store
@@ -65,9 +66,8 @@ ERRORS = (
     layout.LayoutError,
     VersionError,
     StoreError,
-    fdl_schema.SchemaError,
+    declaring.DeclarationError,
     objects.ObjectError,
-    metas.MetaError,
 )
 
 
@@ -134,9 +134,17 @@ def clone(
             data = repo.storage_data_path(storage, config)
         else:
             data = repo.data_url(store) if local is None else local.resolve().as_posix() + "/"
+        # What the version declares; a commit takes it over, with what fdl declare changes.
+        facts = repo.declarations(store, version) if version else declaring.Facts()
     except ERRORS as exc:
         raise _fail(exc) from exc
-    state = {"remote": remote, "ref": ref, "base": version.id if version else None, "data_dir": config.data_dir}
+    state = {
+        "remote": remote,
+        "ref": ref,
+        "base": version.id if version else None,
+        "data_dir": config.data_dir,
+        "declared": facts.to_json(),
+    }
     if local:
         state["data"] = str(local)
     if storage:
@@ -177,14 +185,14 @@ def commit(
         "--assets",
         exists=True,
         file_okay=False,
-        help="A folder with the files the asset columns (and _fdl.files) point at, to upload those the repository lacks",
+        help="A folder with the files the asset columns point at, to upload those the repository lacks",
     ),
 ) -> None:
     """Freeze the working metadata into a version, kept beside it until you push it.
 
-    The _fdl schema is checked against the tables and views first. Nothing is
-    made when the tables, their rows and the views are what the last pushed
-    version holds. Committing again before pushing replaces the version not
+    The declarations (fdl declare) are checked against the tables and views
+    first. Nothing is made when the tables, their rows, the views and the
+    declarations are what the last pushed version holds. Committing again before pushing replaces the version not
     pushed yet.
     """
     state = _read_state(working)
@@ -222,23 +230,22 @@ def _commit(
     author: dict,
     assets_dir: Path | None,
     allow_empty: bool,
-    fill=None,
+    facts: declaring.Facts | None = None,
     merged=None,
 ):
     """Freeze the working metadata into a version beside it, to push later.
 
     Its parent is the version the working metadata was cloned at (or last
-    pushed). Any version committed before and not pushed is replaced. ``fill``
-    is what to write into `_fdl` instead of what an earlier parent said (see `repo.commit`).
+    pushed). Any version committed before and not pushed is replaced. ``facts``
+    are the declarations to commit instead of those kept beside the working
+    metadata (a revert's or a merge's); they are kept there after.
     """
     _check_data_dir(store, working, state)
     out = Path(tempfile.mkdtemp(prefix=".fdl-commit-", dir=working.resolve().parent))
     try:
         parent = repo.read_version(store, state["base"]) if state["base"] else None
-        earlier = repo.earlier_facts(store, parent, working) if parent else None
-        if fill is None and earlier and state.get("filled") == state["base"]:
-            # `fdl meta` already wrote it, and what was changed after must stay changed.
-            fill = fdl_schema.Facts()
+        facts = facts if facts is not None else _declared(store, state, working)
+        inherited = repo.declarations(store, parent) if parent else None
         written = _written(store, state)
         reading, setup = _reading(store, state)
 
@@ -253,8 +260,8 @@ def _commit(
                 allow_empty=allow_empty,
                 working_data=written,
                 setup=setup,
-                earlier=earlier,
-                fill=fill,
+                facts=facts,
+                inherited=inherited,
                 merged=merged,
             )
 
@@ -263,7 +270,7 @@ def _commit(
         except repo.CannotCompare as exc:
             typer.echo(f"warning: could not tell whether anything changed ({exc}); committing", err=True)
             version = make(True)
-        index = json.loads((out / version.id / layout.FILES).read_text(encoding="utf-8"))
+        index = json.loads((out / version.id / layout.TABLES).read_text(encoding="utf-8"))
         held = objects.asset_values(
             working, objects.indexed_asset_columns(index), data_path=reading, setup=setup
         )
@@ -273,7 +280,7 @@ def _commit(
     except repo.NothingToCommit:
         # The working metadata holds what the last pushed version holds, so a
         # version committed before and not pushed no longer matches it.
-        _drop_pending(working, state)
+        _drop_pending(working, state, declared=facts.to_json())
         raise
     finally:
         shutil.rmtree(out, ignore_errors=True)
@@ -281,6 +288,7 @@ def _commit(
         working,
         {
             **state,
+            "declared": facts.to_json(),
             "pending": {
                 "id": version.id,
                 "assets": sorted(held),
@@ -290,6 +298,11 @@ def _commit(
         },
     )
     return version
+
+
+def _declared(store, state: dict, working: Path) -> declaring.Facts:
+    """The declarations kept beside the working metadata."""
+    return declaring.Facts.from_json(state.get("declared", {}))
 
 
 def _check_data_dir(store, working: Path, state: dict) -> None:
@@ -423,8 +436,8 @@ def revert(
             frozen = Path(tmp) / "target.duckdb"
             frozen.write_bytes(store.get(layout.version_metadata(target)))
             repo.check_catalog(frozen, target)
-            # What the earlier version said before `_fdl` comes back into `_fdl`.
-            fill = repo.earlier_facts(store, target, frozen) or fdl_schema.Facts()
+            # What the earlier version declared comes back with its tables.
+            facts = repo.declarations(store, target)
             catalog.restore(
                 working, frozen, data_path=reading, repository_data=repo.data_url(store), setup=setup
             )
@@ -436,7 +449,7 @@ def revert(
             author=config.author(author),
             assets_dir=None,
             allow_empty=False,
-            fill=fill,
+            facts=facts,
         )
     except repo.NothingToCommit:
         typer.echo(f"Nothing to revert: {base.id} already holds what {target.id} (version {target.seq}) held")
@@ -456,10 +469,10 @@ def merge(
 ) -> None:
     """Merge another branch into the working metadata's branch.
 
-    Tables and rows only the other branch changed come over, the _fdl schema
-    among them. Rows of a table both branches changed are merged by the primary
-    key both give it in _fdl.tables; anything both changed differently is a
-    conflict, and then nothing is changed. The merge version waits beside the working
+    Tables and rows only the other branch changed come over. A table both
+    branches changed is merged cell by cell, by the primary key both declare
+    for it; anything both changed differently is a conflict, and then nothing
+    is changed. The merge version waits beside the working
     metadata until you push it.
     """
     state = _read_state(working)
@@ -512,38 +525,34 @@ def _fast_forward(store, working: Path, state: dict, theirs) -> None:
     """Rebuild the working metadata from ``theirs``, for push to move the branch there."""
     local = Path(state["data"]) if state.get("data") else None
     repo.clone(store, working, local_data=local, version=theirs, storage=state.get("storage"))
-    _write_state(working, {**state, "base": theirs.id, "forward": True})
+    facts = repo.declarations(store, theirs)
+    _write_state(working, {**state, "base": theirs.id, "forward": True, "declared": facts.to_json()})
     typer.echo(f"Fast-forward to {theirs.id} (version {theirs.seq}). Move {state['ref']} there with:")
     typer.echo(f"  fdl push {working}")
 
 
 def _merge(store, working: Path, state: dict, ours, theirs, base, *, message: str, author: dict):
     """Write the merge into the working metadata and commit it, or raise `merging.Conflicts`."""
-    declared = {name: repo.declared(store, version) for name, version in (("base", base), ("ours", ours), ("theirs", theirs))}
     with tempfile.TemporaryDirectory(prefix="fdl-merge-") as tmp:
         frozen = {}
         for name, version in (("base", base), ("theirs", theirs)):
             frozen[name] = Path(tmp) / f"{name}.duckdb"
             frozen[name].write_bytes(store.get(layout.version_metadata(version)))
             repo.check_catalog(frozen[name], version)
-        # What each side said before `_fdl`, written into `_fdl` where the merge does not say it.
         said = {
-            "base": repo.earlier_facts(store, base, frozen["base"]),
-            "ours": repo.earlier_facts(store, ours, working),
-            "theirs": repo.earlier_facts(store, theirs, frozen["theirs"]),
+            "base": repo.declarations(store, base),
+            "ours": repo.declarations(store, ours),
+            "theirs": repo.declarations(store, theirs),
         }
-        conflicts: list[str] = []
-        if all(facts is not None for facts in said.values()):
-            # All three said it before `_fdl`: what one side changed since the base comes over.
-            fill, found = fdl_schema.merged(said["base"], said["ours"], said["theirs"])
-            conflicts = [f"_fdl: {item}" for item in found]
-        else:
-            fill = (said["ours"] or fdl_schema.Facts()).union(said["theirs"] or fdl_schema.Facts())
+        held = {"base": repo.tables_of(store, base), "ours": repo.tables_of(store, ours), "theirs": repo.tables_of(store, theirs)}
+        # What one side changed of the declarations since the base comes over.
+        facts, found = declaring.merged(said["base"], said["ours"], said["theirs"])
+        conflicts = [f"declarations: {item}" for item in found]
         plan = merging.tables(
             working,
             frozen["base"],
             frozen["theirs"],
-            keys=merging.primary_keys(declared["base"], declared["ours"], declared["theirs"]),
+            keys=merging.primary_keys(*((said[side], held[side]) for side in ("base", "ours", "theirs"))),
             data_path=_written(store, state),
             repository_data=repo.data_url(store),
             setup=_read_setup(store) + _storage_setup(state.get("storage")),
@@ -562,13 +571,13 @@ def _merge(store, working: Path, state: dict, ours, theirs, base, *, message: st
             author=author,
             assets_dir=None,
             allow_empty=True,
-            fill=fill,
+            facts=facts,
             merged=theirs,
         )
-    except fdl_schema.SchemaError as exc:
-        # The merge holds what `_fdl` refuses: one side dropped what the other described, say.
+    except declaring.DeclarationError as exc:
+        # The merge holds what the declarations refuse: one side dropped a column the other made a key, say.
         repo.clone(store, working, local_data=Path(state["data"]) if state.get("data") else None, version=ours, storage=state.get("storage"))
-        raise merging.Conflicts([f"_fdl: {problem}" for problem in exc.problems]) from exc
+        raise merging.Conflicts([f"declarations: {problem}" for problem in exc.problems]) from exc
     return version, plan
 
 
@@ -629,200 +638,121 @@ def _read_setup(store) -> list[str]:
     return [f"CREATE SECRET fdl_remote (TYPE http, BEARER_TOKEN '{secret}', SCOPE '{scope}')"]
 
 
-meta_app = typer.Typer(no_args_is_help=True)
+declare_app = typer.Typer(no_args_is_help=True)
 app.add_typer(
-    meta_app,
-    name="meta",
-    help="Read and write the _fdl schema of the working metadata; the next commit takes the changes.",
+    declare_app,
+    name="declare",
+    help="Set what the next commit declares of the tables and views: primary keys, asset columns, "
+    "profiles and the other datasets the views read. A commit starts from its parent's declarations.",
 )
 
-Name = typer.Argument(help="., schema, schema.table or schema.table.column")
-Key = typer.Argument(help="A column of _fdl (title, description, primary_key, asset, ...), or <reader>-<name> for _fdl.attributes")
+Table = typer.Argument(help="The table or view, as schema.name")
 
 
-def _meta(working: Path, act, *, write: bool):
-    """Run ``act`` on the working metadata attached as ``lake``, in one transaction.
-
-    On a working metadata cloned from a version written before `_fdl`, what that
-    version said is written into `_fdl` first, as `fdl commit` would. Reading
-    takes it back afterwards; writing keeps it, and the commit does not write it again.
-    """
-    import duckdb
-
+def _change_declarations(working: Path, change) -> None:
+    """Apply ``change`` to the declarations kept beside the working metadata, refusing
+    what the tables and views refuse that they did not refuse before."""
     state = _read_state(working)
     store = _store(state["remote"])
-    reading, setup = _reading(store, state)
-    earlier = None
-    if state["base"] and state.get("filled") != state["base"]:
-        earlier = repo.earlier_facts(store, repo.read_version(store, state["base"]), working)
-    con = duckdb.connect()
     try:
-        for statement in [*setup, *catalog.attach_sql(working, alias="lake", data_path=reading, read_only=not (write or earlier))]:
-            if statement:
-                con.execute(statement)
-        con.execute("BEGIN")
-        try:
-            if earlier:
-                fdl_schema.fill(con, earlier, begin=False)
-            result = act(con)
-            con.execute("COMMIT" if write else "ROLLBACK")
-        except BaseException:
-            con.execute("ROLLBACK")
-            raise
-    except duckdb.Error as exc:
-        raise metas.MetaError(str(exc)) from exc
-    finally:
-        con.close()
-    if state["base"] and (write or not earlier) and state.get("filled") != state["base"]:
-        _write_state(working, {**state, "filled": state["base"]})
-    return result
-
-
-@meta_app.command("list")
-def meta_list(
-    working: Path = Working,
-    name: str | None = typer.Argument(None, help="Only this name (., schema, schema.table or schema.table.column)"),
-    as_json: bool = typer.Option(False, "--json", help="Print a JSON list of {name, key, value}"),
-) -> None:
-    """Every key set in _fdl, one a line: name.key=value (the dataset's keys without a name)."""
-    try:
-        found = _meta(working, metas.items, write=False)
+        before = _declared(store, state, working)
+        after = change(before)
+        reading, setup = _reading(store, state)
+        found = declaring.found_in(working, data_path=reading, setup=setup)
+        old = set(declaring.check(before, found))
+        problems = [p for p in declaring.check(after, found) if p not in old]
+        if problems:
+            raise declaring.DeclarationError(problems)
     except (*ERRORS, catalog.CatalogError) as exc:
         raise _fail(exc) from exc
-    found = [item for item in found if name is None or item[0] == name]
+    _write_state(working, {**state, "declared": after.to_json()})
+
+
+def _with(found: dict, name: str, value) -> dict:
+    return {**{k: v for k, v in found.items() if k != name}, **({name: value} if value else {})}
+
+
+@declare_app.command("list")
+def declare_list(
+    working: Path = Working,
+    as_json: bool = typer.Option(False, "--json", help="Print them as JSON"),
+) -> None:
+    """What the next commit declares, one declaration a line."""
+    state = _read_state(working)
+    store = _store(state["remote"])
+    try:
+        facts = _declared(store, state, working)
+    except ERRORS as exc:
+        raise _fail(exc) from exc
     if as_json:
-        typer.echo(
-            json.dumps([{"name": n, "key": k, "value": v} for n, k, v in found], ensure_ascii=False, indent=2, default=str)
-        )
+        typer.echo(json.dumps(facts.to_json(), ensure_ascii=False, indent=2))
         return
-    for held, key, value in found:
-        typer.echo(f"{'' if held == '.' else held + '.'}{key}={metas.show(value)}")
+    for name, columns in sorted(facts.primary_keys.items()):
+        typer.echo(f"{name} primary_key {' '.join(columns)}")
+    for name, columns in sorted(facts.assets.items()):
+        typer.echo(f"{name} assets {' '.join(columns)}")
+    for name in sorted(facts.unprofiled):
+        typer.echo(f"{name} profile false")
+    for name, entry in sorted(facts.dependencies.items()):
+        typer.echo(f"dependency {name} {entry['url']}" + (f" {entry['version']}" if entry.get("version") else ""))
 
 
-@meta_app.command("get")
-def meta_get(working: Path = Working, name: str = Name, key: str = Key) -> None:
-    """Print the value of a key; text as it is, anything else as JSON. Exits with 1 when it is not set."""
-    try:
-        at = metas.target(name)
-        value = _meta(working, lambda con: metas.get(con, at, key), write=False)
-    except KeyError:
-        raise typer.Exit(1) from None
-    except (*ERRORS, catalog.CatalogError) as exc:
-        raise _fail(exc) from exc
-    typer.echo(metas.show(value))
-
-
-def _rows_given(stdin: bool, rows_file: Path | None) -> dict | None:
-    """The rows of _fdl given as JSON on standard input or in a file, or None for neither."""
-    if stdin and rows_file:
-        raise metas.MetaError("give the rows on --stdin or with -F, not both")
-    if not stdin and rows_file is None:
-        return None
-    text = typer.get_text_stream("stdin").read() if stdin else rows_file.read_text(encoding="utf-8")
-    try:
-        rows = json.loads(text)
-    except ValueError as exc:
-        raise metas.MetaError(f"the rows are not JSON: {exc}") from exc
-    if not isinstance(rows, dict) or not all(
-        isinstance(v, list) and all(isinstance(r, dict) for r in v) for v in rows.values()
-    ):
-        raise metas.MetaError("give the rows as an object of {table: [row, ...]}")
-    return rows
-
-
-@meta_app.command("set")
-def meta_set(
+@declare_app.command("primary-key")
+def declare_primary_key(
     working: Path = Working,
-    name: str | None = typer.Argument(None, help="., schema, schema.table or schema.table.column"),
-    key: str | None = typer.Argument(
-        None, help="A column of _fdl (title, description, primary_key, asset, ...), or <reader>-<name> for _fdl.attributes"
-    ),
-    values: list[str] | None = typer.Argument(
-        None, help="The value: one, several for a list (primary_key code year), JSON for a STRUCT or an attribute"
-    ),
-    stdin: bool = typer.Option(False, "--stdin", help="Read rows of _fdl as JSON, {table: [row, ...]}, from standard input"),
-    rows_file: Path | None = typer.Option(
-        None, "-F", exists=True, dir_okay=False, help="Read rows of _fdl as JSON, as --stdin does, from this file"
-    ),
-    replace: bool = typer.Option(
-        False, "--replace", help="With --stdin or -F: _fdl holds the rows given and no others"
-    ),
+    name: str = Table,
+    columns: list[str] = typer.Argument(None, help="The columns that identify a row. None removes the primary key"),
 ) -> None:
-    """Set a key, or with --stdin or -F many rows at once, making the _fdl table, column or row it needs.
-
-    Rows given as JSON are changed or added by their primary key, with the columns
-    they hold; with --replace they take the place of every row of _fdl. Refused,
-    with nothing written, when a name is not there, a value is not one _fdl takes,
-    or the result fails the _fdl checks (a primary key on a view, an asset column
-    that is not VARCHAR).
-    """
-    try:
-        rows = _rows_given(stdin, rows_file)
-        if rows is None:
-            if replace:
-                raise metas.MetaError("--replace takes the rows on --stdin or with -F")
-            if name is None or key is None or not values:
-                raise metas.MetaError("give a name, a key and a value, or rows on --stdin or with -F")
-            at = metas.target(name)
-            _meta(working, lambda con: metas.set_value(con, at, key, values), write=True)
-            return
-        if name is not None:
-            raise metas.MetaError("give a name and a key, or rows on --stdin or with -F, not both")
-        _meta(working, lambda con: metas.set_rows(con, rows, replace=replace), write=True)
-    except (*ERRORS, catalog.CatalogError, OSError) as exc:
-        raise _fail(exc) from exc
+    """Declare the columns that identify a row of a table, used to merge it cell by cell."""
+    _change_declarations(
+        working, lambda f: dataclasses.replace(f, primary_keys=_with(f.primary_keys, name, list(columns or [])))
+    )
 
 
-@meta_app.command("unset")
-def meta_unset(working: Path = Working, name: str = Name, key: str = Key) -> None:
-    """Clear a key; a row left with nothing set is removed. Exits with 1 when it was not set."""
-    try:
-        at = metas.target(name)
-        done = _meta(working, lambda con: metas.unset(con, at, key), write=True)
-    except (*ERRORS, catalog.CatalogError) as exc:
-        raise _fail(exc) from exc
-    if not done:
-        raise typer.Exit(1)
+@declare_app.command("assets")
+def declare_assets(
+    working: Path = Working,
+    name: str = Table,
+    columns: list[str] = typer.Argument(None, help="The VARCHAR columns that hold a file's sha256. None removes them"),
+) -> None:
+    """Declare the columns of a table that point at files by sha256 (see fdl assets)."""
+    _change_declarations(working, lambda f: dataclasses.replace(f, assets=_with(f.assets, name, list(columns or []))))
 
 
-@meta_app.command("dump")
-def meta_dump(working: Path = Working) -> None:
-    """Print every row of _fdl as JSON: {table: [row, ...]}, the form meta set --stdin takes."""
-    try:
-        rows = _meta(working, fdl_schema.load, write=False)
-    except (*ERRORS, catalog.CatalogError) as exc:
-        raise _fail(exc) from exc
-    typer.echo(json.dumps(rows, ensure_ascii=False, indent=2))
+@declare_app.command("profile")
+def declare_profile(
+    working: Path = Working,
+    name: str = Table,
+    profiled: bool = typer.Argument(..., help="false: make no profile for it"),
+) -> None:
+    """Declare whether a push profiles a table or view."""
+    _change_declarations(
+        working,
+        lambda f: dataclasses.replace(f, unprofiled=f.unprofiled - {name} if profiled else f.unprofiled | {name}),
+    )
 
 
-@meta_app.command("objects")
-def meta_objects(working: Path = Working) -> None:
-    """Print the tables and views _fdl can describe, as JSON: schema, name, kind and a table's columns."""
-
-    def listed(con) -> list[dict]:
-        found = fdl_schema.objects(con)
-        tables = [
-            {"schema": s, "name": n, "kind": "table", "columns": [{"name": c, "type": t} for c, t in columns.items()]}
-            for (s, n), columns in found.tables.items()
-            if s != fdl_schema.SCHEMA
-        ]
-        views = [{"schema": s, "name": n, "kind": "view"} for s, n in found.views]
-        return sorted(tables + views, key=lambda o: (o["schema"], o["name"]))
-
-    try:
-        typer.echo(json.dumps(_meta(working, listed, write=False), ensure_ascii=False, indent=2))
-    except (*ERRORS, catalog.CatalogError) as exc:
-        raise _fail(exc) from exc
+@declare_app.command("dependency")
+def declare_dependency(
+    working: Path = Working,
+    name: str = typer.Argument(help="The name the views' SQL reads the other dataset under"),
+    url: str | None = typer.Argument(None, help="The URL of its root, ending in /. Without it, the dependency is removed"),
+    version: str | None = typer.Option(None, "--version", help="The version to read. Without it, the one main holds"),
+) -> None:
+    """Declare another dataset the views read (a dependency)."""
+    if version and not url:
+        raise _fail(declaring.DeclarationError(["--version needs the url"]))
+    entry = {"url": url, **({"version": version} if version else {})} if url else None
+    _change_declarations(working, lambda f: dataclasses.replace(f, dependencies=_with(f.dependencies, name, entry)))
 
 
 @app.command()
 def assets(folder: Path = typer.Argument(..., help="The folder of files the rows will point at")) -> None:
     """List the files below a folder as CSV: path, sha256, bytes, media_type.
 
-    These are the columns of _fdl.files, for the dataset's documents. For files
-    the rows of another table point at, read it into that table (DuckDB's
-    read_csv, say) and mark its sha256 column with asset = true in _fdl.columns.
-    `fdl commit --assets <folder>` then uploads the files the repository lacks.
+    Read it into a table (DuckDB's read_csv, say) and declare its sha256 column
+    an asset column with `fdl declare assets`. `fdl commit --assets <folder>`
+    then uploads the files the repository lacks.
     """
     import csv
     import sys
@@ -956,14 +886,7 @@ def show(
 
 
 def _tables_of(store, version) -> list[tuple[str, int | str]]:
-    """Each table with its rows, and each view, of a version: from its `files.json`,
-    or the `dataset.json` of a version written before `_fdl`."""
-    if version.dataset is not None:
-        described = diffs.described(store, version) or {}
-        return [
-            (f"{t.get('schema')}.{t.get('name')}", t["rows"] if isinstance(t.get("rows"), int) else t.get("kind", ""))
-            for t in described.get("tables", [])
-        ]
+    """Each table with its rows, and each view, of a version, from its `tables.json`."""
     index = diffs.indexed(store, version) or {}
     tables = [
         (name, sum(f["rows"] - f.get("deletes", {}).get("rows", 0) for f in table.get("files", [])))
@@ -992,6 +915,15 @@ def status(
             else None
         )
         result = diffs.working(working, pending or base)
+        if pending:
+            committed = declaring.from_index(json.loads((_pending_dir(working) / pending_id / layout.TABLES).read_text()))
+        else:
+            committed = repo.declarations(store, base) if base else declaring.Facts()
+        now = _declared(store, state, working)
+        named = {*committed.primary_keys, *committed.assets, *committed.unprofiled, *now.primary_keys, *now.assets, *now.unprofiled}
+        result["declarations"] = declaring.changed(committed, now, named)
+        if committed.dependencies != now.dependencies:
+            result["dependencies"] = True
     except (*ERRORS, catalog.CatalogError, OSError) as exc:
         raise _fail(exc) from exc
     if as_json:
@@ -1004,6 +936,25 @@ def status(
         typer.echo(f"Fast-forwarded, not pushed: fdl push {working} moves {state['ref']} there")
     for line in diffs.lines(result) or ["Nothing to commit"]:
         typer.echo(line)
+
+
+@app.command()
+def migrate(remote: str = Remote) -> None:
+    """Bring every version written by fdl-cli 0.33 or earlier to the layout of tables.json.
+
+    A one-off step before this version of fdl can read the dataset: the
+    declarations kept in files.json, fdl. tags or dataset.json move to
+    tables.json, and the earlier files are deleted. Run it once per dataset,
+    with nobody pushing meanwhile. Running it again skips what is done.
+    """
+    from . import migrate as migrating
+
+    store = _store(remote)
+    try:
+        done = migrating.migrate(store, setup=_read_setup(store), echo=typer.echo)
+    except (*ERRORS, catalog.CatalogError) as exc:
+        raise _fail(exc) from exc
+    typer.echo(f"{len(done)} version(s) migrated" if done else "Nothing to migrate")
 
 
 @app.command()
@@ -1105,8 +1056,8 @@ def _profile_pending(store, working: Path, state: dict, folder: Path, version) -
 
     try:
         reading, setup = _reading(store, state)
-        index = json.loads((folder / layout.FILES).read_text(encoding="utf-8"))
-        wanted = profiles.indexed(index, repo._read_facts(working, data_path=reading, setup=setup).unprofiled)
+        index = json.loads((folder / layout.TABLES).read_text(encoding="utf-8"))
+        wanted = profiles.indexed(index, declaring.from_index(index).unprofiled)
         if not unprofiled(wanted):
             return  # no tables, or all profiled by a push that stopped before it finished
         if catalog.last_snapshot(working) != version.ducklake.snapshot_id:

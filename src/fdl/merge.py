@@ -5,8 +5,8 @@ being merged, and the base their common ancestor (see `repo.merge_bases`). A
 table, a row or a cell (a row's value in one column) one side changed takes that
 side's change; a cell both sides changed differently, or a row one side dropped
 and the other changed, is a conflict. Rows are matched only by a primary key that
-both sides give the table in `_fdl.tables`. The tables of `_fdl` are merged the
-same way, by the keys the specification fixes for them.
+both sides declare for the table (see `declared`). Columns are merged by name:
+a column only one side added, dropped or gave another type takes that change.
 """
 
 from __future__ import annotations
@@ -15,7 +15,7 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Iterable
 
-from . import fdl_schema
+from . import declared
 from .catalog import CatalogError, attach_sql, working_data_path
 
 
@@ -30,27 +30,20 @@ class Conflicts(Exception):
 #: How many keys of a conflicting table are listed.
 LISTED_KEYS = 10
 
-Declared = tuple[fdl_schema.Facts, set[str]]
+Declared = tuple[declared.Facts, set[str]]
 
 
 def primary_keys(base: Declared, ours: Declared, theirs: Declared) -> dict[tuple[str, str], list[str]]:
     """The tables whose rows may be merged, each with its primary key.
 
-    Each side is what it declares and the tables it holds (`repo.declared`).
-    Ours and theirs give the table the same primary key and the same asset
-    columns, and the base gives it the same key as well or did not hold it. The
-    tables of `_fdl` have the keys the specification gives them; `_fdl.dataset` has none.
+    Each side is what it declares and the tables it holds (`repo.declarations`,
+    `repo.tables_of`). Ours and theirs declare the same primary key, and the base
+    declares it as well or did not hold the table.
     """
     (old, held), (mine, _), (other, _) = base, ours, theirs
-    found = {
-        (fdl_schema.SCHEMA, table): list(key) for table, key in fdl_schema.KEYS.items() if key
-    }
+    found: dict[tuple[str, str], list[str]] = {}
     for name, key in mine.primary_keys.items():
-        if (
-            other.primary_keys.get(name) == key
-            and sorted(mine.assets.get(name, [])) == sorted(other.assets.get(name, []))
-            and (name not in held or old.primary_keys.get(name) == key)
-        ):
+        if other.primary_keys.get(name) == key and (name not in held or old.primary_keys.get(name) == key):
             schema, table = name.split(".", 1)
             found[(schema, table)] = list(key)
     return found
@@ -139,7 +132,8 @@ class _Merging:
         self.con = con
         self.keys = keys
         self.repository_data = repository_data
-        self.staged: dict[tuple[str, str], tuple[str, list[str]]] = {}
+        #: By table: the staged rows, the columns to write and the ALTER TABLE statements first.
+        self.staged: dict[tuple[str, str], tuple[str, list[str], list[str]]] = {}
         #: Temp tables made so far, kept or not, so each gets a name of its own.
         self.made = 0
 
@@ -295,20 +289,61 @@ class _Merging:
         base, theirs = self.comments["base"], self.comments["theirs"]
         return any(base.get(slot) != text for slot, text in theirs.items())
 
+    def defaults(self, alias: str, key: tuple[str, str]) -> dict[str, str | None]:
+        """Each column's DEFAULT expression, or None."""
+        return dict(
+            self.con.execute(
+                "SELECT column_name, column_default FROM duckdb_columns() "
+                "WHERE database_name = $d AND schema_name = $s AND table_name = $t",
+                {"d": alias, "s": key[0], "t": key[1]},
+            ).fetchall()
+        )
+
+    def _merge_columns(self, plan: Plan, key: tuple[str, str], shapes: dict[str, dict[str, str]]):
+        """The columns of the merged table, by name: a column only one side added,
+        dropped or gave another type takes that change. Returns the merged columns
+        (name to type, in order) and the columns one side dropped (name to the side
+        that kept them), or None after a conflict."""
+        old, mine, other = (shapes[alias] for alias in ("base", "lake", "theirs"))
+        label = ".".join(key)
+        merged: dict[str, str] = {}
+        dropped: dict[str, str] = {}
+        clashes: list[str] = []
+        for column in dict.fromkeys([*mine, *other, *old]):
+            b, o, t = old.get(column), mine.get(column), other.get(column)
+            if o == t or t == b:
+                kind = o
+            elif o == b:
+                kind = t
+            else:
+                clashes.append(column)
+                continue
+            if kind is not None:
+                merged[column] = kind
+            elif b is not None and (o is not None or t is not None):
+                dropped[column] = "lake" if o is not None else "theirs"
+        if clashes:
+            plan.conflicts.append(f"{label}: both sides changed the column(s) {', '.join(clashes)} differently")
+            return None
+        return merged, dropped
+
     def _plan_rows(self, plan: Plan, key: tuple[str, str], *, has_base: bool) -> None:
         label = ".".join(key)
-        columns = self.shape("lake", key)
-        if columns != self.shape("theirs", key) or (has_base and self.shape("base", key) != columns):
-            plan.conflicts.append(f"{label}: both sides changed the table, and its columns differ")
+        shapes = {
+            alias: dict(self.shape(alias, key)) if alias != "base" or has_base else {}
+            for alias in ("base", "lake", "theirs")
+        }
+        found = self._merge_columns(plan, key, shapes)
+        if found is None:
             return
+        merged_columns, dropped = found
         primary = self.keys[key]
-        if not set(primary) <= {column for column, _ in columns}:
+        if not all(set(primary) <= set(shape) for alias, shape in shapes.items() if alias != "base" or has_base):
             plan.conflicts.append(f"{label}: the primary key names a column the table does not have")
             return
         keys = ", ".join(map(_quoted, primary))
-        whole = "row(" + ", ".join(_quoted(column) for column, _ in columns) + ")"
         sources = {alias: self.name(alias, key) for alias in ("lake", "theirs")}
-        sources["base"] = self.name("base", key) if has_base else f"(SELECT * FROM {self.name('lake', key)} LIMIT 0)"
+        sources["base"] = self.name("base", key) if has_base else f"(SELECT {keys} FROM {self.name('lake', key)} LIMIT 0)"
         for alias, source in sources.items():
             nulls = " OR ".join(f"{_quoted(column)} IS NULL" for column in primary)
             bad = self.con.execute(
@@ -319,32 +354,56 @@ class _Merging:
                 return
         staged = f"__fdl_merge_{self.made}"
         self.made += 1
-        names = [column for column, _ in columns]
-        cells = range(len(names))
-        # The key's cells are the same on every side of a joined row.
-        rest = [(n, c) for n, c in zip(cells, names) if c not in primary]
+        # Every column any side holds, compared in the type it takes in the merge. A
+        # side without a column reads as holding its default there.
+        names = [c for c in dict.fromkeys([*shapes["lake"], *shapes["theirs"], *shapes["base"]]) if c not in primary]
+        typed = {c: merged_columns.get(c) or shapes["base"][c] for c in names}
+        defaults = {**self.defaults("base", key), **self.defaults("theirs", key), **self.defaults("lake", key)} if has_base else {
+            **self.defaults("theirs", key), **self.defaults("lake", key)
+        }
+        cells = list(enumerate(names))
+        kept = [(n, c) for n, c in cells if c in merged_columns]
+        both = [(n, c) for n, c in cells if c in shapes["lake"] and c in shapes["theirs"]]
+
+        def value(alias: str, column: str) -> str:
+            held = _quoted(column) if column in shapes[alias] else f"({defaults.get(column) or 'NULL'})"
+            return f"CAST({held} AS {typed[column]})"
 
         def side(alias: str, mark: str) -> str:
-            picked = ", ".join(f"{_quoted(c)} AS {mark}{n}" for n, c in zip(cells, names))
-            return f"SELECT {keys}, true AS {mark}p, {picked} FROM {sources[alias]}"
+            picked = "".join(f", {value(alias, c)} AS {mark}{n}" for n, c in cells)
+            return f"SELECT {keys}, true AS {mark}p{picked} FROM {sources[alias]}"
 
         def differ(one: str, other: str, n: int) -> str:
             return f"{one}{n} IS DISTINCT FROM {other}{n}"
 
+        def any_of(terms: list[str]) -> str:
+            return " OR ".join(terms) or "false"
+
         # Merged by cell: a cell takes theirs where theirs changed it, ours otherwise.
-        # A row both have is merged cell by cell even when the base lacks it (its
-        # cells are then NULL there); a row one side dropped and the other changed
-        # is a conflict, as is a cell both changed differently.
-        merged = ", ".join(
-            f"CASE WHEN tp IS NULL THEN o{n} WHEN op IS NULL THEN t{n} "
+        merged = "".join(
+            f", CASE WHEN tp IS NULL THEN o{n} WHEN op IS NULL THEN t{n} "
             f"WHEN {differ('t', 'b', n)} THEN t{n} ELSE o{n} END AS {_quoted(c)}"
-            for n, c in rest
+            for n, c in kept
         )
-        clash_cells = " OR ".join(
-            f"({differ('o', 'b', n)} AND {differ('t', 'b', n)} AND {differ('o', 't', n)})" for n, _ in rest
-        ) or "false"
-        ours_changed = " OR ".join(differ("o", "b", n) for n in cells)
-        theirs_changed = " OR ".join(differ("t", "b", n) for n in cells)
+        clash = [" AND ".join((differ("o", "b", n), differ("t", "b", n), differ("o", "t", n))) for n, _ in kept]
+        conflict = " OR ".join(
+            f"({condition})"
+            for condition in (
+                # A cell both changed differently.
+                f"bp AND op AND tp AND ({any_of(clash)})",
+                # A row both added, unless the same.
+                f"bp IS NULL AND op AND tp AND ({any_of([differ('o', 't', n) for n, _ in both])})",
+                # A row one side dropped and the other changed.
+                f"bp AND op IS NULL AND tp AND ({any_of([differ('t', 'b', n) for n, _ in cells])})",
+                f"bp AND tp IS NULL AND op AND ({any_of([differ('o', 'b', n) for n, _ in cells])})",
+                # A cell of a column one side dropped, which the other changed.
+                *(
+                    f"bp AND {'o' if keeper == 'lake' else 't'}p AND "
+                    f"{differ('o' if keeper == 'lake' else 't', 'b', names.index(c))}"
+                    for c, keeper in dropped.items()
+                ),
+            )
+        )
         joined = f"""
             SELECT * FROM ({side('base', 'b')}) FULL JOIN ({side('lake', 'o')}) USING ({keys})
                      FULL JOIN ({side('theirs', 't')}) USING ({keys})
@@ -353,17 +412,15 @@ class _Merging:
             f"""
             CREATE TEMP TABLE {staged} AS
             SELECT * FROM (
-                SELECT {keys}{", " + merged if merged else ""},
-                       (op AND tp AND ({clash_cells}))
-                       OR (bp AND op IS NULL AND tp AND ({theirs_changed}))
-                       OR (bp AND tp IS NULL AND op AND ({ours_changed})) AS __fdl_conflict,
+                SELECT {keys}{merged},
+                       {conflict} AS __fdl_conflict,
                        CASE WHEN bp THEN coalesce(op AND tp, false) ELSE coalesce(op, tp, false) END AS __fdl_present,
                        coalesce(op, false) AS __fdl_ours,
-                       {", ".join(f"o{n}" for n in cells)}
+                       {", ".join(f"o{n}" for n, _ in cells) or "NULL AS __fdl_none"}
                 FROM ({joined})
             )
             WHERE __fdl_conflict OR __fdl_present IS DISTINCT FROM __fdl_ours
-               OR (__fdl_present AND ({" OR ".join(f"{_quoted(c)} IS DISTINCT FROM o{n}" for n, c in rest) or "false"}))
+               OR (__fdl_present AND ({any_of([f"{_quoted(c)} IS DISTINCT FROM o{n}" for n, c in kept])}))
             """
         )
         clashes = self.con.execute(
@@ -375,10 +432,29 @@ class _Merging:
             more = f" and {total - LISTED_KEYS} more" if total > LISTED_KEYS else ""
             plan.conflicts.append(f"{label}: both sides changed {total} row(s) differently: {listed}{more}")
             return
+        altered = self._alterations(key, shapes["lake"], merged_columns)
         taken = self.con.execute(f"SELECT count(*) FROM {staged}").fetchone()[0]
-        if taken:
-            self.staged[key] = (f"temp.main.{staged}", names)
+        if taken or altered:
+            self.staged[key] = (f"temp.main.{staged}", [*primary, *(c for _, c in kept)], altered)
             plan.rows[key] = taken
+
+    def _alterations(self, key: tuple[str, str], ours: dict[str, str], merged: dict[str, str]) -> list[str]:
+        """The ALTER TABLE statements that give our table the merged columns."""
+        table = self.name("lake", key)
+        theirs = self.defaults("theirs", key)
+        return [
+            *(f"ALTER TABLE {table} DROP COLUMN {_quoted(c)}" for c in ours if c not in merged),
+            *(
+                f"ALTER TABLE {table} ADD COLUMN {_quoted(c)} {kind}" + (f" DEFAULT {theirs[c]}" if theirs.get(c) else "")
+                for c, kind in merged.items()
+                if c not in ours
+            ),
+            *(
+                f"ALTER TABLE {table} ALTER COLUMN {_quoted(c)} SET DATA TYPE {kind}"
+                for c, kind in merged.items()
+                if c in ours and ours[c] != kind
+            ),
+        ]
 
     # Writing it.
 
@@ -394,8 +470,10 @@ class _Merging:
             con.execute(f"CREATE SCHEMA IF NOT EXISTS lake.{_quoted(key[0])}")
             if key in self.ids["theirs"]:
                 self._take_table(key)
-        for key, (staged, names) in self.staged.items():
+        for key, (staged, names, altered) in self.staged.items():
             primary = self.keys[key]
+            for statement in altered:
+                con.execute(statement)
             # Aliased, so a table named like the staged one's alias still binds to the outer row.
             con.execute(
                 f"DELETE FROM {self.name('lake', key)} AS __fdl_target "

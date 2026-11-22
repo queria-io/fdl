@@ -653,7 +653,7 @@ def table_files(catalog_path: Path, snapshot_id: int, *, absolute: bool = False)
 
 
 def _column_tree(rows: list[tuple]) -> dict[tuple[int, int | None], list[dict]]:
-    """Columns as files.json writes them, keyed by (table_id, parent column_id).
+    """Columns as tables.json writes them, keyed by (table_id, parent column_id).
 
     The top-level columns of a table are under ``(table_id, None)``.
     """
@@ -720,6 +720,31 @@ def table_columns(catalog_path: Path, snapshot: int) -> dict[str, dict[str, str]
     for table, column, kind in rows:
         found.setdefault(table, {})[column] = kind
     return found
+
+
+def object_names(catalog_path: Path, snapshot: int) -> set[str]:
+    """The tables and views alive at ``snapshot``, ``schema.name``."""
+    live = "begin_snapshot <= ? AND (end_snapshot IS NULL OR end_snapshot > ?)"
+    con = _open(Path(catalog_path))
+    try:
+        rows = con.execute(
+            f"""
+            SELECT s.schema_name || '.' || o.name
+            FROM (
+                SELECT schema_id, table_name AS name FROM ducklake_table WHERE {live}
+                UNION ALL
+                SELECT schema_id, view_name FROM ducklake_view WHERE {live}
+            ) o
+            JOIN ducklake_schema s ON s.schema_id = o.schema_id
+            WHERE s.begin_snapshot <= ? AND (s.end_snapshot IS NULL OR s.end_snapshot > ?)
+            """,
+            [snapshot] * 6,
+        ).fetchall()
+    except Exception as exc:  # noqa: BLE001 - duckdb raises several types
+        raise CatalogError(f"{catalog_path} is not a DuckLake catalog: {exc}") from exc
+    finally:
+        con.close()
+    return {name for (name,) in rows}
 
 
 def has_snapshot(catalog_path: Path, snapshot: int) -> bool:

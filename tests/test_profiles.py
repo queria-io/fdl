@@ -129,33 +129,6 @@ def test_an_unchanged_table_keeps_its_parents_profile(repository, monkeypatch) -
     assert profile_of(store, "other")["rows"] == 2
 
 
-def test_a_parent_without_columns_in_its_files_keeps_its_profile(repository, monkeypatch) -> None:
-    store, working = repository
-    write(working, store, "CREATE TABLE lake.main.towns AS SELECT 1 AS id")
-    write(working, store, "CREATE TABLE lake.main.other AS SELECT 1 AS id")
-    commit(working, "-m", "m", "--author", "t")
-    parent = repo.head(store)
-    key = layout.version_dir(parent.id) + parent.files.path
-    files = json.loads(store.get(key))
-    for table in files["tables"].values():
-        table.pop("columns", None)
-    store.put(key, json.dumps(files).encode())
-    write(working, store, "INSERT INTO lake.main.other VALUES (2)")
-
-    built: list[str] = []
-    original = profiles.build
-
-    def spy(working, wanted, **kwargs):
-        wanted = list(wanted)
-        built.extend(t["name"] for t in wanted)
-        return original(working, wanted, **kwargs)
-
-    monkeypatch.setattr(profiles, "build", spy)
-    commit(working, "-m", "again", "--author", "t")
-    assert built == ["other"]
-    assert profile_of(store, "towns")["rows"] == 1
-
-
 def test_a_column_dropped_and_added_again_is_profiled_again(repository) -> None:
     store, working = repository
     write(working, store, "CREATE TABLE lake.main.towns AS SELECT i AS id, i AS c FROM range(5) t(i)")
@@ -371,16 +344,11 @@ def test_a_table_or_view_with_profile_false_gets_no_profile(repository, monkeypa
     write(working, store, "CREATE TABLE lake.main.raw_towns AS SELECT 1 AS id")
     write(working, store, "CREATE VIEW lake.main.stg_towns AS SELECT id FROM lake.main.raw_towns")
     write(working, store, "CREATE TABLE lake.main.towns AS SELECT 1 AS id")
-    write(
-        working,
-        store,
-        'CREATE SCHEMA lake._fdl; CREATE TABLE lake._fdl.tables ("schema" VARCHAR, "name" VARCHAR, profile BOOLEAN);'
-        "INSERT INTO lake._fdl.tables VALUES ('main', 'raw_towns', false), ('main', 'stg_towns', false)",
-    )
+    run("declare", "profile", working, "main.raw_towns", "false")
+    run("declare", "profile", working, "main.stg_towns", "false")
     built = _spy_builds(monkeypatch)
     commit(working, "-m", "m", "--author", "t")
     assert built == ["towns"]
     head = repo.head(store)
     assert store.list(f"{layout.version_dir(head.id)}profiles/") == [f"{layout.version_dir(head.id)}profiles/main/towns.json"]
-    # Neither do the tables of `_fdl`.
     assert repo.missing_profiles(store, head) == []

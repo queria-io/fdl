@@ -28,8 +28,8 @@ def elsewhere(tmp_path: Path, monkeypatch) -> Path:
     return path
 
 
-#: A title for the dataset, in `_fdl`.
-TITLED = "CREATE SCHEMA IF NOT EXISTS lake._fdl; CREATE OR REPLACE TABLE lake._fdl.dataset AS SELECT {!r} AS title"
+#: A title for the dataset, in a table of its own.
+TITLED = "CREATE OR REPLACE TABLE lake.main.about AS SELECT {!r} AS title"
 
 
 def run(*args: str) -> str:
@@ -281,7 +281,7 @@ def test_status_diff_and_show(tmp_path: Path) -> None:
 
     lines = run("diff", remote).splitlines()
     assert lines == [
-        "+ table _fdl.dataset",
+        "+ table main.about",
         "~ rows main.towns: 1 -> 2",
         "~ column main.towns.name -> town  (breaking)",
         "~ data main.towns",
@@ -354,7 +354,7 @@ def test_revert_moves_the_branch_forward_to_what_a_version_held(tmp_path: Path) 
         store, "SELECT count(*) FROM duckdb_tables() WHERE database_name = 'v' AND table_name = 'extra'"
     ) == [(0,)]
     assert rows(
-        store, "SELECT count(*) FROM duckdb_schemas() WHERE database_name = 'v' AND schema_name = '_fdl'"
+        store, "SELECT count(*) FROM duckdb_tables() WHERE database_name = 'v' AND table_name = 'about'"
     ) == [(0,)]
     # The version in between is still in the history.
     assert [v.message for v in repo.log(store)] == ["Revert to version 1", "bad", "good"]
@@ -630,7 +630,7 @@ def test_clone_writes_only_the_working_metadata(tmp_path: Path, elsewhere: Path)
     write(working, store, TITLED.format("Towns"))
     commit(working, "-m", "first", "--author", "tester")
     head = repo.head(store)
-    assert head.dataset is None and head.tree is None
+    assert head.tables.path == layout.TABLES
 
     run("clone", remote, "again.sqlite")
     assert sorted(p.name for p in elsewhere.iterdir()) == ["again.sqlite", "again.sqlite.fdl.json"]
