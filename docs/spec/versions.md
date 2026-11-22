@@ -68,7 +68,7 @@ A version is the files under `versions/<version ID>/`. They must not change once
 | `message` | must | What changed |
 | `metadata` | must | The metadata's file name (`metadata.db`), size, sha256, and storage format (`storage`) |
 | `ducklake` | must | The DuckLake format, the snapshot frozen, and the range of snapshots the working metadata made for this version after its parent (first and last). Only the snapshot frozen is in the metadata |
-| `tables` | must | The `tables.json` beside the metadata: its file name, size and sha256 ([tables.json](#tablesjson)) |
+| `tables` | must | The `tables.json` beside the metadata: its file name, size and sha256 ([tables.json](#tablesjson)). The record of a version past retention may have none |
 | `diff` | may | What changed since the first parent, or in the first version ([diff](#diff)) |
 | `annotations` | may | What the format does not interpret, keyed by the name of whoever reads it (a host, a tool), such as the source files a version was made from |
 
@@ -91,6 +91,7 @@ The description and SQL of the snapshot frozen stay in the metadata, in DuckLake
 | `columns` | The column differences, below |
 | `data` | The tables both hold whose data files differ, even with the same rows |
 | `declarations` | The tables and views both hold whose [declarations](#declarations) differ |
+| `dependencies` | The names in `dependencies` that only one of the two holds, or whose `url` or `version` differs |
 
 A writer compares the working metadata at the parent's snapshot with its last snapshot, before freezing. The working metadata is cloned from the parent's metadata, so it holds the parent's snapshot. The writer leaves `diff` out when it does not. A reader compares the two versions' `tables.json` for a version without `diff`, or against a version other than its first parent.
 
@@ -224,7 +225,7 @@ Each table's profile is at `versions/<ID>/profiles/<schema>/<table>.json`. A vie
 - `head` holds the first rows the table returns, as JSON objects, leaving out geometry and columns whose values have no JSON form
 - `geometry` describes the first geometry column, when the writer could read it: how many rows have a shape, the `bbox` of all of them (`[xmin, ymin, xmax, ymax]` in the column's coordinates), the geometry types present, and a GeoJSON `FeatureCollection` of a random sample of simplified shapes for drawing a map
 - A writer may leave out any key it cannot compute. A reader ignores keys it does not know
-- A writer reuses its parent's profile for a table whose data files (in `tables.json`) and columns are the parent's, so profiling reads only the tables that changed. It reuses a view's when the view's `sql` is the parent's and every table and view its query reads is unchanged: a table by its data files, a view by the same rule. A view whose tables cannot be told from its query (one that reads a table function, say) reuses its parent's only when every view's `sql` is the parent's and no table's data files changed. It makes the profile again when the parent's `values` follow another limit than its own
+- A writer reuses its parent's profile for a table whose data files (in `tables.json`) and columns are the parent's, so profiling reads only the tables that changed. It reuses a view's when the view's `sql` is the parent's and every table and view its query reads is unchanged: a table by its data files, a view by the same rule. A view that reads another dataset reuses its parent's only when `dependencies` is the parent's and every entry the view reads names a `version`. A view whose tables cannot be told from its query (one that reads a table function, say) reuses its parent's only when every view's `sql` is the parent's and no table's data files changed. It makes the profile again when the parent's `values` follow another limit than its own
 - A writer makes no profile for a table or view whose `profile` declaration is `false`. A writer's tool sets it for the tables people are not meant to read, such as the intermediate tables a build makes, so that profiling does not read them. A host may also make profiles only of what it shows
 - Profiles are part of the version and do not change with it. They are deleted with the metadata files when the version is taken out of retention
 

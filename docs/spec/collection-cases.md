@@ -25,6 +25,7 @@ description: Test cases for deleting shared objects, which every implementation 
 | `now`, `grace_seconds` | The time the process runs, and the grace period |
 | `files` | The dataset's files other than shared objects, by key. Each value is the file's JSON |
 | `objects` | The objects under the data directory and `assets/`, and files elsewhere a process must leave alone, by key, with the time each was placed. Their content does not matter |
+| `metadata` | The tables of a metadata file, by the metadata's key: each table's column types and rows. A case holds only the tables it needs, such as those with asset columns |
 | `deleted` | The keys deleted |
 
 A change to what may be deleted comes with a case here, in the same change as this specification.

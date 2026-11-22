@@ -35,15 +35,15 @@ When freezing, a writer must:
 A writer should not make a version that holds what its parent holds, as Git makes no commit when the tree is the parent's. A version holds the same as its parent when:
 
 - the last snapshot is the parent's (`ducklake.snapshot_id`), or
-- the same tables and views are there with the same declarations, each table with the same columns and types and the same rows, counted as a multiset (order does not matter)
+- the same tables and views are there with the same declarations, `dependencies` is the same, and each table is there with the same columns and types and the same rows, counted as a multiset (order does not matter)
 
-Only tables, views and their declarations are compared. Words kept outside them, such as DuckLake's `comment`, make no version on their own; words kept as rows of a table make one when the rows change ([Declarations](/spec/versions#declarations)). A table rebuilt from the same input is written to new data files, so comparing files or metadata bytes is not enough. A writer compares the files first and reads the rows only of tables whose files differ. A writer that cannot read the rows makes the version. A writer may make one anyway when asked, as `git commit --allow-empty` does.
+Only tables, views, their declarations and `dependencies` are compared. Words kept outside them, such as DuckLake's `comment`, make no version on their own; words kept as rows of a table make one when the rows change ([Declarations](/spec/versions#declarations)). A table rebuilt from the same input is written to new data files, so comparing files or metadata bytes is not enough. A writer compares the files first and reads the rows only of tables whose files differ. A writer that cannot read the rows makes the version. A writer may make one anyway when asked, as `git commit --allow-empty` does.
 
 ## Reverting
 
 A writer that brings back what an earlier version held makes a new version, as `git revert` makes a new commit. It does not move a branch back: a branch moves only forward by default (see [Refs](/spec/refs)), and readers may already hold the versions in between.
 
-The new version's parent is the version the working metadata was cloned at, so pushing it is refused if the branch has moved since, as for any commit. Its tables and views are those of the earlier version at its snapshot, with the same columns, rows and declarations. The working metadata gets there in a new snapshot: tables the earlier version did not hold are dropped, and tables changed since are written again from their rows at the earlier snapshot. The writer reads the earlier version's tables from that version's own metadata, as it reads theirs when merging.
+The new version's parent is the version the working metadata was cloned at, so pushing it is refused if the branch has moved since, as for any commit. Its tables and views are those of the earlier version at its snapshot, with the same columns, rows and declarations, and its `dependencies` are the earlier version's. The working metadata gets there in a new snapshot: tables the earlier version did not hold are dropped, and tables changed since are written again from their rows at the earlier snapshot. The writer reads the earlier version's tables from that version's own metadata, as it reads theirs when merging.
 
 ## Branches
 
@@ -81,10 +81,11 @@ Comments (DuckLake's `comment`) are not compared, but the merge version keeps th
 When both sides changed a table differently, the writer merges it cell by cell. A cell is the value one row holds in one column, and the row is found by the values of its primary key. The table must have the same `primary_key` in ours, theirs and the base, or the base must not hold the table.
 
 - Each declaration other than `primary_key` is merged as a value, as for a view
-- Columns are found by name. A column only one side added, dropped or changed the type of takes that side's change. A column both sides changed differently, or one side dropped and the other changed a cell of, is a conflict
+- Columns the base holds are found by their `id` in `tables.json`, so a rename is a change to that column. Columns added since the base are found by name. A column only one side added, renamed, dropped or changed the type of takes that side's change. A column both sides changed differently, or one side dropped and the other changed a cell of, is a conflict
+- A cell one side changed in a column the other side changed the type of is cast to the new type. A cell whose value does not cast is a conflict
 - A row only one side added or deleted takes that side's change. A row one side deleted and the other changed a cell of is a conflict. A row both sides added is kept when the two hold the same values, and is a conflict otherwise
 - In a row both sides kept, a cell only one side changed takes that side's value, and a cell both changed to different values is a conflict. Two `NULL`s are the same value
-- In a column only one side added, the rows only the other side added hold the column's default, or `NULL`
+- In a column only one side added, the rows only the other side added hold the column's default, or `NULL`. When the column is `NOT NULL` and has no default, the table is a conflict
 
 A table where a key holds `NULL` or appears more than once, in any of the three versions, is a conflict. A table without a primary key that both sides changed differently is a conflict, even when they changed different rows. A writer may warn when a table has no primary key. A key made up for the merge (a row number, say) is not a primary key: it does not say which rows are the same row.
 
