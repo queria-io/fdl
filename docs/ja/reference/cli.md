@@ -55,7 +55,7 @@ fdl config author.email alice@example.com
 fdl config author.name
 ```
 
-コミットするバージョンの作者を設定します。設定はデータセットとは別に `~/.config/fdl/config.toml` の `[author]` テーブル（`$XDG_CONFIG_HOME` があればその下、`FDL_CONFIG` があればそのファイル）に保存します。認証ヘルパーの設定も同じファイルに置きます。値を省くと、設定した値を表示します。`fdl commit`・`fdl revert`・`fdl merge` は、作者を `--author`、環境変数 `FDL_AUTHOR_NAME` と `FDL_AUTHOR_EMAIL`、この設定の順に探し、どれにも名前が無ければ断ります。
+コミットするバージョンの作者を設定します。設定はデータセットとは別に `~/.config/fdl/config.toml` の `[author]` テーブル（`$XDG_CONFIG_HOME` があればその下、`FDL_CONFIG` があればそのファイル）に保存します。credential helper の設定も同じファイルに置きます。値を省くと、設定した値を表示します。`fdl commit`・`fdl revert`・`fdl merge` は、作者を `--author`、環境変数 `FDL_AUTHOR_NAME` と `FDL_AUTHOR_EMAIL`、この設定の順に探し、どれにも名前が無ければ断ります。
 
 ## fdl commit
 
