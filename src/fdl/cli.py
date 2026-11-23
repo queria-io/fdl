@@ -795,7 +795,8 @@ def log(remote: str = Remote, ref: str = typer.Option(layout.HEAD)) -> None:
         for version in repo.log(store, ref):
             mark = " (expired)" if repo.is_expired(store, version.id) else ""
             typer.echo(f"{version.seq:>4}  {version.id}  {version.created_at}  {version.author['name']}{mark}")
-            typer.echo(f"      {version.message}")
+            for line in version.message.splitlines() or [""]:
+                typer.echo(f"      {line}".rstrip())
     except ERRORS as exc:
         raise _fail(exc) from exc
 
@@ -894,7 +895,8 @@ def show(
     typer.echo(f"author    {version.author.get('name', '')}")
     typer.echo(f"date      {version.created_at}")
     typer.echo("")
-    typer.echo(f"    {version.message}")
+    for line in version.message.splitlines() or [""]:
+        typer.echo(f"    {line}".rstrip())
     if listed:
         typer.echo("")
         for name, rows in listed:

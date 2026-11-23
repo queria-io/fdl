@@ -873,7 +873,7 @@ def expire(
     message: str | None = None,
     deleted: dict[str, list[str]] | None = None,
 ) -> None:
-    """Take a version out of retention: the mark first, then its catalogs.
+    """Take a version out of retention: the mark first, then its metadata.
 
     `version.json` stays, so the history still says the version was there and
     what it was. Data files are not touched: other versions share them, and

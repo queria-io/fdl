@@ -703,6 +703,15 @@ def test_a_record_with_a_path_outside_its_folder_is_refused(tmp_path: Path, remo
             parse(json.dumps({**record, field: value}).encode(), expected_id=version_id)
 
 
+def test_a_record_with_annotations_from_an_earlier_fdl_still_reads(tmp_path: Path, remote) -> None:
+    version_id = _pushed(tmp_path, remote)
+    record = json.loads(remote.get(layout.version_record(version_id)))
+    assert "annotations" not in record
+    legacy = parse(json.dumps({**record, "annotations": {"host": {"made_from": "x"}}}).encode(), expected_id=version_id)
+    assert legacy == parse(json.dumps(record).encode(), expected_id=version_id)
+    assert "annotations" not in json.loads(legacy.to_json())
+
+
 def test_a_ref_that_does_not_hold_a_version_id_is_refused(remote) -> None:
     remote.put("refs/heads/main", b"../../etc\n")
     with pytest.raises(refs.RefError, match="version ID"):
