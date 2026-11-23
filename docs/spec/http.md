@@ -21,7 +21,7 @@ A host can take pushes over HTTP, so a writer needs no keys to its storage. The 
 - Parts other than the last are the same size. A writer sends a file in parts when it is larger than one request may be (64 MB by default)
 - A host decides which keys it takes. It may refuse writes to `HEAD`, `fdl.json` and anything outside the layout (but must answer `HEAD` requests, which a writer needs for a ref's ETag), and take `versions/` and data files only with `If-None-Match: *`
 - A host that moves refs itself after its checks keeps `refs.json` too, and may refuse a writer's write to it with 403. A writer treats that as done
-- Moving a ref is where a host checks a push: the version is there, it is a fast-forward, the metadata and `tables.json` match `version.json`, `tables.json` lists the data files and delete files the metadata names, and every data file it names is in the dataset. It may check the assets the rows hold too, and rules of its own ([When a push is refused](/spec/writing#when-a-push-is-refused)). A refusal is 409 with the reason in the body
+- Moving a ref is where a host checks a push: the version is there, it is a fast-forward, the metadata and `tables.json` match `version.json`, and every data file and delete file `tables.json` names is in the dataset. A host that opens the metadata may also check that `tables.json` lists every data file and delete file the metadata names. It may check the assets the rows hold too, and rules of its own ([When a push is refused](/spec/writing#when-a-push-is-refused)). A refusal is 409 with the reason in the body
 - There is no `DELETE`. Retention and deletion are the host's
 
 ## Uploading straight to storage

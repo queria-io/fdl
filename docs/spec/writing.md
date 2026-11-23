@@ -126,9 +126,9 @@ Files of a version are written once. A writer that finds one already there with 
 A push from stale working metadata is refused on two checks:
 
 1. The new version does not descend from the version the branch holds now. Someone else pushed first
-2. A data file the metadata names is missing from the dataset. A host may check the assets the rows hold as well. A file that no live version named for longer than the grace period may have been deleted, even if the writer found it there
+2. A data file `tables.json` names is missing from the dataset. A host may check the assets the rows hold as well. A file that no live version named for longer than the grace period may have been deleted, even if the writer found it there
 
-A host also refuses a push whose `tables.json` does not match `version.json`, or does not list the data files and delete files the metadata names ([Pushing over HTTP](/spec/http#requests)).
+A host also refuses a push whose `tables.json` does not match `version.json`. A host that opens the metadata may also refuse one whose `tables.json` does not list the data files and delete files the metadata names ([Pushing over HTTP](/spec/http#requests)).
 
 A writer also refuses to commit or push when `fdl.json` names another `data_dir` than the one it checked out with ([Changing data_dir](/spec/layout#changing-data_dir)).
 
