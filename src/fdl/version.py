@@ -6,7 +6,7 @@ import datetime as dt
 import json
 import os
 import time
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 
 from . import layout
 
@@ -75,7 +75,6 @@ class Version:
     ducklake: DuckLake
     #: What changed since the first parent, as `fdl diff --json` prints it. Optional.
     diff: dict | None = None
-    annotations: dict = field(default_factory=dict)
     #: The version's `tables.json`: each table's files and columns, each view, and the
     #: declarations. None only in the record of a version past retention written before it.
     tables: File | None = None
@@ -108,7 +107,6 @@ class Version:
             },
             **({"tables": _entry(self.tables)} if self.tables else {}),
             **({"diff": self.diff} if self.diff is not None else {}),
-            "annotations": self.annotations,
         }
         return (json.dumps(record, ensure_ascii=False, indent=2) + "\n").encode()
 
@@ -149,7 +147,6 @@ def parse(data: bytes, *, expected_id: str | None = None) -> Version:
                 snapshots=tuple(ducklake["snapshots"]),
             ),
             diff=record.get("diff"),
-            annotations=dict(record.get("annotations", {})),
             tables=(
                 File(path=layout.check_file_name(tables["path"]), bytes=int(tables["bytes"]), sha256=tables["sha256"])
                 if tables

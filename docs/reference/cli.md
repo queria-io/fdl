@@ -26,7 +26,7 @@ When the host answers 401 to a token from the helper, fdl runs the helper once m
 ## fdl init
 
 ```bash
-fdl init <remote> [--data-dir data/]
+fdl init <remote> [--data-dir tables/]
 ```
 
 Writes `fdl.json`, with a new `id`, and `HEAD`. Running it on an existing dataset changes nothing and prints its settings.

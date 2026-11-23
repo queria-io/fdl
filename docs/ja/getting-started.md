@@ -23,7 +23,7 @@ fdl init ./towns/
 
 ```
 towns/
-  fdl.json      {"fdl": "0.1", "id": "5f0c…", "data_dir": "data/"}
+  fdl.json      {"fdl": "0.1", "id": "5f0c…", "data_dir": "tables/"}
   HEAD          ref: refs/heads/main
 ```
 
@@ -44,7 +44,7 @@ fdl clone ../towns/ lake.sqlite
 
 ```sql
 ATTACH 'ducklake:lake.sqlite' AS lake (
-  DATA_PATH '/abs/path/towns/data/', OVERRIDE_DATA_PATH true,
+  DATA_PATH '/abs/path/towns/tables/', OVERRIDE_DATA_PATH true,
   META_TYPE 'sqlite', DATA_INLINING_ROW_LIMIT 0,
   META_JOURNAL_MODE 'WAL', BUSY_TIMEOUT 5000
 );
@@ -54,7 +54,7 @@ ATTACH 'ducklake:lake.sqlite' AS lake (
 
 ## 書く
 
-DuckDB のクライアントなら何でも使えます。Parquet ファイルはデータセットの `data/` フォルダに直接書かれます。
+DuckDB のクライアントなら何でも使えます。Parquet ファイルはデータセットの `tables/` フォルダに直接書かれます。
 
 ```sql
 CREATE TABLE lake.main.towns AS
@@ -114,7 +114,7 @@ fdl url ../towns/
 
 ```sql
 ATTACH 'ducklake:../towns/versions/019a3c4e-…/metadata.db' AS towns (
-  DATA_PATH '../towns/data/', OVERRIDE_DATA_PATH true, READ_ONLY
+  DATA_PATH '../towns/tables/', OVERRIDE_DATA_PATH true, READ_ONLY
 );
 SELECT count(*) FROM towns.main.towns;
 ```

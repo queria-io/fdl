@@ -1085,7 +1085,7 @@ def expire(
     by: str | None = typer.Option(None, help="Who or what takes them out, recorded in expired.json"),
     message: str | None = typer.Option(None, "-m", "--message", help="Why they are taken out, recorded in expired.json"),
 ) -> None:
-    """Take older versions out of retention: mark them and drop their catalogs.
+    """Take older versions out of retention: mark them and delete their metadata.
 
     Kept are the newest on each branch, the versions refs point at and their
     merge bases with main. Data files are left in place; `fdl gc` deletes them.

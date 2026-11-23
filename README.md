@@ -38,7 +38,7 @@ Write to the working metadata with DuckDB, attached the way `clone` prints:
 
 ```sql
 ATTACH 'ducklake:work/lake.sqlite' AS lake (
-  DATA_PATH 's3://my-bucket/towns/data/', OVERRIDE_DATA_PATH true,
+  DATA_PATH 's3://my-bucket/towns/tables/', OVERRIDE_DATA_PATH true,
   META_TYPE 'sqlite', DATA_INLINING_ROW_LIMIT 0, META_JOURNAL_MODE 'WAL', BUSY_TIMEOUT 5000
 );
 CREATE TABLE lake.main.towns AS SELECT * FROM 'towns.csv';
@@ -68,7 +68,7 @@ fdl url s3://my-bucket/towns/
 
 ```sql
 ATTACH 'ducklake:s3://my-bucket/towns/versions/019a3c4e-…/metadata.db' AS towns (
-  DATA_PATH 's3://my-bucket/towns/data/', OVERRIDE_DATA_PATH true, READ_ONLY
+  DATA_PATH 's3://my-bucket/towns/tables/', OVERRIDE_DATA_PATH true, READ_ONLY
 );
 ```
 

@@ -34,7 +34,7 @@ aws s3 cp   s3://origin/towns/refs.json s3://mirror/towns/refs.json
 
 ```sql
 ATTACH 'ducklake:https://mirror.example.org/towns/versions/019a3c4e-…/metadata.db' AS towns (
-  DATA_PATH 'https://mirror.example.org/towns/data/', OVERRIDE_DATA_PATH true, READ_ONLY
+  DATA_PATH 'https://mirror.example.org/towns/tables/', OVERRIDE_DATA_PATH true, READ_ONLY
 );
 ```
 

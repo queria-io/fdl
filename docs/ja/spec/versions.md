@@ -50,8 +50,7 @@ description: バージョン ID、version.json の項目、tables.json、profile
       { "table": "main.population", "kind": "add_column", "column": "note", "breaking": false }
     ],
     "data": ["main.population"]
-  },
-  "annotations": {}
+  }
 }
 ```
 
@@ -63,12 +62,11 @@ description: バージョン ID、version.json の項目、tables.json、profile
 | `parents` | must | 親のバージョン ID。最初のバージョンでは空、そのあとは 1 つ、マージでは 2 つ |
 | `created_at` | must | UTC、ISO 8601 |
 | `author` | must | 作った人。`name` は必須、`email` などは任意 |
-| `message` | must | 何を変えたか |
+| `message` | must | 何を変えたか。バージョンの作り方（ビルドしたコードのコミットなど）を記録するツールは、Git と同じく末尾にトレーラーを足す（`Built-From: 1e6e88f…`） |
 | `metadata` | must | メタデータのファイル名（`metadata.db`）、大きさ、sha256、保存形式（`storage`） |
 | `ducklake` | must | DuckLake の形式、固めたスナップショット、このバージョンのために作業メタデータが親の後に作ったスナップショットの範囲（最初と最後）。メタデータに入るのは固めたスナップショットだけ |
 | `tables` | must | メタデータの隣の `tables.json` のファイル名、大きさ、sha256（[tables.json](#tablesjson)）。保持期間を過ぎたバージョンの記録には無いことがある |
 | `diff` | may | 最初の親からの変更。最初のバージョンでは、そのバージョンの内容（[diff](#diff)） |
-| `annotations` | may | 形式が解釈しない情報。読む側（ホストやツール）の名前をキーにする。バージョンを作った元のファイルなど |
 
 読み手は、知らない項目を無視しなければなりません。
 

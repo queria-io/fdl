@@ -16,7 +16,7 @@ HEAD
 {
   "fdl": "0.1",
   "id": "5f0c8a52-6d3e-4f8e-9b1a-2c7d4e9f0a13",
-  "data_dir": "data/"
+  "data_dir": "tables/"
 }
 ```
 
