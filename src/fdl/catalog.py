@@ -933,31 +933,58 @@ def fill_column_stats(catalog_path: Path) -> None:
     DuckDB 2.0 removes a table's column statistics when a delete leaves one of
     its data files without rows, and DuckDB 1.5 then fails to list the tables.
     Each column gets the null and NaN flags of its live data files and no
-    minimum or maximum, which readers take as unknown.
+    minimum or maximum, which readers take as unknown. A table with no live
+    data file holds no rows: each of its leaf columns gets a statistic with
+    no nulls.
     """
-    con = _open(catalog_path)
+    catalog_path = Path(catalog_path)
     try:
-        filled = con.execute(
-            """
-            INSERT INTO ducklake_table_column_stats
-                (table_id, column_id, contains_null, contains_nan, min_value, max_value, extra_stats)
-            SELECT f.table_id, f.column_id,
-                   bool_or(coalesce(f.null_count, 1) > 0), bool_or(CAST(f.contains_nan AS BOOLEAN)),
-                   NULL, NULL, NULL
-            FROM ducklake_file_column_stats f
-            JOIN ducklake_data_file d ON d.data_file_id = f.data_file_id AND d.end_snapshot IS NULL
-            JOIN ducklake_table t ON t.table_id = f.table_id AND t.end_snapshot IS NULL
-            WHERE EXISTS (SELECT 1 FROM ducklake_table_stats s WHERE s.table_id = f.table_id)
-              AND NOT EXISTS (SELECT 1 FROM ducklake_table_column_stats c WHERE c.table_id = f.table_id)
-            GROUP BY f.table_id, f.column_id
-            """
-        ).fetchone()[0]
-        if filled:
-            con.execute("CHECKPOINT")
-    finally:
-        con.close()
-    if filled and _duckdb_major() >= 2:
-        _downgrade_storage(catalog_path)
+        con = _open(catalog_path)
+        try:
+            filled = con.execute(
+                """
+                INSERT INTO ducklake_table_column_stats
+                    (table_id, column_id, contains_null, contains_nan, min_value, max_value, extra_stats)
+                WITH bare AS (
+                    SELECT t.table_id FROM ducklake_table t
+                    WHERE t.end_snapshot IS NULL
+                      AND EXISTS (SELECT 1 FROM ducklake_table_stats s WHERE s.table_id = t.table_id)
+                      AND NOT EXISTS (SELECT 1 FROM ducklake_table_column_stats c WHERE c.table_id = t.table_id)
+                ),
+                live_files AS (
+                    SELECT d.data_file_id, d.table_id FROM ducklake_data_file d
+                    WHERE d.end_snapshot IS NULL AND d.table_id IN (SELECT table_id FROM bare)
+                )
+                SELECT f.table_id, f.column_id,
+                       bool_or(coalesce(f.null_count, 1) > 0), bool_or(CAST(f.contains_nan AS BOOLEAN)),
+                       NULL, NULL, NULL
+                FROM ducklake_file_column_stats f
+                JOIN live_files d ON d.data_file_id = f.data_file_id AND d.table_id = f.table_id
+                GROUP BY f.table_id, f.column_id
+                UNION ALL
+                SELECT c.table_id, c.column_id, false, NULL, NULL, NULL, NULL
+                FROM ducklake_column c
+                JOIN bare b ON b.table_id = c.table_id
+                WHERE c.end_snapshot IS NULL
+                  AND NOT EXISTS (SELECT 1 FROM live_files d WHERE d.table_id = c.table_id)
+                  AND NOT EXISTS (
+                      SELECT 1 FROM ducklake_column k
+                      WHERE k.table_id = c.table_id AND k.parent_column = c.column_id AND k.end_snapshot IS NULL
+                  )
+                """
+            ).fetchone()[0]
+            if filled:
+                con.execute("CHECKPOINT")
+        finally:
+            con.close()
+        if filled and _duckdb_major() >= 2:
+            _downgrade_storage(catalog_path)
+    except CatalogError:
+        raise
+    except Exception as exc:  # noqa: BLE001 - duckdb raises several types
+        # The first line: DuckDB follows an internal error with a stack trace.
+        first_line = str(exc).partition("\n")[0]
+        raise CatalogError(f"could not give column statistics to {catalog_path}: {first_line}") from exc
 
 
 def check_opens(catalog_path: Path) -> None:
