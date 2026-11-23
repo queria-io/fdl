@@ -938,19 +938,25 @@ def check_opens(catalog_path: Path) -> None:
     import duckdb
 
     # DuckDB 2.0 lists such tables, but readers on 1.5 fail: check the rows too.
-    con = duckdb.connect(str(catalog_path), read_only=True)
     try:
-        missing = con.execute(
-            "SELECT t.schema_id, t.table_name FROM ducklake_table t"
-            " JOIN ducklake_table_stats s USING (table_id)"
-            " WHERE t.end_snapshot IS NULL"
-            " AND t.table_id NOT IN (SELECT table_id FROM ducklake_table_column_stats)"
-            " ORDER BY t.table_name"
-        ).fetchall()
-    finally:
-        con.close()
+        con = duckdb.connect(str(catalog_path), read_only=True)
+        try:
+            missing = con.execute(
+                "SELECT s.schema_name, t.table_name FROM ducklake_table t"
+                " JOIN ducklake_schema s ON s.schema_id = t.schema_id AND s.end_snapshot IS NULL"
+                " JOIN ducklake_table_stats USING (table_id)"
+                " WHERE t.end_snapshot IS NULL"
+                " AND NOT EXISTS ("
+                "  SELECT 1 FROM ducklake_table_column_stats c WHERE c.table_id = t.table_id)"
+                " ORDER BY s.schema_name, t.table_name"
+            ).fetchall()
+        finally:
+            con.close()
+    except Exception as exc:  # noqa: BLE001 - duckdb raises several types
+        first_line = str(exc).partition("\n")[0]
+        raise CatalogError(f"DuckLake cannot open {catalog_path}: {first_line}") from exc
     if missing:
-        names = ", ".join(name for _, name in missing)
+        names = ", ".join(f"{schema}.{name}" for schema, name in missing)
         raise CatalogError(
             f"DuckLake cannot open {catalog_path}: tables with no column statistics: {names}"
         )
