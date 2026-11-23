@@ -947,7 +947,9 @@ def check_opens(catalog_path: Path) -> None:
                     con.execute(statement)
             con.execute("SELECT count(*) FROM duckdb_tables() WHERE database_name = 'lake'").fetchone()
     except Exception as exc:  # noqa: BLE001 - duckdb raises several types
-        raise CatalogError(f"DuckLake cannot open {catalog_path}: {str(exc).splitlines()[0]}") from exc
+        # The first line: DuckDB follows an internal error with a stack trace.
+        first_line = str(exc).partition("\n")[0]
+        raise CatalogError(f"DuckLake cannot open {catalog_path}: {first_line}") from exc
     finally:
         con.close()
 
