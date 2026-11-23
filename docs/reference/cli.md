@@ -160,6 +160,8 @@ fdl status <working.sqlite> [--json]
 
 What the working metadata changed since it was cloned, in the same kinds as `fdl diff`. `Nothing to commit` when it holds what the version it came from holds. `~ declarations <name>` means the declarations of a table or view differ from the version's, and `~ dependency <name>` that a dependency was added, removed or changed. When a version is committed and not pushed yet, it is named first and the changes are counted from it; `--json` gives its ID as `pending`. After a fast-forward `fdl merge`, it says that `fdl push` will move the branch.
 
+`--json` also gives what the working metadata was cloned from and where it writes: `remote`, `ref` (the branch it pushes to), `base` (the ID of the version it was cloned from or last pushed, `null` when the branch held none) and `data_path` (where new data files go: the local folder over HTTP, the dataset's storage with `--storage`, otherwise the dataset's data URL). Scripts read these from here instead of from the files under `<working>.fdl/`.
+
 ## fdl diff
 
 ```bash

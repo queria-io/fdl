@@ -1,6 +1,315 @@
 # CHANGELOG
 
 
+## v0.35.0 (2026-11-23)
+
+### Bug Fixes
+
+- Refuse tables with no column statistics on every DuckDB version
+  ([#89](https://github.com/queria-io/fdl/pull/89),
+  [`d9a0d77`](https://github.com/queria-io/fdl/commit/d9a0d7796096b6f37226626823096d592c1ca342))
+
+* docs(spec)!: define the _fdl schema and list views in files.json
+
+Primary keys, assets, catalogs and profile settings move from DuckLake tags to ordinary tables in
+  the reserved schema _fdl, together with the descriptions of the dataset, its schemas, tables and
+  columns, its files and attributes for other readers. files.json gains views (sql and columns) and
+  catalogs. Tags and dataset.json are kept only as the form of earlier versions.
+
+BREAKING CHANGE: writers no longer write fdl. tags; they write _fdl.
+
+* docs(spec): close gaps in the _fdl schema rules
+
+Treat sha256 of _fdl.files as an asset column, keep _fdl rows in step with renames, check merge
+  results, keep a commit from a tags-only version empty when nothing changed, and refuse primary_key
+  and asset on views.
+
+* docs(spec): name _fdl keywords topics
+
+* docs(spec): drop topics from _fdl
+
+* docs(spec): let fdl-cli write _fdl
+
+* docs(spec): leave reader-specific columns to _fdl.attributes
+
+License flags, the column entity, and the build tool's materialized and source_path are for
+  particular readers, so they go to attributes.
+
+* docs(spec)!: keep FDL's tables beside DuckLake's and merge by cells
+
+The tables FDL reads move out of a DuckLake schema into plain fdl_ tables in the metadata file,
+  beside DuckLake's own, with a copy in fdl_tables.json. files.json lists DuckLake tables only.
+  Tables, the fdl_ ones among them, merge cell by cell. A view's sql keeps {DUCKLAKE_CATALOG}, which
+  a reader replaces.
+
+* docs(spec): return to main's spec before the declarations rewrite
+
+* docs(spec)!: declare keys, assets and profiles in tables.json and merge by cells
+
+- files.json becomes tables.json, required in every version: tables with their files and columns,
+  views with their SQL and columns, and the declarations FDL reads (primary_key, assets, profile,
+  datasets) - a commit carries the parent's declarations over; tags and files.json are read only
+  from earlier versions - views read other datasets by the names in datasets, optionally at a fixed
+  version - every table merges three-way cell by cell (primary key x column) - the spec calls a
+  repository a dataset
+
+* docs(spec)!: drop earlier version formats and rename datasets to dependencies
+
+- every live version has tables.json; the spec no longer describes files.json, fdl. tags,
+  dataset.json, tree.json, objects/, inputs, ducklake.duckdb or metadata with earlier snapshots.
+  Existing datasets are migrated to the current layout before readers drop them - the declaration of
+  the other datasets views read is dependencies
+
+* docs(spec): write view SQL in tables.json without DuckLake's catalog placeholder
+
+* docs(spec): close gaps in cell merges, dependencies and push checks
+
+* docs: say the format may change before 1.0 and fdl migrate moves datasets
+
+* docs: remove the stability page
+
+* docs(spec): merge rows of tables without a primary key as a multiset
+
+* docs(spec): settle merges across primary key changes, rebuilt tables and dependency names
+
+* docs(spec)!: rename collection cases to gc cases and retention cases to expire cases
+
+* chore: remove the one-off tables.json migration script
+
+Every dataset on the hosted store has been migrated, so the script and its tests are no longer
+  needed.
+
+* fix: refuse to make a version DuckLake cannot open
+
+A frozen metadata can hold table statistics without column statistics, and DuckLake then fails to
+  list its tables with an internal error. Open the copy a version is made of and stop before it can
+  be pushed.
+
+* fix: state the open check in the writing spec and keep its message safe
+
+Name the refusal in the spec's freezing list (English and Japanese), and take the error's first line
+  without failing on an empty message.
+
+* fix: refuse tables with no column statistics on every DuckDB version
+
+DuckDB 2.0 lists a table that has table statistics but no column statistics, while DuckDB 1.5 fails
+  with an internal error. Check the catalog rows before attaching, so the writer refuses such
+  metadata on both versions, and cover the attach check with a catalog that has no columns.
+
+* fix: report catalog read errors and schema-qualified names in check_opens
+
+- Refuse to make a version DuckLake cannot open ([#88](https://github.com/queria-io/fdl/pull/88),
+  [`a56c4f5`](https://github.com/queria-io/fdl/commit/a56c4f52a79ae318d9ae00083b85dee2d41bceab))
+
+* docs(spec)!: define the _fdl schema and list views in files.json
+
+Primary keys, assets, catalogs and profile settings move from DuckLake tags to ordinary tables in
+  the reserved schema _fdl, together with the descriptions of the dataset, its schemas, tables and
+  columns, its files and attributes for other readers. files.json gains views (sql and columns) and
+  catalogs. Tags and dataset.json are kept only as the form of earlier versions.
+
+BREAKING CHANGE: writers no longer write fdl. tags; they write _fdl.
+
+* docs(spec): close gaps in the _fdl schema rules
+
+Treat sha256 of _fdl.files as an asset column, keep _fdl rows in step with renames, check merge
+  results, keep a commit from a tags-only version empty when nothing changed, and refuse primary_key
+  and asset on views.
+
+* docs(spec): name _fdl keywords topics
+
+* docs(spec): drop topics from _fdl
+
+* docs(spec): let fdl-cli write _fdl
+
+* docs(spec): leave reader-specific columns to _fdl.attributes
+
+License flags, the column entity, and the build tool's materialized and source_path are for
+  particular readers, so they go to attributes.
+
+* docs(spec)!: keep FDL's tables beside DuckLake's and merge by cells
+
+The tables FDL reads move out of a DuckLake schema into plain fdl_ tables in the metadata file,
+  beside DuckLake's own, with a copy in fdl_tables.json. files.json lists DuckLake tables only.
+  Tables, the fdl_ ones among them, merge cell by cell. A view's sql keeps {DUCKLAKE_CATALOG}, which
+  a reader replaces.
+
+* docs(spec): return to main's spec before the declarations rewrite
+
+* docs(spec)!: declare keys, assets and profiles in tables.json and merge by cells
+
+- files.json becomes tables.json, required in every version: tables with their files and columns,
+  views with their SQL and columns, and the declarations FDL reads (primary_key, assets, profile,
+  datasets) - a commit carries the parent's declarations over; tags and files.json are read only
+  from earlier versions - views read other datasets by the names in datasets, optionally at a fixed
+  version - every table merges three-way cell by cell (primary key x column) - the spec calls a
+  repository a dataset
+
+* docs(spec)!: drop earlier version formats and rename datasets to dependencies
+
+- every live version has tables.json; the spec no longer describes files.json, fdl. tags,
+  dataset.json, tree.json, objects/, inputs, ducklake.duckdb or metadata with earlier snapshots.
+  Existing datasets are migrated to the current layout before readers drop them - the declaration of
+  the other datasets views read is dependencies
+
+* docs(spec): write view SQL in tables.json without DuckLake's catalog placeholder
+
+* docs(spec): close gaps in cell merges, dependencies and push checks
+
+* docs: say the format may change before 1.0 and fdl migrate moves datasets
+
+* docs: remove the stability page
+
+* docs(spec): merge rows of tables without a primary key as a multiset
+
+* docs(spec): settle merges across primary key changes, rebuilt tables and dependency names
+
+* docs(spec)!: rename collection cases to gc cases and retention cases to expire cases
+
+* chore: remove the one-off tables.json migration script
+
+Every dataset on the hosted store has been migrated, so the script and its tests are no longer
+  needed.
+
+* fix: refuse to make a version DuckLake cannot open
+
+A frozen metadata can hold table statistics without column statistics, and DuckLake then fails to
+  list its tables with an internal error. Open the copy a version is made of and stop before it can
+  be pushed.
+
+* fix: state the open check in the writing spec and keep its message safe
+
+Name the refusal in the spec's freezing list (English and Japanese), and take the error's first line
+  without failing on an empty message.
+
+### Chores
+
+- Remove the one-off tables.json migration script ([#87](https://github.com/queria-io/fdl/pull/87),
+  [`c2a5e1f`](https://github.com/queria-io/fdl/commit/c2a5e1fc26e1e8be1ad607e844eeadc76f854564))
+
+* docs(spec)!: define the _fdl schema and list views in files.json
+
+Primary keys, assets, catalogs and profile settings move from DuckLake tags to ordinary tables in
+  the reserved schema _fdl, together with the descriptions of the dataset, its schemas, tables and
+  columns, its files and attributes for other readers. files.json gains views (sql and columns) and
+  catalogs. Tags and dataset.json are kept only as the form of earlier versions.
+
+BREAKING CHANGE: writers no longer write fdl. tags; they write _fdl.
+
+* docs(spec): close gaps in the _fdl schema rules
+
+Treat sha256 of _fdl.files as an asset column, keep _fdl rows in step with renames, check merge
+  results, keep a commit from a tags-only version empty when nothing changed, and refuse primary_key
+  and asset on views.
+
+* docs(spec): name _fdl keywords topics
+
+* docs(spec): drop topics from _fdl
+
+* docs(spec): let fdl-cli write _fdl
+
+* docs(spec): leave reader-specific columns to _fdl.attributes
+
+License flags, the column entity, and the build tool's materialized and source_path are for
+  particular readers, so they go to attributes.
+
+* docs(spec)!: keep FDL's tables beside DuckLake's and merge by cells
+
+The tables FDL reads move out of a DuckLake schema into plain fdl_ tables in the metadata file,
+  beside DuckLake's own, with a copy in fdl_tables.json. files.json lists DuckLake tables only.
+  Tables, the fdl_ ones among them, merge cell by cell. A view's sql keeps {DUCKLAKE_CATALOG}, which
+  a reader replaces.
+
+* docs(spec): return to main's spec before the declarations rewrite
+
+* docs(spec)!: declare keys, assets and profiles in tables.json and merge by cells
+
+- files.json becomes tables.json, required in every version: tables with their files and columns,
+  views with their SQL and columns, and the declarations FDL reads (primary_key, assets, profile,
+  datasets) - a commit carries the parent's declarations over; tags and files.json are read only
+  from earlier versions - views read other datasets by the names in datasets, optionally at a fixed
+  version - every table merges three-way cell by cell (primary key x column) - the spec calls a
+  repository a dataset
+
+* docs(spec)!: drop earlier version formats and rename datasets to dependencies
+
+- every live version has tables.json; the spec no longer describes files.json, fdl. tags,
+  dataset.json, tree.json, objects/, inputs, ducklake.duckdb or metadata with earlier snapshots.
+  Existing datasets are migrated to the current layout before readers drop them - the declaration of
+  the other datasets views read is dependencies
+
+* docs(spec): write view SQL in tables.json without DuckLake's catalog placeholder
+
+* docs(spec): close gaps in cell merges, dependencies and push checks
+
+* docs: say the format may change before 1.0 and fdl migrate moves datasets
+
+* docs: remove the stability page
+
+* docs(spec): merge rows of tables without a primary key as a multiset
+
+* docs(spec): settle merges across primary key changes, rebuilt tables and dependency names
+
+* docs(spec)!: rename collection cases to gc cases and retention cases to expire cases
+
+* chore: remove the one-off tables.json migration script
+
+Every dataset on the hosted store has been migrated, so the script and its tests are no longer
+  needed.
+
+### Features
+
+- Give the remote, base and data path in fdl status --json
+  ([#90](https://github.com/queria-io/fdl/pull/90),
+  [`cf8f53e`](https://github.com/queria-io/fdl/commit/cf8f53ec3a9f2e53888c5002d685bb10fa087d38))
+
+Scripts that need where a working metadata file came from and where it writes new data files can
+  read them from fdl status --json instead of the files fdl keeps under <working>.fdl/.
+
+### Refactoring
+
+- Call what FDL publishes a dataset, as the specification does
+  ([#85](https://github.com/queria-io/fdl/pull/85),
+  [`aa3e6cd`](https://github.com/queria-io/fdl/commit/aa3e6cd2cf61787b215b11dc5a1b6a58e2d5853b))
+
+- Keep fdl's local files in one folder and one config, and drop what no one writes
+  ([#86](https://github.com/queria-io/fdl/pull/86),
+  [`8cf07e7`](https://github.com/queria-io/fdl/commit/8cf07e7155605fe6959a69fdf28ddb81ef3d6558))
+
+* refactor!: keep fdl's local files in one folder and one config, and drop what no one writes
+
+- fdl clone keeps its state in <working>.fdl/ (state.json, data/, pending/), as .git/ sits in a Git
+  working tree, instead of <working>.fdl.json, <working>.data/ and <working>.pending/ beside the
+  working metadata. The name no longer reads as the dataset's fdl.json - fdl config writes the
+  [author] table of ~/.config/fdl/config.toml, the file that already holds the credential helpers,
+  instead of config.json. FDL_CONFIG names it for both - The specification drops
+  metadata/<format>.db with metadata_formats, and version.json.sig with signers: no writer or reader
+  implements them - data_dir may start with objects/: the folder held tree files, which tables.json
+  replaced - The state no longer carries pending.objects, which was always empty
+
+BREAKING CHANGE: a working metadata cloned by an earlier fdl must be cloned again, and author.name
+  and author.email set with fdl config again.
+
+* docs(cli): fdl config writes config.toml
+
+* docs(cli): name the credential helper as the Japanese page does
+
+* fix: keep config.toml's other keys in place, explain an earlier fdl's clone, and still expire
+  metadata/
+
+- fdl config rewrites [author] where it is, or appends it, so keys before the first table stay at
+  the top level; it reads only a table named author - A working metadata cloned by an earlier fdl
+  gets a message that says so - fdl expire still deletes versions/<ID>/metadata/, which earlier
+  versions of the specification allowed
+
+### Breaking Changes
+
+- A working metadata cloned by an earlier fdl must be cloned again, and author.name and author.email
+  set with fdl config again.
+
+- Writers no longer write fdl. tags; they write _fdl.
+
+
 ## v0.34.0 (2026-11-22)
 
 ### Documentation
