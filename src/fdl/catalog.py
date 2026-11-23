@@ -982,7 +982,9 @@ def fill_column_stats(catalog_path: Path) -> None:
     except CatalogError:
         raise
     except Exception as exc:  # noqa: BLE001 - duckdb raises several types
-        raise CatalogError(f"could not give column statistics to {catalog_path}: {exc}") from exc
+        # The first line: DuckDB follows an internal error with a stack trace.
+        first_line = str(exc).partition("\n")[0]
+        raise CatalogError(f"could not give column statistics to {catalog_path}: {first_line}") from exc
 
 
 def check_opens(catalog_path: Path) -> None:

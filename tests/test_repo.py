@@ -609,6 +609,15 @@ def test_an_emptied_table_without_column_statistics_gets_them_in_the_version(tmp
     assert rows == [(1, False, None, None), (3, False, None, None), (4, False, None, None)]
 
 
+def test_a_failure_to_give_column_statistics_is_a_catalog_error(tmp_path: Path) -> None:
+    # A DuckDB file without DuckLake's tables: the insert fails.
+    path = tmp_path / "plain.duckdb"
+    duckdb.connect(str(path)).close()
+    with pytest.raises(catalog.CatalogError, match="could not give column statistics") as raised:
+        catalog.fill_column_stats(path)
+    assert "\n" not in str(raised.value)
+
+
 def test_a_table_whose_column_statistics_cannot_be_made_is_not_made_a_version(tmp_path: Path, remote) -> None:
     build(tmp_path / "work.sqlite", remote, "CREATE TABLE lake.main.towns AS SELECT 1 AS id")
     frozen = tmp_path / "frozen.duckdb"
