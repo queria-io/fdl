@@ -119,6 +119,12 @@ def test_the_round_trip_over_http(served, tmp_path: Path) -> None:
     )
     assert con.execute("SELECT towns FROM v.main.roads").fetchone() == (1,)
 
+    # Status says where the working catalog stands and where it writes.
+    status = json.loads(run("status", again, "--json"))
+    assert status["remote"] == url and status["ref"] == "refs/heads/main"
+    assert status["base"] == second.id
+    assert status["data_path"] == f"{(tmp_path / 'again' / 'lake.sqlite.fdl' / 'data').resolve().as_posix()}/"
+
 
 def test_requests_name_fdl(monkeypatch) -> None:
     sent = []
@@ -319,6 +325,7 @@ def test_a_clone_with_storage_writes_data_files_there(served, tmp_path: Path) ->
     out = run("clone", url, working, "--storage", local.root)
     data = f"{Path(local.root).resolve().as_posix()}/tables/"
     assert f"DATA_PATH '{data}'" in out
+    assert json.loads(run("status", working, "--json"))["data_path"] == data
     assert not (working.with_name(working.name + ".fdl") / "data").exists()
 
     def build(sql: str) -> None:
