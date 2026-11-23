@@ -932,10 +932,34 @@ def check_opens(catalog_path: Path) -> None:
 
     A catalog can be written that DuckLake later fails to open: a table with
     table statistics but no column statistics makes listing the tables fail
-    with an internal error. Readers would get that error from the published
-    version, so the writer gets it here instead.
+    with an internal error on DuckDB 1.5. Readers would get that error from
+    the published version, so the writer gets it here instead.
     """
     import duckdb
+
+    # DuckDB 2.0 lists such tables, but readers on 1.5 fail: check the rows too.
+    try:
+        con = duckdb.connect(str(catalog_path), read_only=True)
+        try:
+            missing = con.execute(
+                "SELECT s.schema_name, t.table_name FROM ducklake_table t"
+                " JOIN ducklake_schema s ON s.schema_id = t.schema_id AND s.end_snapshot IS NULL"
+                " JOIN ducklake_table_stats USING (table_id)"
+                " WHERE t.end_snapshot IS NULL"
+                " AND NOT EXISTS ("
+                "  SELECT 1 FROM ducklake_table_column_stats c WHERE c.table_id = t.table_id)"
+                " ORDER BY s.schema_name, t.table_name"
+            ).fetchall()
+        finally:
+            con.close()
+    except Exception as exc:  # noqa: BLE001 - duckdb raises several types
+        first_line = str(exc).partition("\n")[0]
+        raise CatalogError(f"DuckLake cannot open {catalog_path}: {first_line}") from exc
+    if missing:
+        names = ", ".join(f"{schema}.{name}" for schema, name in missing)
+        raise CatalogError(
+            f"DuckLake cannot open {catalog_path}: tables with no column statistics: {names}"
+        )
 
     con = duckdb.connect()
     try:
