@@ -52,6 +52,13 @@ def _state_path(working: Path) -> Path:
 def _read_state(working: Path) -> dict:
     path = _state_path(working)
     if not path.is_file():
+        if working.with_name(working.name + ".fdl.json").is_file():
+            # An earlier fdl kept the state in <working>.fdl.json, a commit not pushed yet
+            # in <working>.pending/ and new data files in <working>.data/.
+            raise typer.BadParameter(
+                f"{working} was cloned by an earlier fdl, which kept its state in {working.name}.fdl.json: "
+                f"push it with that fdl, or clone again"
+            )
         raise typer.BadParameter(f"{working} was not made by `fdl clone`")
     return json.loads(path.read_text())
 

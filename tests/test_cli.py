@@ -713,3 +713,41 @@ def test_a_version_keeps_only_its_last_snapshot(tmp_path: Path) -> None:
     # The diff was made before the earlier snapshots went.
     assert second.diff is not None and second.diff["tables"]["dropped"] == ["main.b"]
     assert catalog.storage_version(remote / layout.version_metadata(second)) == second.metadata.storage
+
+
+def test_config_keeps_the_keys_before_the_first_table_at_the_top(tmp_path: Path, monkeypatch) -> None:
+    monkeypatch.setenv("XDG_CONFIG_HOME", str(tmp_path))
+    settings = tmp_path / "fdl" / "config.toml"
+    settings.parent.mkdir()
+    settings.write_text('credential."https://data.example.org/".helper = "queria credential"\n', encoding="utf-8")
+    run("config", "author.name", "Alice")
+    assert tomllib.loads(settings.read_text(encoding="utf-8")) == {
+        "author": {"name": "Alice"},
+        "credential": {"https://data.example.org/": {"helper": "queria credential"}},
+    }
+
+
+def test_config_rewrites_the_author_table_where_it_is(tmp_path: Path, monkeypatch) -> None:
+    monkeypatch.setenv("XDG_CONFIG_HOME", str(tmp_path))
+    settings = tmp_path / "fdl" / "config.toml"
+    settings.parent.mkdir()
+    settings.write_text('[ author ]\nname = "Bob"\n\n# queria\n[credential."https://x/"]\nhelper = "h"\n', encoding="utf-8")
+    run("config", "author.email", "bob@example.com")
+    assert settings.read_text(encoding="utf-8") == (
+        '[author]\nname = "Bob"\nemail = "bob@example.com"\n\n# queria\n[credential."https://x/"]\nhelper = "h"\n'
+    )
+
+
+def test_an_author_that_is_not_a_table_is_not_read(tmp_path: Path, monkeypatch) -> None:
+    monkeypatch.setenv("XDG_CONFIG_HOME", str(tmp_path))
+    (tmp_path / "fdl").mkdir()
+    (tmp_path / "fdl" / "config.toml").write_text('author = "Alice"\n', encoding="utf-8")
+    assert run("config", "author.name").strip() == ""
+
+
+def test_a_working_metadata_cloned_by_an_earlier_fdl_says_so(tmp_path: Path) -> None:
+    working = tmp_path / "lake.sqlite"
+    working.write_bytes(b"")
+    (tmp_path / "lake.sqlite.fdl.json").write_text("{}", encoding="utf-8")
+    result = runner.invoke(app, ["status", str(working)])
+    assert result.exit_code != 0 and "earlier fdl" in result.output

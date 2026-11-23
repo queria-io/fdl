@@ -22,8 +22,13 @@ else:  # pragma: no cover
 #: The settings `fdl config` sets, each with the environment variable that overrides it.
 KEYS = {"author.name": "FDL_AUTHOR_NAME", "author.email": "FDL_AUTHOR_EMAIL"}
 
-#: The ``[author]`` table and its lines, up to the next table.
-_AUTHOR_TABLE = re.compile(r"^\[author\][ \t]*(?:#.*)?\n(?:(?!\[).*(?:\n|$))*", re.MULTILINE)
+#: The ``[author]`` table and its lines, up to the next table. The header may
+#: be spaced or quoted (``[ author ]``, ``["author"]``), as TOML allows.
+_AUTHOR_TABLE = re.compile(
+    r"""^[ \t]*\[[ \t]*(?:author|"author"|'author')[ \t]*\][ \t]*(?:#.*)?(?:\n|$)"""
+    r"(?:(?![ \t]*\[).*(?:\n|$))*",
+    re.MULTILINE,
+)
 
 
 class ConfigError(Exception):
@@ -58,7 +63,8 @@ def read() -> dict:
 
 def _value(settings: dict, key: str) -> str | None:
     table, name = key.split(".")
-    value = (settings.get(table) or {}).get(name)
+    found = settings.get(table)
+    value = found.get(name) if isinstance(found, dict) else None
     return value if isinstance(value, str) else None
 
 
@@ -68,19 +74,29 @@ def get(key: str) -> str | None:
 
 
 def set_value(key: str, value: str) -> None:
-    """Write ``key`` into the ``[author]`` table, leaving the rest of the file as it is."""
+    """Write ``key`` into the ``[author]`` table, leaving the rest of the file as it is.
+
+    The table is written where it was, or appended when there was none: put
+    first, it would take in the keys the file sets before its first table.
+    """
     _check(key)
     text = _text()
     author = {name: _value(_parse(text), f"author.{name}") for name in ("name", "email")}
     author[key.split(".")[1]] = value
-    rest = _AUTHOR_TABLE.sub("", text)
-    if "author" in _parse(rest):
+    found = _AUTHOR_TABLE.search(text)
+    before, after = (text[: found.start()], text[found.end() :]) if found else (text, "")
+    if "author" in _parse(before + after):
         raise ConfigError(f"{path()} sets author outside an [author] table: edit it by hand")
+    # Comments and blank lines in the table stay; they often belong to the next one.
+    kept = [line for line in found.group().splitlines()[1:] if not line.strip() or line.lstrip().startswith("#")] if found else []
     # A TOML basic string escapes as JSON does.
-    table = "[author]\n" + "".join(f"{name} = {json.dumps(v, ensure_ascii=False)}\n" for name, v in author.items() if v)
+    lines = ["[author]", *(f"{name} = {json.dumps(v, ensure_ascii=False)}" for name, v in author.items() if v), *kept]
+    table = "\n".join(lines) + "\n"
+    if not found and before.strip():
+        before = before.rstrip("\n") + "\n\n"
     target = path()
     target.parent.mkdir(parents=True, exist_ok=True)
-    target.write_text(table + ("\n" + rest.lstrip("\n") if rest.strip() else ""), encoding="utf-8")
+    target.write_text(before + table + after, encoding="utf-8")
 
 
 def author(given: str | None) -> dict:

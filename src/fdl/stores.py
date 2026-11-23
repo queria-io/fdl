@@ -559,7 +559,10 @@ def credentials_for(url: str) -> str | None:
         return os.environ["FDL_TOKEN"]
     try:
         config = settings.read()
-    except (OSError, settings.ConfigError) as exc:
+    except settings.ConfigError as exc:
+        # It names the file already.
+        raise StoreError(str(exc)) from exc
+    except OSError as exc:
         raise StoreError(f"{settings.path()} could not be read: {exc}") from exc
     helper = helper_for(url, config)
     if helper is None:
