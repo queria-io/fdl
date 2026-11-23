@@ -34,8 +34,6 @@ Readers only read. A static HTTP server in front of the dataset is enough for th
 
 The dataset holds no metadata outside a version folder, and never a working metadata file. Either would hand readers a state that was never published.
 
-`fdl.json` carries an `id`, a UUID written once by `fdl init`. Copies of the dataset on other hosts keep the same `id`, so a tool can tell that two URLs hold the same dataset. A host may write its own ID for the dataset there.
-
 ## What FDL leaves to the host
 
 FDL describes files. It does not say who may read them, who may move `main`, or what a URL looks like. Those belong to whoever hosts the dataset:

@@ -11,7 +11,6 @@ import hashlib
 import json
 import shutil
 import tempfile
-import uuid
 import warnings
 from dataclasses import dataclass
 from pathlib import Path
@@ -48,9 +47,6 @@ class CannotCompare(RepoError):
 class Config:
     fdl: str
     data_dir: str
-    #: Never changes, so a copy of the dataset can tell it holds the same one.
-    #: None for datasets started before it was written.
-    id: str | None = None
 
 
 def init(store: Store, *, data_dir: str = layout.DEFAULT_DATA_DIR) -> Config:
@@ -61,7 +57,7 @@ def init(store: Store, *, data_dir: str = layout.DEFAULT_DATA_DIR) -> Config:
     """
     if not layout.is_data_dir(data_dir):
         raise RepoError(f"data_dir is not a folder under the root: {data_dir!r}")
-    record = {"fdl": layout.FDL_VERSION, "id": str(uuid.uuid4()), "data_dir": data_dir}
+    record = {"fdl": layout.FDL_VERSION, "data_dir": data_dir}
     try:
         store.put(
             layout.CONFIG,
@@ -89,7 +85,7 @@ def read_config(store: Store) -> Config:
     data_dir = record.get("data_dir", layout.DEFAULT_DATA_DIR)
     if not layout.is_data_dir(data_dir):
         raise RepoError(f"fdl.json: data_dir is not a folder under the root: {data_dir!r}")
-    return Config(fdl=record["fdl"], data_dir=data_dir, id=record.get("id"))
+    return Config(fdl=record["fdl"], data_dir=data_dir)
 
 
 def read_version(store: Store, version_id: str) -> Version:

@@ -15,7 +15,6 @@ HEAD
 ```json fdl.json
 {
   "fdl": "0.1",
-  "id": "5f0c8a52-6d3e-4f8e-9b1a-2c7d4e9f0a13",
   "data_dir": "tables/"
 }
 ```
@@ -24,7 +23,7 @@ HEAD
 ref: refs/heads/main
 ```
 
-`fdl.json` is written with `If-None-Match: *`, so running `init` twice cannot replace the `id` of a dataset that already exists. `HEAD` points at `main`, which does not exist yet. A reader that follows `HEAD` now finds no version, and says so.
+`fdl.json` is written with `If-None-Match: *`, so running `init` twice cannot replace the settings of a dataset that already exists. `HEAD` points at `main`, which does not exist yet. A reader that follows `HEAD` now finds no version, and says so.
 
 ## While writing
 

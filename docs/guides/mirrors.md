@@ -24,9 +24,9 @@ aws s3 cp   s3://origin/towns/HEAD      s3://mirror/towns/HEAD
 aws s3 cp   s3://origin/towns/refs.json s3://mirror/towns/refs.json
 ```
 
-A mirror keeps the origin's `id` in `fdl.json`. That is how a tool can tell the two URLs hold the same dataset.
+A mirror holds the origin's versions under the same IDs, so a tool can tell the two URLs hold the same dataset by the versions they share.
 
-A mirror is for reading. Pushing to both the origin and a mirror would give them different histories under the same `id`.
+A mirror is for reading. Pushing to both the origin and a mirror would give them different histories.
 
 ## Reading from a mirror
 

@@ -15,7 +15,6 @@ HEAD
 ```json fdl.json
 {
   "fdl": "0.1",
-  "id": "5f0c8a52-6d3e-4f8e-9b1a-2c7d4e9f0a13",
   "data_dir": "tables/"
 }
 ```
@@ -24,7 +23,7 @@ HEAD
 ref: refs/heads/main
 ```
 
-`fdl.json` は `If-None-Match: *` で書くので、`init` を 2 回流しても、既にあるデータセットの `id` は置き換わりません。`HEAD` は `main` を指しますが、`main` はまだありません。この時点で `HEAD` をたどった読み手は、バージョンが無いことを知らされます。
+`fdl.json` は `If-None-Match: *` で書くので、`init` を 2 回流しても、既にあるデータセットの設定は置き換わりません。`HEAD` は `main` を指しますが、`main` はまだありません。この時点で `HEAD` をたどった読み手は、バージョンが無いことを知らされます。
 
 ## 書いている間
 

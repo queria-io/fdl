@@ -11,7 +11,6 @@ import datetime as dt
 import hashlib
 import json
 import re
-import uuid
 from pathlib import Path
 
 import duckdb
@@ -73,18 +72,17 @@ def read_rows(store: LocalStore, version_id: str) -> list[tuple]:
 
 def test_init_writes_the_config_and_head(remote) -> None:
     config = json.loads(remote.get(layout.CONFIG))
-    assert config == {"fdl": "0.1", "id": config["id"], "data_dir": "tables/"}
-    assert uuid.UUID(config["id"])
+    assert config == {"fdl": "0.1", "data_dir": "tables/"}
     assert remote.get(layout.HEAD) == b"ref: refs/heads/main\n"
     assert repo.head(remote) is None
-    # Twice is harmless, and the id stays.
-    assert repo.init(remote) == repo.Config(fdl="0.1", data_dir="tables/", id=config["id"])
+    # Twice is harmless.
+    assert repo.init(remote) == repo.Config(fdl="0.1", data_dir="tables/")
 
 
-def test_a_dataset_without_an_id_still_reads(tmp_path: Path) -> None:
+def test_an_id_in_fdl_json_from_an_earlier_fdl_is_ignored(tmp_path: Path) -> None:
     store = LocalStore(tmp_path / "old")
-    store.put(layout.CONFIG, b'{"fdl": "0.1", "data_dir": "ducklake.duckdb.files/"}')
-    assert repo.read_config(store).id is None
+    store.put(layout.CONFIG, b'{"fdl": "0.1", "id": "5f0c8a52-6d3e-4f8e-9b1a-2c7d4e9f0a13", "data_dir": "tables/"}')
+    assert repo.read_config(store) == repo.Config(fdl="0.1", data_dir="tables/")
 
 
 def test_commit_push_and_read_back(tmp_path: Path, remote) -> None:

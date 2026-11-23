@@ -24,9 +24,9 @@ aws s3 cp   s3://origin/towns/HEAD      s3://mirror/towns/HEAD
 aws s3 cp   s3://origin/towns/refs.json s3://mirror/towns/refs.json
 ```
 
-ミラーは、元の `fdl.json` の `id` をそのまま持ちます。ツールはこれで、2 つの URL が同じデータセットだと分かります。
+ミラーは元のバージョンを同じ ID で持ちます。ツールは、共通するバージョンから、2 つの URL が同じデータセットだと判定できます。
 
-ミラーは読むためのものです。元とミラーの両方に push すると、同じ `id` で別の履歴ができてしまいます。
+ミラーは読むためのものです。元とミラーの両方に push すると、別々の履歴ができてしまいます。
 
 ## ミラーから読む
 
