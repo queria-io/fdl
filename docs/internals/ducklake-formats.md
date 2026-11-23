@@ -1,6 +1,6 @@
 ---
 title: DuckLake formats
-description: The three format numbers a version carries, and how a dataset serves readers on older DuckDB releases when DuckLake's format moves.
+description: The three format numbers a version carries, and how a writer on a newer DuckDB keeps readers on older releases able to read.
 ---
 
 ## Three format numbers
@@ -19,25 +19,7 @@ The last two move independently. DuckDB 2.0 writes DuckLake format 1.1 by defaul
 
 Readers update DuckDB on their own schedule, and some cannot choose: a browser runs whatever DuckDB WASM build the page ships. A dataset that switches to a new format cuts those readers off.
 
-Data files are not the problem. A new DuckLake format changes the bookkeeping tables, not the Parquet. So a version can carry one metadata file per format, all naming the same data files, and a reader picks the one it can open.
-
-```
-versions/<ID>/
-  metadata.db                the metadata as made (the one version.json describes)
-  metadata/1.0.db            the same version in format 1.0
-  metadata/1.1.db            the same version in format 1.1
-```
-
-`fdl.json` declares which formats are published and until when:
-
-```json
-"metadata_formats": [
-  { "ducklake": "1.1" },
-  { "ducklake": "1.0", "until": "2027-03-31" }
-]
-```
-
-A reader tries the formats it can open, newest first, then falls back to `metadata.db`. After `until`, new versions are no longer written in that format; past versions keep theirs.
+Data files are not the problem. A new DuckLake format changes the bookkeeping tables, not the Parquet. A dataset keeps its readers by writing its metadata in a format they can open, and moves to the new one when they have caught up.
 
 ## Writing an older format from DuckDB 2.0
 
@@ -58,6 +40,5 @@ A metadata file made this way opens in DuckDB 1.5 and returns the same rows at e
 
 ## Rules for writers
 
-- Write data files so that the oldest declared format can read them. A feature only a newer format can describe (a new column type, say) means that version has no metadata in the older format
-- Every `metadata/<format>.db` of a version names the same data files and returns the same rows
+- Write the metadata and the data files in a format the dataset's readers can open. A feature only a newer format can describe (a new column type, say) cuts off readers on older releases
 - Record `metadata.storage` as the oldest storage format the file can be opened with

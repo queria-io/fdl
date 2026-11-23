@@ -13,7 +13,6 @@ import importlib.metadata
 import json
 import os
 import subprocess
-import sys
 import time
 import urllib.error
 import urllib.request
@@ -22,10 +21,7 @@ from pathlib import Path
 from typing import Iterator, Sequence
 from urllib.parse import quote, urlencode, urlparse
 
-if sys.version_info >= (3, 11):
-    import tomllib
-else:  # pragma: no cover
-    import tomli as tomllib
+from . import config as settings
 
 
 def _version() -> str:
@@ -532,14 +528,6 @@ class HttpStore:
         raise StoreError("a dataset over HTTP is not deleted from by writers", status=405)
 
 
-def config_path() -> Path:
-    """fdl's own settings: ``FDL_CONFIG``, else ``$XDG_CONFIG_HOME/fdl/config.toml``."""
-    if os.environ.get("FDL_CONFIG"):
-        return Path(os.environ["FDL_CONFIG"])
-    base = os.environ.get("XDG_CONFIG_HOME") or str(Path.home() / ".config")
-    return Path(base) / "fdl" / "config.toml"
-
-
 def helper_for(url: str, config: dict) -> str | None:
     """The credential helper set for ``url``: the ``[credential."<prefix>"]`` with
     the same scheme and host whose path is the longest prefix of the URL's."""
@@ -569,13 +557,13 @@ def credentials_for(url: str) -> str | None:
     """
     if os.environ.get("FDL_TOKEN"):
         return os.environ["FDL_TOKEN"]
-    path = config_path()
     try:
-        config = tomllib.loads(path.read_text(encoding="utf-8"))
-    except FileNotFoundError:
-        return None
-    except (OSError, tomllib.TOMLDecodeError) as exc:
-        raise StoreError(f"{path} could not be read: {exc}") from exc
+        config = settings.read()
+    except settings.ConfigError as exc:
+        # It names the file already.
+        raise StoreError(str(exc)) from exc
+    except OSError as exc:
+        raise StoreError(f"{settings.path()} could not be read: {exc}") from exc
     helper = helper_for(url, config)
     if helper is None:
         return None

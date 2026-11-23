@@ -21,7 +21,6 @@ FDL keeps the roles and names of Git, and stores things its own way. Anyone who 
 | `HEAD` | `HEAD` | Names the default branch |
 | `refs.json` | `info/refs` | Lets a reader over plain HTTP find refs by name |
 | `versions/<ID>/tables.json` | Reachability bitmap | An index made from the metadata: each table's data files and columns, each view's SQL, and the declarations (primary key, asset columns, profile, other datasets read) |
-| `version.json.sig` | Signed commit | An SSH signature made with `ssh-keygen -Y sign` |
 | Working metadata (SQLite) | Working tree and index | Made from a version and turned into the next one |
 | `POST <root>/?batch` | Git LFS batch API | Hands out URLs for uploading straight to storage |
 | `expired.json` | None | Says why a version has no metadata any more |

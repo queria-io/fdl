@@ -18,11 +18,9 @@ Paths are relative to the root, lower case, and separated by `/`. The root is wh
     requests/<number>              for the host's own use, such as pending approvals (optional)
   versions/<version ID>/
     version.json                   the version record, written last
-    version.json.sig               a signature of the record (optional)
     metadata.db                    the frozen metadata
     tables.json                    the tables and views, their data files and columns, and FDL's declarations
     profiles/<schema>/<table>.json a summary of each table, measured from the data (optional)
-    metadata/<format>.db           the metadata in another DuckLake format (optional)
     expired.json                   the past-retention mark (only once expired)
     <others>                       files a host adds
   <data_dir><schema>/<table>/ducklake-<uuid>.parquet   data files (shared, immutable)
@@ -43,12 +41,7 @@ A dataset's root must not be under another dataset's root. Deleting the outer da
 {
   "fdl": "0.1",
   "id": "5f0c8a52-6d3e-4f8e-9b1a-2c7d4e9f0a13",
-  "data_dir": "tables/",
-  "signers": ["alice@example.org ssh-ed25519 AAAAC3…"],
-  "metadata_formats": [
-    { "ducklake": "1.1" },
-    { "ducklake": "1.0", "until": "2027-03-31" }
-  ]
+  "data_dir": "tables/"
 }
 ```
 
@@ -57,10 +50,10 @@ A dataset's root must not be under another dataset's root. Deleting the outer da
 | `fdl` | must | The version of this specification. A reader must not read a major version it does not know |
 | `id` | should | A UUID written when the dataset is started and never changed |
 | `data_dir` | may | Where data files are, relative to the root, ending in `/`. Default `tables/` |
-| `metadata_formats` | may | The DuckLake formats published for new versions, and until when |
-| `signers` | may | Public keys that sign versions, as lines of an SSH `allowed_signers` file |
 
 `fdl.json` is created with `If-None-Match: *`, so starting a dataset twice leaves the first one's settings in place.
+
+How long versions are kept is not declared here. It is the host's decision.
 
 ### id
 
@@ -73,7 +66,7 @@ The default is `tables/`. A dataset whose data files already sit under another p
 A `data_dir` is a folder under the root, written as one or more segments, each followed by `/`:
 
 - Each segment is made of lower-case ASCII letters, digits, `_`, `-` and `.`, and is not dots alone
-- The first segment is not `versions`, `refs`, `assets` or `objects`
+- The first segment is not `versions`, `refs` or `assets`
 
 Readers and writers use the value as written. A dataset whose `data_dir` breaks these rules, or is not a string, is refused, never corrected (by adding a missing `/`, say): two implementations that corrected it differently would read and write different files. A host may reserve other top-level folders for its own files and refuse a `data_dir` under them. [`cases/data-dir.json`](https://github.com/queria-io/fdl/blob/main/cases/data-dir.json) lists values and what each reads as; every implementation that reads `fdl.json` runs them.
 
@@ -88,13 +81,3 @@ A host may move the data files of a dataset that already has versions. Metadata 
 Until step 3, readers read the old place and find every file there. After it, they read the new place, which already holds every file. The host keeps the old place until no reader can still be using the `data_dir` it read before the change: at least the grace period, and longer if a reader may keep it longer. Then the host deletes the old place (see [Data files](/spec/data-files#files-outside-data_dir)).
 
 A working metadata file checked out before step 3 writes its new data files to the old place, where no version will read them. A writer remembers the `data_dir` it checked out with and refuses to commit or push when `fdl.json` names another one; the build checks out again. A host may also refuse such a push.
-
-### signers
-
-The keys the dataset's writers sign versions with (see [Reading](/spec/reading#signatures)). A reader must not trust a key because it is listed here: a mirror can change `fdl.json` too. The list tells a reader which keys to expect, and the reader gets the keys it trusts from the origin by other means.
-
-How long versions are kept is not declared here. It is the host's decision.
-
-### metadata_formats
-
-Each entry names a DuckLake format and, optionally, the last day it is written for new versions (`until`, an ISO 8601 date). Without the field, versions carry only `metadata.db`. See [Versions](/spec/versions#metadata-in-other-formats).

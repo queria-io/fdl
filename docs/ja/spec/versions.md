@@ -1,14 +1,12 @@
 ---
 title: バージョン
-description: バージョン ID、version.json の項目、固めたメタデータ、tag、ほかの DuckLake 形式のメタデータ。
+description: バージョン ID、version.json の項目、tables.json、profile、固めたメタデータと宣言。
 ---
 
 バージョンは `versions/<version ID>/` の下のファイルです。一度書いたら変えてはいけません。例外は次のとおりです。
 
 - 保持期間を過ぎたとき、`expired.json` を足し、メタデータを消す（[データファイル](/ja/spec/data-files#保持期間を過ぎたとき)）
 - 取り下げのとき、`"reason": "withdrawn"` の `expired.json` を足してメタデータを消し、`version.json` に取り下げるデータがあれば、それを除いて書き換える（[データファイル](/ja/spec/data-files#取り下げ)）
-- `metadata/<format>.db` はあとから足してよい。既にあるファイルは変えない
-- `version.json.sig` は、バージョンを作ったあとに署名する書き手が足してよい
 - `profiles/<schema>/<table>.json` は、profile の無いテーブルについてあとから足してよい。既にある profile は変えない
 
 ## バージョン ID
@@ -114,7 +112,7 @@ description: バージョン ID、version.json の項目、固めたメタデー
 | `ducklake.format` | DuckLake の管理用の表の形 | DuckLake の仕様が変わったとき |
 | `metadata.storage` | メタデータファイルの保存形式 | DuckDB の保存形式が変わったとき |
 
-読み手は、`version.json` だけで、そのバージョンを開けるか判断できます。
+読み手は、`version.json` だけで、そのバージョンを開けるか判断できます。新しい DuckDB の書き手が、古い読み手の開ける形式で書く方法は [DuckLake の形式](/ja/internals/ducklake-formats)にあります。
 
 ## tables.json
 
@@ -274,24 +272,3 @@ SELECT title, pdf_sha256, pdf_media_type FROM lake.main.reports;
 - 書き手は、ファイルのメディアタイプを `Content-Type` に付けてアップロードする。バージョンの行が持つアセットは、そのバージョンを書く前にすべてデータセットに置く
 - 読み手は、データセットを読んでいる場所の `<root>assets/<sha256>` でファイルを取得し、表示する前に sha256 を確認する。ファイルが無い行は、リンク切れとして表示する
 - 提供元のサイトにあるファイルなど、データセットの外のファイルは、普通の列に URL で持つ。これはアセットではなく、FDL は管理しない
-
-## ほかの形式のメタデータ
-
-1 つのバージョンが DuckLake の形式ごとにメタデータを持ってよく、読み手は DuckDB を替えずに、開けるファイルを選べます。
-
-```
-versions/<ID>/
-  metadata.db                作ったときのメタデータ（version.json が説明するもの）
-  metadata/1.0.db            形式 1.0 で書いたもの
-  metadata/1.1.db            形式 1.1 で書いたもの
-```
-
-- `metadata/<format>.db` はすべて、同じデータファイルを参照し、同じ行を返さなければならない
-- 読み手は、開ける形式を新しい順に試し、どれも無ければ `metadata.path` のメタデータを開く
-- 宣言した形式をあるバージョンで作れない書き手は、そのファイルを置かない。どのファイルも開けない読み手は、そのバージョンを読めない
-- 古い形式で表せないものを使ったバージョンには、その形式のメタデータを置かない
-- `fdl.json` の `until` を過ぎた形式は、新しいバージョンでは書かない。過去のバージョンはそのまま残してよい
-- データファイルは、`fdl.json` で宣言した一番古い形式が読めるように書かなければならない
-- `metadata.storage` は、宣言した読み手が開ける一番古い DuckDB の保存形式にするのがよい
-
-DuckDB 2.0 で古い形式を書く方法は [DuckLake の形式](/ja/internals/ducklake-formats)にあります。

@@ -1,8 +1,4 @@
-"""Where each file of a dataset sits, relative to its root.
-
-The same names are used on the remote and in a local `.fdl/`, so syncing the
-two is copying files.
-"""
+"""Where each file of a dataset sits, relative to its root."""
 
 from __future__ import annotations
 
@@ -28,8 +24,6 @@ METADATA = "metadata.db"
 #: The index of each table and view: files, columns and what the version declares.
 TABLES = "tables.json"
 EXPIRED = "expired.json"
-#: The same metadata in other DuckLake formats, under the version (optional).
-METADATA_DIR = "metadata/"
 #: A summary of each table, made from the data, under the version (optional).
 PROFILES_DIR = "profiles/"
 #: Files the rows of a table point at, by sha256 (shared).
@@ -99,7 +93,7 @@ def check_file_name(value: object) -> str:
 #: A segment of `data_dir`: lower-case ASCII letters, digits, `_`, `-` and `.`.
 _DATA_DIR_SEGMENT = re.compile(r"[a-z0-9_.-]+")
 #: Top-level folders of the format, which `data_dir` must not be under.
-_RESERVED_TOP = ("versions", "refs", "assets", "objects")
+_RESERVED_TOP = ("versions", "refs", "assets")
 
 
 def is_data_dir(value: object) -> bool:

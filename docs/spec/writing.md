@@ -110,7 +110,7 @@ The working metadata is cloned from ours and gets the result in a new snapshot. 
 ## Order of writes
 
 1. Data files and assets
-2. `versions/<ID>/metadata.db` (and any `metadata/`)
+2. `versions/<ID>/metadata.db`
 3. `versions/<ID>/tables.json` and `versions/<ID>/profiles/`
 4. `versions/<ID>/version.json`
 5. The ref, on condition

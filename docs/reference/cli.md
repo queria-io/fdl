@@ -37,13 +37,13 @@ Writes `fdl.json`, with a new `id`, and `HEAD`. Running it on an existing datase
 fdl clone <remote> [<working.sqlite>] [--branch main] [--storage s3://bucket/prefix/]
 ```
 
-Makes a working metadata file (DuckLake in SQLite) from the metadata of the version the branch holds, or an empty one before the first version. Without `<working.sqlite>`, it is named after the dataset's last path segment in the current folder (`towns.sqlite` for `https://example.com/towns/`). `--branch` takes a branch name such as `main`, or a ref such as `refs/heads/main`. Beside it, `<working.sqlite>.fdl.json` remembers the dataset, the branch and the version it was made from. It prints the `ATTACH` statement to write with.
+Makes a working metadata file (DuckLake in SQLite) from the metadata of the version the branch holds, or an empty one before the first version. Without `<working.sqlite>`, it is named after the dataset's last path segment in the current folder (`towns.sqlite` for `https://example.com/towns/`). `--branch` takes a branch name such as `main`, or a ref such as `refs/heads/main`. Beside it, the folder `<working.sqlite>.fdl/` remembers the dataset, the branch and the version it was made from, as `.git/` does in a Git working tree. It prints the `ATTACH` statement to write with.
 
-For a dataset over HTTP, new data files are written to `<working.sqlite>.data/` and uploaded by the push. Files already in the dataset are read over HTTP where they are. Once a push has uploaded them, it makes the working metadata again from the new version and deletes the local copies, so the folder holds only what has not been pushed.
+For a dataset over HTTP, new data files are written to `<working.sqlite>.fdl/data/` and uploaded by the push. Files already in the dataset are read over HTTP where they are. Once a push has uploaded them, it makes the working metadata again from the new version and deletes the local copies, so the folder holds only what has not been pushed.
 
 With `--storage`, the working metadata reads and writes the data files in the dataset's own storage instead: `--storage` is the dataset's root there, and new files go straight under its `data_dir`, so the push has none to upload. The keys come from the `AWS_*` variables (`AWS_ENDPOINT_URL` for R2 and other S3-compatible stores), or from a DuckDB secret of your own. The build that writes to the working metadata needs them too.
 
-`<working.sqlite>.fdl.json` also keeps the version's [declarations](/spec/versions#declarations) (primary keys, asset columns, profiles and dependencies), which `fdl declare` changes and the next commit writes. It writes no other file.
+`<working.sqlite>.fdl/` also keeps the version's [declarations](/spec/versions#declarations) (primary keys, asset columns, profiles and dependencies), which `fdl declare` changes and the next commit writes. It writes nothing outside the working metadata and that folder.
 
 Refused when the version is past retention, when its metadata's sha256 is not the one `version.json` records, or when the metadata names a data file outside the data folder.
 
@@ -55,7 +55,7 @@ fdl config author.email alice@example.com
 fdl config author.name
 ```
 
-Sets who makes the versions you commit, kept in `~/.config/fdl/config.json` (under `$XDG_CONFIG_HOME` when it is set), apart from any dataset. With no value, it prints the one set. `fdl commit`, `fdl revert` and `fdl merge` take the author from `--author`, else from the environment variables `FDL_AUTHOR_NAME` and `FDL_AUTHOR_EMAIL`, else from these settings, and are refused when none gives a name.
+Sets who makes the versions you commit, kept in the `[author]` table of `~/.config/fdl/config.toml` (under `$XDG_CONFIG_HOME` when it is set, or the file `FDL_CONFIG` names), apart from any dataset. The same file holds the credential helpers. With no value, it prints the one set. `fdl commit`, `fdl revert` and `fdl merge` take the author from `--author`, else from the environment variables `FDL_AUTHOR_NAME` and `FDL_AUTHOR_EMAIL`, else from these settings, and are refused when none gives a name.
 
 ## fdl commit
 
@@ -63,7 +63,7 @@ Sets who makes the versions you commit, kept in `~/.config/fdl/config.json` (und
 fdl commit <working.sqlite> -m "What changed" [--author alice] [--allow-empty] [--assets files/]
 ```
 
-Freezes the working metadata into a new version whose parent is the version it was cloned at (or last pushed), and keeps it in `<working.sqlite>.pending/` until `fdl push` sends it. Nothing in the dataset changes. It prints the new version ID and its `seq`. Committing again before pushing replaces the version not pushed yet.
+Freezes the working metadata into a new version whose parent is the version it was cloned at (or last pushed), and keeps it in `<working.sqlite>.fdl/pending/` until `fdl push` sends it. Nothing in the dataset changes. It prints the new version ID and its `seq`. Committing again before pushing replaces the version not pushed yet.
 
 The command checks the declarations kept beside the working metadata (see `fdl declare`) against its tables and views first. A commit starts from its parent's declarations: a table made again under the same name, as dbt's `CREATE OR REPLACE` does, keeps them, a table dropped loses them, and a column renamed since it was declared is declared under its new name.
 
@@ -89,7 +89,7 @@ fdl declare profile <working.sqlite> <schema.name> (true|false)
 fdl declare dependency <working.sqlite> <name> [<url>] [--version <ID>]
 ```
 
-Changes what the next commit [declares](/spec/versions#declarations) of the tables and views. The declarations are kept in `<working.sqlite>.fdl.json`, starting from those of the version the working metadata was cloned from, and the commit writes them into `tables.json`.
+Changes what the next commit [declares](/spec/versions#declarations) of the tables and views. The declarations are kept in `<working.sqlite>.fdl/`, starting from those of the version the working metadata was cloned from, and the commit writes them into `tables.json`.
 
 ```bash
 fdl declare primary-key lake.sqlite main.population code year

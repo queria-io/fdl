@@ -916,8 +916,10 @@ def expire(
             layout.version_metadata(version),
             # The index names files the grace period may delete.
             layout.version_dir(version_id) + layout.TABLES,
-            *store.list(layout.version_dir(version_id) + layout.METADATA_DIR),
             *store.list(layout.version_dir(version_id) + layout.PROFILES_DIR),
+            # Metadata in other DuckLake formats, which earlier versions of the
+            # specification let a version carry: no copy outlives the version.
+            *store.list(layout.version_dir(version_id) + "metadata/"),
         ]
     )
 

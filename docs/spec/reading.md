@@ -10,7 +10,7 @@ A reader that does not know which ref to ask for may read `refs.json` to find th
 1. Read `HEAD`, or the ref asked for. If the content starts with `ref: `, read the ref it names
 2. Read `versions/<ID>/version.json` for the ID found. Check that its `id` matches and that the reader knows its `fdl` major version
 3. If `versions/<ID>/expired.json` exists, stop: the version is past retention or withdrawn
-4. Open the file `metadata.path` names in `versions/<ID>/` (`metadata.db`), or a `metadata/` file the reader can open, read-only
+4. Open the file `metadata.path` names in `versions/<ID>/` (`metadata.db`), read-only
 
 ```sql
 ATTACH 'ducklake:https://example.org/lake/versions/019a3c4e-…/metadata.db' AS lake (
@@ -43,19 +43,6 @@ ATTACH 'ducklake:https://example.org/census/versions/019a2f10-…/metadata.db' A
 ```
 
 A reader that does not read the view need not attach them.
-
-## Signatures
-
-A version may carry `versions/<ID>/version.json.sig`: an SSH signature of the bytes of `version.json`, made with `ssh-keygen -Y sign -n fdl`. The signature covers the record, and the record covers the metadata through `metadata.sha256`.
-
-```bash
-ssh-keygen -Y verify -f allowed_signers -I alice@example.org -n fdl \
-  -s version.json.sig < version.json
-```
-
-- Signing is optional. A reader that does not check signatures reads a signed version as any other
-- A reader that checks verifies the signature against keys it trusts, gets the metadata and checks its sha256 against `metadata.sha256`
-- Keys come from the origin, not from the dataset being read. `signers` in `fdl.json` only says which keys to expect
 
 ## Data path
 

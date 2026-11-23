@@ -1,14 +1,12 @@
 ---
 title: Versions
-description: The version ID, the fields of version.json, the frozen metadata, and metadata in other DuckLake formats.
+description: The version ID, the fields of version.json, tables.json, profiles, the frozen metadata and declarations.
 ---
 
 A version is the files under `versions/<version ID>/`. They must not change once written, except:
 
 - `expired.json` is added and the metadata files deleted when the version falls out of retention ([Data files](/spec/data-files#past-retention))
 - on withdrawal, `expired.json` is added with `"reason": "withdrawn"` and the metadata files deleted, and `version.json` is rewritten without the withdrawn data if it holds it ([Data files](/spec/data-files#withdrawal))
-- `metadata/<format>.db` may be added later. Files already there are not changed
-- `version.json.sig` may be added later, by a writer that signs a version after making it
 - `profiles/<schema>/<table>.json` may be added later for a table that has none. Profiles already there are not changed
 
 ## Version ID
@@ -114,7 +112,7 @@ A reader ignores a `kind` it does not know and still reads its `breaking`, and i
 | `ducklake.format` | the shape of DuckLake's bookkeeping tables | DuckLake's specification changes |
 | `metadata.storage` | the storage format of the metadata file | DuckDB's storage format changes |
 
-A reader can tell from `version.json` alone whether it can open a version.
+A reader can tell from `version.json` alone whether it can open a version. [DuckLake formats](/internals/ducklake-formats) shows how a writer on a newer DuckDB writes a format older readers can open.
 
 ## tables.json
 
@@ -274,24 +272,3 @@ SELECT title, pdf_sha256, pdf_media_type FROM lake.main.reports;
 - A writer uploads a file with its media type as `Content-Type`. Every asset a version's rows hold must be in the dataset before the version is written
 - A reader finds a file at `<root>assets/<sha256>`, wherever it reads the dataset from, and checks its sha256 before it shows it. A row whose file is missing is shown as broken
 - A file that is not in the dataset, such as one on the publisher's site, is held as a URL in an ordinary column. It is not an asset, and FDL does not manage it
-
-## Metadata in other formats
-
-One version may carry a metadata file per DuckLake format, so that a reader picks the file it can open instead of switching DuckDB.
-
-```
-versions/<ID>/
-  metadata.db                the metadata as made (the one version.json describes)
-  metadata/1.0.db            written out in format 1.0
-  metadata/1.1.db            written out in format 1.1
-```
-
-- Every `metadata/<format>.db` must name the same data files and return the same rows
-- A reader tries the formats it can open, newest first, then falls back to the metadata `metadata.path` names
-- A writer that cannot produce a declared format for a version leaves that file out. A reader that can open none of the files of a version cannot read it
-- A version that uses something an older format cannot express has no metadata in that format
-- A format past its `until` in `fdl.json` is not written for new versions. Past versions may keep theirs
-- Data files must be written so that the oldest format declared in `fdl.json` can read them
-- `metadata.storage` should be the oldest DuckDB storage format the declared readers can open
-
-[DuckLake formats](/internals/ducklake-formats) shows how to write an older format from DuckDB 2.0.

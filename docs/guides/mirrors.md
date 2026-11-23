@@ -44,7 +44,7 @@ Without `OVERRIDE_DATA_PATH true`, DuckDB refuses to use a data path other than 
 
 `version.json` records the size and sha256 of the metadata. A mirror can check each metadata file after copying it. Parquet files are named by a UUID and carry their own checksums, and DuckLake records each file's size in the metadata.
 
-Anyone can write a `version.json`, so a checksum shows the copy matches the record, not that the record came from the origin. A version signed by the origin can be checked on a mirror: see [Signatures](/spec/reading#signatures).
+Anyone can write a `version.json`, so a checksum shows the copy matches the record, not that the record came from the origin.
 
 ## Expired versions and withdrawn data
 

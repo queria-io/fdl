@@ -21,7 +21,6 @@ FDL は Git の役割と名前をそのまま使い、保存の仕方は独自�
 | `HEAD` | `HEAD` | 既定のブランチの名前を持ちます |
 | `refs.json` | `info/refs` | 素の HTTP の読み手が ref を名前で探せるようにします |
 | `versions/<ID>/tables.json` | 到達可能性ビットマップ | メタデータから作る索引です。テーブルごとのデータファイルと列、ビューごとの SQL、宣言（主キー・アセット列・profile・読む別のデータセット）を持ちます |
-| `version.json.sig` | 署名付きコミット | `ssh-keygen -Y sign` で作る SSH 署名です |
 | 作業メタデータ（SQLite） | 作業ツリーとインデックス | バージョンから作り、次のバージョンにします |
 | `POST <root>/?batch` | Git LFS の batch API | ストレージへ直接アップロードする URL を渡します |
 | `expired.json` | なし | バージョンにメタデータが無くなった理由を書きます |
