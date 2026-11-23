@@ -1,6 +1,18 @@
 # CHANGELOG
 
 
+## v0.39.0 (2026-11-23)
+
+### Features
+
+- Stop writing the path of a version's metadata and tables.json
+  ([#97](https://github.com/queria-io/fdl/pull/97),
+  [`91d8021`](https://github.com/queria-io/fdl/commit/91d80210f7112280a3a6e0e1f36e15510962e1e5))
+
+The files of a version have fixed names, metadata.db and tables.json, and readers open those names.
+  The record no longer names them.
+
+
 ## v0.38.0 (2026-11-23)
 
 ### Features
