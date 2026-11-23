@@ -249,10 +249,10 @@ class S3Store:
         return found
 
 
-def _retry_after(exc: urllib.error.HTTPError, default: float) -> float:
-    """The seconds a 429 asks to wait (`Retry-After` in seconds), else ``default``."""
+def _retry_after(exc: urllib.error.HTTPError) -> float:
+    """The seconds a 429 asks to wait (`Retry-After` in seconds), else 0."""
     value = (exc.headers or {}).get("Retry-After", "")
-    return float(value) if value.strip().isdigit() else default
+    return float(value) if value.strip().isdigit() else 0.0
 
 
 class HttpStore:
@@ -317,7 +317,12 @@ class HttpStore:
                 except urllib.error.HTTPError as exc:
                     if exc.code != 429 or attempt == self.STORAGE_ATTEMPTS - 1:
                         raise
-                    time.sleep(_retry_after(exc, self.RETRY_DELAY * 2**attempt))
+                    exc.close()
+                    # Back off even when every answer names the same wait, so
+                    # writers busy with one object do not come back in step,
+                    # and never sleep longer than MAX_WAIT on a host's word.
+                    backoff = self.RETRY_DELAY * 2**attempt
+                    time.sleep(min(max(_retry_after(exc), backoff), self.MAX_WAIT))
 
         try:
             try:
@@ -486,6 +491,8 @@ class HttpStore:
     #: for each one after).
     STORAGE_ATTEMPTS = 4
     RETRY_DELAY = 1.0
+    #: The longest wait before sending a request again after a 429.
+    MAX_WAIT = 30.0
 
     def _put_to_storage(self, key: str, path: Path, action: dict, content_type: str | None) -> None:
         try:

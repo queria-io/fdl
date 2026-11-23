@@ -234,7 +234,25 @@ def test_a_busy_host_is_sent_the_request_again(monkeypatch) -> None:
     monkeypatch.setattr(stores.time, "sleep", waited.append)
     HttpStore("https://example.invalid/repo/", token="t").put("versions/v/a.json", b"{}", if_none_match="*")
     assert sent == [("PUT", "https://example.invalid/repo/versions/v/a.json")] * 3
-    assert waited == [1.0, 1.0]
+    assert waited == [1.0, 2.0]
+
+
+def test_a_long_retry_after_is_capped(monkeypatch) -> None:
+    answers = [429, None]
+    waited = []
+
+    def urlopen(request):
+        code = answers.pop(0)
+        if code is not None:
+            raise urllib.error.HTTPError(request.full_url, code, "busy", {"Retry-After": "3600"}, io.BytesIO(b""))
+        answer = io.BytesIO()
+        answer.headers = {}
+        return answer
+
+    monkeypatch.setattr(stores, "_open", urlopen)
+    monkeypatch.setattr(stores.time, "sleep", waited.append)
+    HttpStore("https://example.invalid/repo/", token="t").put("versions/v/a.json", b"{}", if_none_match="*")
+    assert waited == [HttpStore.MAX_WAIT]
 
 
 def test_a_refused_storage_answer_is_not_tried_again(tmp_path: Path, monkeypatch) -> None:
