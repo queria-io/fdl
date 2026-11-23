@@ -249,6 +249,12 @@ class S3Store:
         return found
 
 
+def _retry_after(exc: urllib.error.HTTPError) -> float:
+    """The seconds a 429 asks to wait (`Retry-After` in seconds), else 0."""
+    value = (exc.headers or {}).get("Retry-After", "")
+    return float(value) if value.strip().isdigit() else 0.0
+
+
 class HttpStore:
     """A dataset served over HTTP by a host that takes writes.
 
@@ -302,9 +308,25 @@ class HttpStore:
                 request.add_header("Authorization", f"Bearer {self.token}")
             return _open(request)
 
+        def send_when_not_busy():
+            # A 429 is a request the host did not carry out, so any request is
+            # safe to send again once the wait it names is over.
+            for attempt in range(self.STORAGE_ATTEMPTS):
+                try:
+                    return send()
+                except urllib.error.HTTPError as exc:
+                    if exc.code != 429 or attempt == self.STORAGE_ATTEMPTS - 1:
+                        raise
+                    exc.close()
+                    # Back off even when every answer names the same wait, so
+                    # writers busy with one object do not come back in step,
+                    # and never sleep longer than MAX_WAIT on a host's word.
+                    backoff = self.RETRY_DELAY * 2**attempt
+                    time.sleep(min(max(_retry_after(exc), backoff), self.MAX_WAIT))
+
         try:
             try:
-                return send()
+                return send_when_not_busy()
             except urllib.error.HTTPError as exc:
                 if exc.code != 401 or not self._asks:
                     raise
@@ -312,7 +334,7 @@ class HttpStore:
                 if not fresh or fresh == self.token:
                     raise
                 self.token = fresh
-                return send()
+                return send_when_not_busy()
         except urllib.error.HTTPError as exc:
             detail = exc.read().decode(errors="replace").strip()
             raise StoreError(
@@ -469,6 +491,8 @@ class HttpStore:
     #: for each one after).
     STORAGE_ATTEMPTS = 4
     RETRY_DELAY = 1.0
+    #: The longest wait before sending a request again after a 429.
+    MAX_WAIT = 30.0
 
     def _put_to_storage(self, key: str, path: Path, action: dict, content_type: str | None) -> None:
         try:
