@@ -215,7 +215,7 @@ def test_push_refuses_a_tables_json_that_does_not_match(tmp_path: Path, remote) 
     with pytest.raises(repo.RepoError, match="tables.json is not the one version.json names"):
         repo.push(remote, tmp_path / "local" / first.id, first)
     content = written.read_bytes()
-    tables = repo.File(path=layout.TABLES, bytes=len(content), sha256=hashlib.sha256(content).hexdigest())
+    tables = repo.File(bytes=len(content), sha256=hashlib.sha256(content).hexdigest())
     with pytest.raises(repo.RepoError, match="tables.json and the metadata name different files"):
         repo.push(remote, tmp_path / "local" / first.id, dataclasses.replace(first, tables=tables))
     assert remote.head(layout.version_record(first.id)) is None
@@ -327,7 +327,7 @@ def test_prune_keeps_what_was_made_since_and_within_the_grace_period(tmp_path: P
 
 
 def files_index(store: LocalStore, version) -> dict:
-    data = store.get(layout.version_dir(version.id) + version.tables.path)
+    data = store.get(layout.version_dir(version.id) + layout.TABLES)
     assert len(data) == version.tables.bytes
     return json.loads(data)["tables"]
 
@@ -713,12 +713,25 @@ def recorded_diff(remote, first, bare) -> dict:
     return found
 
 
-def test_a_record_with_a_path_outside_its_folder_is_refused(tmp_path: Path, remote) -> None:
+def test_a_record_with_a_parent_that_is_not_a_version_id_is_refused(tmp_path: Path, remote) -> None:
     version_id = _pushed(tmp_path, remote)
     record = json.loads(remote.get(layout.version_record(version_id)))
-    for field, value in (("parents", ["../x"]), ("metadata", {**record["metadata"], "path": "../metadata.db"})):
-        with pytest.raises(ValueError):
-            parse(json.dumps({**record, field: value}).encode(), expected_id=version_id)
+    with pytest.raises(ValueError):
+        parse(json.dumps({**record, "parents": ["../x"]}).encode(), expected_id=version_id)
+
+
+def test_the_files_of_a_version_have_fixed_names_whatever_path_a_record_gives(tmp_path: Path, remote) -> None:
+    version_id = _pushed(tmp_path, remote)
+    record = json.loads(remote.get(layout.version_record(version_id)))
+    assert (record["metadata"]["path"], record["tables"]["path"]) == (layout.METADATA, layout.TABLES)
+    other = {
+        **record,
+        "metadata": {**record["metadata"], "path": "../ducklake.duckdb"},
+        "tables": {**record["tables"], "path": "files.json"},
+    }
+    read = parse(json.dumps(other).encode(), expected_id=version_id)
+    assert read == parse(json.dumps(record).encode(), expected_id=version_id)
+    assert layout.version_metadata(read) == layout.version_dir(version_id) + layout.METADATA
 
 
 def test_a_record_with_annotations_from_an_earlier_fdl_still_reads(tmp_path: Path, remote) -> None:
@@ -805,7 +818,7 @@ def test_a_version_writes_its_declarations_and_views(tmp_path: Path, remote) -> 
     )
     first = commit(tmp_path, remote, facts=facts)
     index = json.loads((tmp_path / "local" / first.id / layout.TABLES).read_text())
-    assert first.tables.path == layout.TABLES
+    assert first.tables is not None
     reports = index["tables"]["main.reports"]
     assert (reports["primary_key"], reports["assets"]) == (["id"], ["pdf"])
     latest = index["views"]["main.latest"]

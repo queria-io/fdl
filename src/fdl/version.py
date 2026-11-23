@@ -38,9 +38,8 @@ def is_id(value: str) -> bool:
 
 @dataclass(frozen=True)
 class Metadata:
-    """The version's DuckLake metadata file: its name, storage format, size and hash."""
+    """The version's DuckLake metadata file (`metadata.db`): its storage format, size and hash."""
 
-    path: str
     storage: str
     bytes: int
     sha256: str
@@ -48,9 +47,8 @@ class Metadata:
 
 @dataclass(frozen=True)
 class File:
-    """A file of the version beside its catalog, pinned by its hash."""
+    """A file of the version beside its metadata (`tables.json`), pinned by its hash."""
 
-    path: str
     bytes: int
     sha256: str
 
@@ -95,7 +93,8 @@ class Version:
             "author": self.author,
             "message": self.message,
             "metadata": {
-                "path": self.metadata.path,
+                # Readers up to fdl-cli 0.35 look the file up by this name.
+                "path": layout.METADATA,
                 "storage": self.metadata.storage,
                 "bytes": self.metadata.bytes,
                 "sha256": self.metadata.sha256,
@@ -105,14 +104,14 @@ class Version:
                 "snapshot_id": self.ducklake.snapshot_id,
                 "snapshots": list(self.ducklake.snapshots),
             },
-            **({"tables": _entry(self.tables)} if self.tables else {}),
+            **({"tables": {"path": layout.TABLES, **_entry(self.tables)}} if self.tables else {}),
             **({"diff": self.diff} if self.diff is not None else {}),
         }
         return (json.dumps(record, ensure_ascii=False, indent=2) + "\n").encode()
 
 
 def _entry(file: File) -> dict:
-    return {"path": file.path, "bytes": file.bytes, "sha256": file.sha256}
+    return {"bytes": file.bytes, "sha256": file.sha256}
 
 
 def parse(data: bytes, *, expected_id: str | None = None) -> Version:
@@ -135,8 +134,8 @@ def parse(data: bytes, *, expected_id: str | None = None) -> Version:
             created_at=record["created_at"],
             author=dict(record["author"]),
             message=record["message"],
+            # The files have fixed names: a `path` an earlier writer gave is not read.
             metadata=Metadata(
-                path=layout.check_file_name(metadata["path"]),
                 storage=metadata["storage"],
                 bytes=int(metadata["bytes"]),
                 sha256=metadata["sha256"],
@@ -148,7 +147,7 @@ def parse(data: bytes, *, expected_id: str | None = None) -> Version:
             ),
             diff=record.get("diff"),
             tables=(
-                File(path=layout.check_file_name(tables["path"]), bytes=int(tables["bytes"]), sha256=tables["sha256"])
+                File(bytes=int(tables["bytes"]), sha256=tables["sha256"])
                 if tables
                 else None
             ),

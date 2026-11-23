@@ -70,7 +70,7 @@ A version is the files under `versions/<version ID>/`. They must not change once
 
 A reader must ignore fields it does not know.
 
-The `path` of `metadata` and `tables` is a file name in the version's folder: it holds no `/` or `\` and is not `.` or `..`. A reader must refuse a record with any other.
+The files of a version have fixed names in its folder: `metadata.db` and `tables.json`. The `path` of `metadata` and `tables` is always that name. A reader opens the fixed names and does not read `path`.
 
 A version has one parent, or two for a merge: the version of the branch it was made on, then the version merged into it (see [Merging](/spec/writing#merging)). The first version has none. A reader must accept a list of any length, follow the first entry for the history of a branch, and follow every entry to find whether one version descends from another.
 
@@ -227,7 +227,7 @@ Each table's profile is at `versions/<ID>/profiles/<schema>/<table>.json`. A vie
 
 ## The frozen metadata
 
-The metadata is the file `metadata.path` names in the version's folder, `metadata.db`. It is a DuckLake metadata file in DuckDB's file format.
+The metadata is the file `metadata.db` in the version's folder. It is a DuckLake metadata file in DuckDB's file format.
 
 - It holds one snapshot, `ducklake.snapshot_id`, and only the bookkeeping rows that snapshot reads. Earlier snapshots, the rows that ended before it and the files scheduled for deletion are left out. A table rebuilt by a tool such as dbt is written to all new files, so earlier snapshots in one metadata share little with the last one and would only make the file larger.
 - It holds no inlined rows. All data is in data files

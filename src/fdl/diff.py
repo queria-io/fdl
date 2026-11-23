@@ -194,7 +194,7 @@ def _get_json(store: Store, key: str) -> dict | None:
 
 def indexed(store: Store, version: Version) -> dict | None:
     """A version's `tables.json`, or ``None`` past retention."""
-    return _get_json(store, layout.version_dir(version.id) + version.tables.path) if version.tables else None
+    return _get_json(store, layout.version_dir(version.id) + layout.TABLES) if version.tables else None
 
 
 def versions(store: Store, old: Version | None, new: Version) -> dict[str, Any]:

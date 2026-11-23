@@ -636,7 +636,7 @@ def test_clone_writes_only_the_working_metadata(tmp_path: Path, elsewhere: Path)
     write(working, store, TITLED.format("Towns"))
     commit(working, "-m", "first", "--author", "tester")
     head = repo.head(store)
-    assert head.tables.path == layout.TABLES
+    assert head.tables is not None
 
     run("clone", remote, "again.sqlite")
     assert sorted(p.name for p in elsewhere.iterdir()) == ["again.sqlite", "again.sqlite.fdl"]
