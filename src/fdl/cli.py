@@ -944,10 +944,12 @@ def status(
         named = {*committed.primary_keys, *committed.assets, *committed.unprofiled, *now.primary_keys, *now.assets, *now.unprofiled}
         result["declarations"] = declaring.changed(committed, now, named)
         result["dependencies"] = declaring.dependencies_changed(committed, now)
+        data_path = _written(store, state) or repo.data_url(store)
     except (*ERRORS, catalog.CatalogError, OSError) as exc:
         raise _fail(exc) from exc
     if as_json:
-        typer.echo(json.dumps({"pending": pending_id, **result}, ensure_ascii=False, indent=2))
+        where = {"remote": state["remote"], "ref": state["ref"], "base": state["base"], "data_path": data_path}
+        typer.echo(json.dumps({**where, "pending": pending_id, **result}, ensure_ascii=False, indent=2))
         return
     typer.echo(f"On {state['ref']} of {state['remote']}, from " + (f"{base.id} (version {base.seq})" if base else "no version yet"))
     if pending:
