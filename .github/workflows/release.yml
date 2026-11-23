@@ -1,7 +1,15 @@
 name: Release
 
+# Every push to main releases when it holds a feat or fix commit; other
+# commits (docs, chore, test, ...) leave the version as it is.
 on:
+  push:
+    branches: [main]
   workflow_dispatch:
+
+concurrency:
+  group: release
+  cancel-in-progress: false
 
 jobs:
   release:

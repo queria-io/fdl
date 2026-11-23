@@ -41,7 +41,7 @@ python-semantic-release がコミットメッセージからバージョンを�
 
 ## Releases
 
-Releases are handled by python-semantic-release via GitHub Actions (manual workflow_dispatch). Do not manually edit the version in pyproject.toml or modify CHANGELOG.md.
+Releases are handled by python-semantic-release via GitHub Actions: the Release workflow runs on every push to main and releases when there is a `feat:` or `fix:`. A breaking change is released as soon as it is merged, so merge it only when its readers are ready. Do not manually edit the version in pyproject.toml or modify CHANGELOG.md.
 
 ## DuckLake gotchas
 
