@@ -55,7 +55,7 @@ fdl config author.email alice@example.com
 fdl config author.name
 ```
 
-Sets who makes the versions you commit, kept in `~/.config/fdl/config.json` (under `$XDG_CONFIG_HOME` when it is set), apart from any dataset. With no value, it prints the one set. `fdl commit`, `fdl revert` and `fdl merge` take the author from `--author`, else from the environment variables `FDL_AUTHOR_NAME` and `FDL_AUTHOR_EMAIL`, else from these settings, and are refused when none gives a name.
+Sets who makes the versions you commit, kept in the `[author]` table of `~/.config/fdl/config.toml` (under `$XDG_CONFIG_HOME` when it is set, or the file `FDL_CONFIG` names), apart from any dataset. The same file holds the credential helpers. With no value, it prints the one set. `fdl commit`, `fdl revert` and `fdl merge` take the author from `--author`, else from the environment variables `FDL_AUTHOR_NAME` and `FDL_AUTHOR_EMAIL`, else from these settings, and are refused when none gives a name.
 
 ## fdl commit
 
