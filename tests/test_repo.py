@@ -571,6 +571,20 @@ def _pushed(tmp_path: Path, remote) -> str:
     return version.id
 
 
+def test_a_metadata_duckdb_cannot_open_is_not_made_a_version(tmp_path: Path, remote) -> None:
+    build(tmp_path / "work.sqlite", remote, "CREATE TABLE lake.main.towns AS SELECT 1 AS id")
+    frozen = tmp_path / "frozen.duckdb"
+    catalog.convert(tmp_path / "work.sqlite", frozen, data_path=data_path(remote))
+    # Table statistics without column statistics: DuckLake fails to list the tables.
+    con = duckdb.connect(str(frozen))
+    con.execute("DELETE FROM ducklake_table_column_stats")
+    con.close()
+    with pytest.raises(repo.RepoError, match="cannot open"):
+        repo.record(frozen, tmp_path / "local", parent=None, author=AUTHOR, message="m", described=declared.Described(
+            facts=declared.Facts(), views={}, names={"main.towns"}))
+    assert not any((tmp_path / "local").iterdir())
+
+
 def test_clone_refuses_a_catalog_that_is_not_the_one_recorded(tmp_path: Path, remote) -> None:
     version_id = _pushed(tmp_path, remote)
     path = remote.root / layout.version_metadata(repo.read_version(remote, version_id))

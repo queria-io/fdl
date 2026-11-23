@@ -366,6 +366,11 @@ def record(
         # Attaching it through DuckLake must not have moved it to another format.
         if catalog.recorded_format(copied) != recorded:
             raise RepoError(f"keeping the last snapshot changed the DuckLake format of {frozen}")
+        # What readers will attach: a version they cannot open is not made.
+        try:
+            catalog.check_opens(copied)
+        except catalog.CatalogError as exc:
+            raise RepoError(str(exc)) from exc
         indexed = _write_tables_index(target, copied, last, described)
         version = Version(
             id=version_id,

@@ -927,6 +927,31 @@ def keep_last_snapshot(catalog_path: Path) -> None:
         raise CatalogError(f"could not keep only the last snapshot of {catalog_path}: {exc}") from exc
 
 
+def check_opens(catalog_path: Path) -> None:
+    """Raise `CatalogError` unless DuckLake can open a frozen catalog and list its tables.
+
+    A catalog can be written that DuckLake later fails to open: a table with
+    table statistics but no column statistics makes listing the tables fail
+    with an internal error. Readers would get that error from the published
+    version, so the writer gets it here instead.
+    """
+    import duckdb
+
+    con = duckdb.connect()
+    try:
+        with tempfile.TemporaryDirectory(prefix="fdl-check-") as nowhere:
+            for statement in attach_sql(
+                catalog_path, alias="lake", data_path=Path(nowhere).as_posix() + "/", read_only=True
+            ):
+                if statement:
+                    con.execute(statement)
+            con.execute("SELECT count(*) FROM duckdb_tables() WHERE database_name = 'lake'").fetchone()
+    except Exception as exc:  # noqa: BLE001 - duckdb raises several types
+        raise CatalogError(f"DuckLake cannot open {catalog_path}: {str(exc).splitlines()[0]}") from exc
+    finally:
+        con.close()
+
+
 # -- whether anything changed --------------------------------------------------
 
 
