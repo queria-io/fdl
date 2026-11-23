@@ -88,14 +88,13 @@ def _files(folder: Path) -> list[str]:
 
 
 class ByContent(Mapping[str, Path]):
-    """Files by their sha256: those in ``known``, then those below ``folder``.
+    """Files by their sha256: those below ``folder``.
 
-    The folder is hashed the first time a sha256 ``known`` lacks is looked up,
-    so a push that finds everything in the dataset reads none of it.
+    The folder is hashed the first time a sha256 is looked up, so a push that
+    finds everything in the dataset reads none of it.
     """
 
-    def __init__(self, known: Mapping[str, Path], folder: Path | None = None) -> None:
-        self._known = dict(known)
+    def __init__(self, folder: Path | None = None) -> None:
         self._folder = folder
         self._found: dict[str, Path] | None = None
 
@@ -109,15 +108,13 @@ class ByContent(Mapping[str, Path]):
         return self._found
 
     def __getitem__(self, sha256: str) -> Path:
-        if sha256 in self._known:
-            return self._known[sha256]
         return self._below()[sha256]
 
     def __iter__(self) -> Iterator[str]:
-        return iter({**self._known, **self._below()})
+        return iter(self._below())
 
     def __len__(self) -> int:
-        return len({**self._known, **self._below()})
+        return len(self._below())
 
 
 def indexed_asset_columns(index: dict[str, Any] | None) -> list[tuple[str, str, str]]:

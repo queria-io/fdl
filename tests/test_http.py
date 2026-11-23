@@ -50,7 +50,7 @@ def commit(working, *args) -> str:
 
 
 def write(working: Path, sql: str) -> None:
-    state = json.loads(working.with_name(working.name + ".fdl.json").read_text())
+    state = json.loads((working.with_name(working.name + ".fdl") / "state.json").read_text())
     data = Path(state["data"]).resolve().as_posix() + "/"
     con = duckdb.connect()
     for statement in catalog.attach_sql(working, alias="lake", data_path=data):
@@ -295,7 +295,7 @@ def test_a_commit_over_http_frees_the_local_data_files(served, tmp_path: Path) -
     run("clone", url, working)
     write(working, "CREATE TABLE lake.main.towns AS SELECT 1 AS id")
     commit(working, "-m", "first", "--author", "tester")
-    folder = working.with_name(working.name + ".data")
+    folder = working.with_name(working.name + ".fdl") / "data"
     assert folder.is_dir() and not any(p.is_file() for p in folder.rglob("*"))
 
     # The same working catalog goes on: the first file is read from the dataset.
@@ -319,7 +319,7 @@ def test_a_clone_with_storage_writes_data_files_there(served, tmp_path: Path) ->
     out = run("clone", url, working, "--storage", local.root)
     data = f"{Path(local.root).resolve().as_posix()}/tables/"
     assert f"DATA_PATH '{data}'" in out
-    assert not working.with_name(working.name + ".data").exists()
+    assert not (working.with_name(working.name + ".fdl") / "data").exists()
 
     def build(sql: str) -> None:
         con = duckdb.connect()

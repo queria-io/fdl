@@ -110,7 +110,7 @@ description: クローン、コミット、push。作業メタデータ、書き
 ## 書き込みの順番
 
 1. データファイル・アセット
-2. `versions/<ID>/metadata.db`（と `metadata/`）
+2. `versions/<ID>/metadata.db`
 3. `versions/<ID>/tables.json`・`versions/<ID>/profiles/`
 4. `versions/<ID>/version.json`
 5. ref（条件付き）

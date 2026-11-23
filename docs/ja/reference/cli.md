@@ -37,13 +37,13 @@ fdl init <remote> [--data-dir data/]
 fdl clone <remote> [<working.sqlite>] [--branch main] [--storage s3://bucket/prefix/]
 ```
 
-ブランチが指すバージョンのメタデータから作業メタデータ（SQLite の DuckLake）を作ります。最初のバージョンの前は空のものを作ります。`<working.sqlite>` を省くと、今のフォルダにデータセットの URL の最後の部分の名前で作ります（`https://example.com/towns/` なら `towns.sqlite`）。`--branch` には `main` のようなブランチ名か、`refs/heads/main` のような ref を渡します。隣の `<working.sqlite>.fdl.json` に、データセット、ブランチ、元のバージョンを記録します。書くときの `ATTACH` 文を表示します。
+ブランチが指すバージョンのメタデータから作業メタデータ（SQLite の DuckLake）を作ります。最初のバージョンの前は空のものを作ります。`<working.sqlite>` を省くと、今のフォルダにデータセットの URL の最後の部分の名前で作ります（`https://example.com/towns/` なら `towns.sqlite`）。`--branch` には `main` のようなブランチ名か、`refs/heads/main` のような ref を渡します。隣のフォルダ `<working.sqlite>.fdl/` に、データセット、ブランチ、元のバージョンを記録します。Git の作業ツリーの `.git/` に当たります。書くときの `ATTACH` 文を表示します。
 
-HTTP のデータセットでは、新しいデータファイルは `<working.sqlite>.data/` に書かれ、push でアップロードされます。データセットに既にあるファイルは、その場所から HTTP で読みます。push はアップロードを終えると、新しいバージョンから作業メタデータを作り直して手元の写しを削除するので、このフォルダにはまだ push していないファイルだけが残ります。
+HTTP のデータセットでは、新しいデータファイルは `<working.sqlite>.fdl/data/` に書かれ、push でアップロードされます。データセットに既にあるファイルは、その場所から HTTP で読みます。push はアップロードを終えると、新しいバージョンから作業メタデータを作り直して手元の写しを削除するので、このフォルダにはまだ push していないファイルだけが残ります。
 
 `--storage` を付けると、作業メタデータはデータセットのストレージで直接データファイルを読み書きします。`--storage` にはそのストレージでのデータセットの根を渡します。新しいファイルはその `data_dir` の下に直接書かれるので、push でアップロードするものはありません。鍵は `AWS_*` の環境変数（R2 などの S3 互換ストレージは `AWS_ENDPOINT_URL`）か、自分で作った DuckDB の secret から取ります。作業メタデータに書くビルドにも同じ鍵が要ります。
 
-`<working.sqlite>.fdl.json` には、バージョンの[宣言](/ja/spec/versions#宣言)（主キー・アセット列・profile・dependencies）も保存します。`fdl declare` がそれを変え、次のコミットが書きます。ほかのファイルは書きません。
+`<working.sqlite>.fdl/` には、バージョンの[宣言](/ja/spec/versions#宣言)（主キー・アセット列・profile・dependencies）も保存します。`fdl declare` がそれを変え、次のコミットが書きます。作業メタデータとこのフォルダの外には何も書きません。
 
 バージョンの保持期間が過ぎているとき、メタデータの sha256 が `version.json` の記録と違うとき、メタデータがデータフォルダの外のデータファイルを指しているときは断られます。
 
@@ -63,7 +63,7 @@ fdl config author.name
 fdl commit <working.sqlite> -m "What changed" [--author alice] [--allow-empty] [--assets files/]
 ```
 
-作業メタデータを、クローンした（または最後に push した）バージョンを親とする新しいバージョンに固め、`fdl push` で送るまで `<working.sqlite>.pending/` に置きます。データセットは何も変わりません。新しいバージョン ID と `seq` を表示します。push する前にもう一度コミットすると、まだ push していないバージョンを置き換えます。
+作業メタデータを、クローンした（または最後に push した）バージョンを親とする新しいバージョンに固め、`fdl push` で送るまで `<working.sqlite>.fdl/pending/` に置きます。データセットは何も変わりません。新しいバージョン ID と `seq` を表示します。push する前にもう一度コミットすると、まだ push していないバージョンを置き換えます。
 
 コマンドはまず、作業メタデータの隣に保存した宣言（`fdl declare` を参照）をテーブルとビューに照らして確認します。コミットは親の宣言から始めます。dbt の `CREATE OR REPLACE` のように同じ名前で作り直したテーブルは宣言を引き継ぎ、削除したテーブルは宣言を失い、宣言のあとに名前を変えた列は新しい名前で宣言されます。
 
@@ -90,7 +90,7 @@ fdl declare profile <working.sqlite> <schema.name> (true|false)
 fdl declare dependency <working.sqlite> <name> [<url>] [--version <ID>]
 ```
 
-次のコミットがテーブルとビューについて[宣言](/ja/spec/versions#宣言)する内容を変えます。宣言は `<working.sqlite>.fdl.json` に保存し、作業メタデータをクローンしたバージョンの宣言から始まります。コミットがそれを `tables.json` に書きます。
+次のコミットがテーブルとビューについて[宣言](/ja/spec/versions#宣言)する内容を変えます。宣言は `<working.sqlite>.fdl/` に保存し、作業メタデータをクローンしたバージョンの宣言から始まります。コミットがそれを `tables.json` に書きます。
 
 ```bash
 fdl declare primary-key lake.sqlite main.population code year

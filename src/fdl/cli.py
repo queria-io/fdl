@@ -1,10 +1,11 @@
 """The ``fdl`` command: the operations in `fdl.repo`, on a terminal.
 
 A working metadata file is a DuckLake metadata file in SQLite that you write to with any
-DuckDB client. Beside it sits ``<working>.fdl.json``, which remembers the
-dataset it came from and the version it was cloned at, so a commit
-knows what it builds on. A commit waits in ``<working>.pending/`` until it is
-pushed.
+DuckDB client. Beside it sits the folder ``<working>.fdl/``, as ``.git/`` sits
+in a Git working tree: ``state.json`` remembers the dataset it came from and
+the version it was cloned at, so a commit knows what it builds on; ``data/``
+holds the new data files until they are pushed, for a dataset DuckDB cannot
+write to; and a commit waits in ``pending/`` until it is pushed.
 """
 
 from __future__ import annotations
@@ -35,12 +36,17 @@ Remote = typer.Argument(help="The dataset: s3://bucket/prefix/, https://host/pat
 Working = typer.Argument(help="The working metadata (.sqlite)")
 
 
-#: What `fdl clone` names the state it keeps beside the working metadata after.
-STATE_SUFFIX = ".fdl.json"
+#: What `fdl clone` names the folder it keeps beside the working metadata after.
+FOLDER_SUFFIX = ".fdl"
+
+
+def _folder(working: Path) -> Path:
+    """The folder fdl keeps beside the working metadata."""
+    return working.with_name(working.name + FOLDER_SUFFIX)
 
 
 def _state_path(working: Path) -> Path:
-    return working.with_name(working.name + STATE_SUFFIX)
+    return _folder(working) / "state.json"
 
 
 def _read_state(working: Path) -> dict:
@@ -51,7 +57,9 @@ def _read_state(working: Path) -> dict:
 
 
 def _write_state(working: Path, state: dict) -> None:
-    _state_path(working).write_text(json.dumps(state, indent=2) + "\n")
+    path = _state_path(working)
+    path.parent.mkdir(exist_ok=True)
+    path.write_text(json.dumps(state, indent=2) + "\n")
 
 
 def _fail(exc: Exception) -> typer.Exit:
@@ -124,7 +132,7 @@ def clone(
     local = (
         None
         if storage or repo.writes_data_files(store)
-        else working.with_name(working.name + ".data")
+        else _folder(working) / "data"
     )
     try:
         # Read before the clone: a data_dir moved meanwhile then fails the commit.
@@ -160,7 +168,7 @@ def config_command(
     key: str = typer.Argument(help="author.name or author.email"),
     value: str | None = typer.Argument(None, help="The value to set. Without it, print the one set"),
 ) -> None:
-    """Set or print who makes the versions you commit, kept in ~/.config/fdl/config.json.
+    """Set or print who makes the versions you commit, kept in ~/.config/fdl/config.toml.
 
     FDL_AUTHOR_NAME and FDL_AUTHOR_EMAIL override them, and --author overrides both.
     """
@@ -218,7 +226,7 @@ def commit(
 
 def _pending_dir(working: Path) -> Path:
     """Where the committed version not pushed yet waits, as ``<ID>/``."""
-    return working.with_name(working.name + ".pending")
+    return _folder(working) / "pending"
 
 
 def _commit(
@@ -241,7 +249,7 @@ def _commit(
     metadata (a revert's or a merge's); they are kept there after.
     """
     _check_data_dir(store, working, state)
-    out = Path(tempfile.mkdtemp(prefix=".fdl-commit-", dir=working.resolve().parent))
+    out = Path(tempfile.mkdtemp(prefix="commit-", dir=_folder(working).resolve()))
     try:
         parent = repo.read_version(store, state["base"]) if state["base"] else None
         facts = facts if facts is not None else _declared(store, state, working)
@@ -295,7 +303,6 @@ def _commit(
             "pending": {
                 "id": version.id,
                 "assets": sorted(held),
-                "objects": {},
                 "assets_dir": str(assets_dir.resolve()) if assets_dir else None,
             },
         },
@@ -387,10 +394,7 @@ def push(
             ref=state["ref"],
             local_data=Path(state["data"]) if state.get("data") else None,
             assets=pending["assets"],
-            local_objects=objects.ByContent(
-                {sha: Path(path) for sha, path in pending["objects"].items()},
-                Path(assets_dir) if assets_dir else None,
-            ),
+            local_objects=objects.ByContent(Path(assets_dir) if assets_dir else None),
         )
     except (*ERRORS, OSError) as exc:
         raise _fail(exc) from exc

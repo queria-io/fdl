@@ -916,7 +916,6 @@ def expire(
             layout.version_metadata(version),
             # The index names files the grace period may delete.
             layout.version_dir(version_id) + layout.TABLES,
-            *store.list(layout.version_dir(version_id) + layout.METADATA_DIR),
             *store.list(layout.version_dir(version_id) + layout.PROFILES_DIR),
         ]
     )

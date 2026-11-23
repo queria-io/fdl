@@ -231,7 +231,7 @@ def test_push_profiles_the_tables_a_stopped_push_left_without(dataset) -> None:
     write(working, store, "CREATE TABLE lake.main.towns AS SELECT 1 AS id")
     write(working, store, "CREATE TABLE lake.main.roads AS SELECT 1 AS id")
     run("commit", working, "-m", "m", "--author", "t")
-    pending = next((working.parent / f"{working.name}.pending").iterdir())
+    pending = next((working.parent / f"{working.name}.fdl" / "pending").iterdir())
     partial = pending / "profiles" / "main" / "towns.json"
     partial.parent.mkdir(parents=True)
     partial.write_bytes(b'{"rows": 1, "columns": []}')

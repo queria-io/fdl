@@ -5,6 +5,7 @@ from __future__ import annotations
 import json
 import os
 import shutil
+import sys
 import time
 from pathlib import Path
 
@@ -15,6 +16,11 @@ from typer.testing import CliRunner
 from fdl import catalog, layout, repo
 from fdl.cli import app
 from fdl.stores import LocalStore
+
+if sys.version_info >= (3, 11):
+    import tomllib
+else:  # pragma: no cover
+    import tomli as tomllib
 
 runner = CliRunner()
 
@@ -484,14 +490,14 @@ def test_a_commit_waits_until_it_is_pushed(tmp_path: Path) -> None:
     # Committing again replaces the version not pushed yet.
     write(working, store, "INSERT INTO lake.main.towns VALUES (2)")
     run("commit", working, "-m", "second try", "--author", "t")
-    assert len(list((tmp_path / "lake.sqlite.pending").iterdir())) == 1
+    assert len(list((tmp_path / "lake.sqlite.fdl" / "pending").iterdir())) == 1
     # Status counts from the commit, and names it.
     status = run("status", working)
     assert "Committed, not pushed" in status and "Nothing to commit" in status
     assert json.loads(run("status", working, "--json"))["pending"]
     assert "version 1" in run("push", working)
     assert [v.message for v in repo.log(store)] == ["second try"]
-    assert not (tmp_path / "lake.sqlite.pending").exists()
+    assert not (tmp_path / "lake.sqlite.fdl" / "pending").exists()
     assert "Committed, not pushed" not in run("status", working)
 
     # A commit that finds nothing since the push drops the version not pushed yet.
@@ -499,7 +505,7 @@ def test_a_commit_waits_until_it_is_pushed(tmp_path: Path) -> None:
     run("commit", working, "-m", "third try", "--author", "t")
     write(working, store, "DELETE FROM lake.main.towns WHERE id = 3")
     assert "Nothing to commit" in run("commit", working, "-m", "fourth try", "--author", "t")
-    assert not (tmp_path / "lake.sqlite.pending").exists()
+    assert not (tmp_path / "lake.sqlite.fdl" / "pending").exists()
     assert "Nothing to push" in run("push", working)
 
 
@@ -633,7 +639,7 @@ def test_clone_writes_only_the_working_metadata(tmp_path: Path, elsewhere: Path)
     assert head.tables.path == layout.TABLES
 
     run("clone", remote, "again.sqlite")
-    assert sorted(p.name for p in elsewhere.iterdir()) == ["again.sqlite", "again.sqlite.fdl.json"]
+    assert sorted(p.name for p in elsewhere.iterdir()) == ["again.sqlite", "again.sqlite.fdl"]
 
 
 def test_the_author_comes_from_the_settings_when_not_given(tmp_path: Path, monkeypatch) -> None:
@@ -669,9 +675,23 @@ def test_the_author_comes_from_the_settings_when_not_given(tmp_path: Path, monke
 def test_a_malformed_settings_file_is_refused(tmp_path: Path, monkeypatch) -> None:
     monkeypatch.setenv("XDG_CONFIG_HOME", str(tmp_path))
     (tmp_path / "fdl").mkdir()
-    (tmp_path / "fdl" / "config.json").write_text("{", encoding="utf-8")
+    (tmp_path / "fdl" / "config.toml").write_text("[author", encoding="utf-8")
     result = runner.invoke(app, ["config", "author.name"])
-    assert result.exit_code == 1 and "is not JSON" in result.output
+    assert result.exit_code == 1 and "is not TOML" in result.output
+
+
+def test_config_keeps_the_credential_helpers_in_the_same_file(tmp_path: Path, monkeypatch) -> None:
+    monkeypatch.setenv("XDG_CONFIG_HOME", str(tmp_path))
+    settings = tmp_path / "fdl" / "config.toml"
+    settings.parent.mkdir()
+    settings.write_text('[credential."https://data.example.org/"]\nhelper = "queria credential"\n', encoding="utf-8")
+    run("config", "author.name", 'Alice "A"')
+    run("config", "author.email", "alice@example.com")
+    run("config", "author.name", "Alice")
+    assert tomllib.loads(settings.read_text(encoding="utf-8")) == {
+        "author": {"name": "Alice", "email": "alice@example.com"},
+        "credential": {"https://data.example.org/": {"helper": "queria credential"}},
+    }
 
 
 def test_a_version_keeps_only_its_last_snapshot(tmp_path: Path) -> None:

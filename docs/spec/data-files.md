@@ -57,7 +57,7 @@ A process may move an object to a place readers never read from, such as a separ
 A version is taken out of retention in this order:
 
 1. Put `versions/<ID>/expired.json`
-2. Delete the version's metadata files, `metadata.db` and `metadata/`, and its `tables.json`
+2. Delete the version's `metadata.db` and `tables.json`
 3. After the grace period, delete the shared objects that meet the conditions above
 
 ```json expired.json

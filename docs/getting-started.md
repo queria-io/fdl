@@ -50,7 +50,7 @@ ATTACH 'ducklake:lake.sqlite' AS lake (
 );
 ```
 
-Beside the working metadata, `lake.sqlite.fdl.json` remembers the dataset, the branch and the version the clone was made from.
+Beside the working metadata, the folder `lake.sqlite.fdl/` remembers the dataset, the branch and the version the clone was made from.
 
 ## Write
 

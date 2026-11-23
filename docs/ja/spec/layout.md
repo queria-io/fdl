@@ -18,11 +18,9 @@ description: データセットのファイル、そのパス、fdl.json の中�
     requests/<number>              ホストが使う（承認待ちなど、任意）
   versions/<version ID>/
     version.json                   バージョンの記録。最後に書く
-    version.json.sig               記録の署名（任意）
     metadata.db                    固めたメタデータ
     tables.json                    テーブルとビュー、そのデータファイルと列、FDL の宣言
     profiles/<schema>/<table>.json データから測ったテーブルごとの要約（任意）
-    metadata/<format>.db           別の DuckLake 形式のメタデータ（任意）
     expired.json                   保持期間を過ぎた印（過ぎたときだけ）
     <others>                       ホストが足すファイル
   <data_dir><schema>/<table>/ducklake-<uuid>.parquet   データファイル（共有、変えない）
@@ -43,12 +41,7 @@ description: データセットのファイル、そのパス、fdl.json の中�
 {
   "fdl": "0.1",
   "id": "5f0c8a52-6d3e-4f8e-9b1a-2c7d4e9f0a13",
-  "data_dir": "tables/",
-  "signers": ["alice@example.org ssh-ed25519 AAAAC3…"],
-  "metadata_formats": [
-    { "ducklake": "1.1" },
-    { "ducklake": "1.0", "until": "2027-03-31" }
-  ]
+  "data_dir": "tables/"
 }
 ```
 
@@ -57,10 +50,10 @@ description: データセットのファイル、そのパス、fdl.json の中�
 | `fdl` | must | この仕様のバージョン。読み手は知らないメジャーバージョンを読んではいけない |
 | `id` | should | データセットを作ったときに書き、変えない UUID |
 | `data_dir` | may | データファイルの場所。ルートからの相対で `/` で終わる。既定は `tables/` |
-| `metadata_formats` | may | 新しいバージョンで出す DuckLake 形式と、いつまで出すか |
-| `signers` | may | バージョンに署名する公開鍵。SSH の `allowed_signers` ファイルの行の形 |
 
 `fdl.json` は `If-None-Match: *` で作るので、データセットを 2 回作っても最初の設定が残ります。
+
+バージョンを残す期間はここに書きません。ホストが決めます。
 
 ### id
 
@@ -73,7 +66,7 @@ description: データセットのファイル、そのパス、fdl.json の中�
 `data_dir` はルートの下のフォルダで、1 つ以上の段を、それぞれ `/` で終えて書きます。
 
 - 各段は、小文字の ASCII 英字、数字、`_`、`-`、`.` からなり、`.` だけの段は使えません
-- 最初の段は `versions`、`refs`、`assets`、`objects` のどれでもありません
+- 最初の段は `versions`、`refs`、`assets` のどれでもありません
 
 読み手と書き手は、書かれた値をそのまま使います。`data_dir` がこの規則に合わないか、文字列でないデータセットは断ります。足りない `/` を補うといった補正はしません。実装ごとに補正の仕方が違うと、読み書きするファイルが食い違うためです。ホストは、自分のファイルのためにほかのトップレベルのフォルダを予約し、その下を指す `data_dir` を断ってもかまいません。[`cases/data-dir.json`](https://github.com/queria-io/fdl/blob/main/cases/data-dir.json) に、値とそれぞれの読み方を並べています。`fdl.json` を読む実装は、すべてのケースを実行します。
 
@@ -88,13 +81,3 @@ description: データセットのファイル、そのパス、fdl.json の中�
 3 の前は、読み手は前の場所を読み、そこですべてのファイルを見つけます。3 の後は新しい場所を読み、そこにはすべてのファイルが既にあります。ホストは、変更の前に読んだ `data_dir` を使い続けている読み手がいなくなるまで、前の場所を残します。少なくとも猶予期間のあいだ残し、それより長く使う読み手がいればその分も残します。その後、ホストが前の場所を消します（[データファイル](/ja/spec/data-files#data_dir-の外のファイル)）。
 
 3 の前にクローンした作業メタデータは、新しいデータファイルを前の場所に書き、どのバージョンもそれを読みません。書き手はクローンしたときの `data_dir` を覚えておき、`fdl.json` が別の `data_dir` を示していれば commit も push も断ります。ビルドはクローンし直します。ホストがそのような push を断ってもかまいません。
-
-### signers
-
-データセットの書き手が署名に使う鍵です（[読む](/ja/spec/reading#署名)を参照）。読み手は、ここに書いてあるという理由で鍵を信用してはいけません。ミラーは `fdl.json` も書き換えられるからです。この一覧は、どの鍵が来るはずかを示すだけで、信用する鍵は、読み手が元のホストから別の手段で受け取ります。
-
-バージョンを残す期間はここに書きません。ホストが決めます。
-
-### metadata_formats
-
-各項目に DuckLake の形式と、任意で新しいバージョンに書く最後の日（`until`、ISO 8601 の日付）を書きます。この項目が無ければ、バージョンが持つのは `metadata.db` だけです。[バージョン](/ja/spec/versions#ほかの形式のメタデータ)を参照してください。

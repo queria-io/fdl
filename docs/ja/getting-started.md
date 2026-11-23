@@ -50,7 +50,7 @@ ATTACH 'ducklake:lake.sqlite' AS lake (
 );
 ```
 
-作業メタデータの隣の `lake.sqlite.fdl.json` に、データセット、ブランチ、クローン元のバージョンが記録されます。
+作業メタデータの隣のフォルダ `lake.sqlite.fdl/` に、データセット、ブランチ、クローン元のバージョンが記録されます。
 
 ## 書く
 
