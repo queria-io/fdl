@@ -1,6 +1,19 @@
 # CHANGELOG
 
 
+## v0.38.0 (2026-11-23)
+
+### Features
+
+- Read a version's metadata and tables.json at their fixed names
+  ([#96](https://github.com/queria-io/fdl/pull/96),
+  [`cd23c84`](https://github.com/queria-io/fdl/commit/cd23c8413e3c7fcdee567e20ca655a1610436b6a))
+
+The files of a version are always metadata.db and tables.json in its folder. fdl opens those names
+  and no longer reads metadata.path or tables.path from version.json. It still writes them, for
+  readers that look the files up by them.
+
+
 ## v0.37.0 (2026-11-23)
 
 ### Bug Fixes
