@@ -40,7 +40,7 @@ for version in repo.log(store):
 ## fdl.repo
 
 ```python
-repo.init(store, *, data_dir="data/") -> Config
+repo.init(store, *, data_dir="tables/") -> Config
 ```
 
 Start a dataset. An existing one is left as it is and its settings returned.
@@ -52,13 +52,13 @@ repo.clone(store, working, *, ref="HEAD", local_data=None, version=None) -> Vers
 Make a working metadata file at `working` from the version `ref` holds, or from `version` when given. Returns that version, or `None` before the first one. A store over HTTP needs `local_data`, the folder new data files go to. Refuses a metadata file whose sha256 is not the one `version.json` records, or that names a data file outside the data folder.
 
 ```python
-repo.commit(working, out_dir, *, parent, data_path, author, message, annotations=None, allow_empty=True, setup=(), facts=None, inherited=None, merged=None) -> Version
+repo.commit(working, out_dir, *, parent, data_path, author, message, allow_empty=True, working_data=None, setup=(), facts=None, inherited=None, merged=None) -> Version
 ```
 
 Freeze the working metadata into `out_dir/<ID>/` and write its `tables.json` with `facts`, the declarations (`declared.Facts`), after checking them against its tables and views; raises `declared.DeclarationError` with the problems found. `data_path` is `repo.data_url(store)`. `inherited` are the parent's declarations (`repo.declarations(store, parent)`), for telling whether anything changed and for the diff. Nothing is uploaded.
 
 ```python
-repo.record(frozen, out_dir, *, parent, author, message, annotations=None, described=None, inherited=None, merged=None) -> Version
+repo.record(frozen, out_dir, *, parent, author, message, described=None, inherited=None, merged=None) -> Version
 ```
 
 Make a version around a metadata file that is already frozen, for a writer that freezes it itself.

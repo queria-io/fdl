@@ -28,7 +28,7 @@ description: 書き込みをする場所です。SQLite の DuckLake メタデ�
 
 ```sql
 ATTACH 'ducklake:work/lake.sqlite' AS lake (
-  DATA_PATH 's3://my-bucket/towns/data/', OVERRIDE_DATA_PATH true,
+  DATA_PATH 's3://my-bucket/towns/tables/', OVERRIDE_DATA_PATH true,
   META_TYPE 'sqlite', DATA_INLINING_ROW_LIMIT 0,
   META_JOURNAL_MODE 'WAL', BUSY_TIMEOUT 5000
 );

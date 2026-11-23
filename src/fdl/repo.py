@@ -133,7 +133,6 @@ def commit(
     data_path: str,
     author: dict,
     message: str,
-    annotations: dict | None = None,
     allow_empty: bool = True,
     working_data: str | None = None,
     setup: Iterable[str] = (),
@@ -198,7 +197,6 @@ def commit(
             parent=parent,
             author=author,
             message=message,
-            annotations=annotations,
             described=described,
             inherited=inherited,
             merged=merged,
@@ -320,7 +318,6 @@ def record(
     parent: Version | None,
     author: dict,
     message: str,
-    annotations: dict | None = None,
     described: declared_.Described | None = None,
     inherited: declared_.Facts | None = None,
     merged: Version | None = None,
@@ -388,7 +385,6 @@ def record(
             ducklake=DuckLake(format=recorded, snapshot_id=last, snapshots=(first, last)),
             tables=indexed,
             diff=difference,
-            annotations=dict(annotations or {}),
         )
         (target / layout.VERSION_RECORD).write_bytes(version.to_json())
     except BaseException:
@@ -877,7 +873,7 @@ def expire(
     message: str | None = None,
     deleted: dict[str, list[str]] | None = None,
 ) -> None:
-    """Take a version out of retention: the mark first, then its catalogs.
+    """Take a version out of retention: the mark first, then its metadata.
 
     `version.json` stays, so the history still says the version was there and
     what it was. Data files are not touched: other versions share them, and

@@ -85,7 +85,7 @@ HTTP では、すべてのキーがデータセットの URL の下のパスに�
 
 ```sql
 ATTACH 'ducklake:https://example.org/lake/versions/019a3c4e-…/metadata.db' AS lake (
-  DATA_PATH 'https://example.org/lake/data/', OVERRIDE_DATA_PATH true, READ_ONLY
+  DATA_PATH 'https://example.org/lake/tables/', OVERRIDE_DATA_PATH true, READ_ONLY
 );
 ```
 

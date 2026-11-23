@@ -40,7 +40,7 @@ for version in repo.log(store):
 ## fdl.repo
 
 ```python
-repo.init(store, *, data_dir="data/") -> Config
+repo.init(store, *, data_dir="tables/") -> Config
 ```
 
 データセットを作ります。既にあればそのままにして、設定を返します。
@@ -52,13 +52,13 @@ repo.clone(store, working, *, ref="HEAD", local_data=None, version=None) -> Vers
 `ref` が指すバージョン、または `version` を渡したときはそのバージョンから、`working` に作業メタデータを作ります。そのバージョンを返し、最初のバージョンの前は `None` を返します。HTTP の置き場では、新しいデータファイルを書くフォルダ `local_data` が要ります。メタデータの sha256 が `version.json` の記録と違うときと、メタデータがデータフォルダの外のデータファイルを指しているときは断ります。
 
 ```python
-repo.commit(working, out_dir, *, parent, data_path, author, message, annotations=None, allow_empty=True, setup=(), facts=None, inherited=None, merged=None) -> Version
+repo.commit(working, out_dir, *, parent, data_path, author, message, allow_empty=True, working_data=None, setup=(), facts=None, inherited=None, merged=None) -> Version
 ```
 
 作業メタデータを `out_dir/<ID>/` に固め、宣言 `facts`（`declared.Facts`）を持つ `tables.json` を書きます。その前に宣言をテーブル・ビューと照らし合わせて確認し、問題があれば `declared.DeclarationError` を投げます。`data_path` は `repo.data_url(store)` です。`inherited` は親の宣言（`repo.declarations(store, parent)`）で、変更の有無の判定と diff に使います。アップロードはしません。
 
 ```python
-repo.record(frozen, out_dir, *, parent, author, message, annotations=None, described=None, inherited=None, merged=None) -> Version
+repo.record(frozen, out_dir, *, parent, author, message, described=None, inherited=None, merged=None) -> Version
 ```
 
 固め終えたメタデータからバージョンを作ります。自分でメタデータを固める書き手向けです。

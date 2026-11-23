@@ -50,8 +50,7 @@ A version is the files under `versions/<version ID>/`. They must not change once
       { "table": "main.population", "kind": "add_column", "column": "note", "breaking": false }
     ],
     "data": ["main.population"]
-  },
-  "annotations": {}
+  }
 }
 ```
 
@@ -63,12 +62,11 @@ A version is the files under `versions/<version ID>/`. They must not change once
 | `parents` | must | Parent version IDs. Empty for the first version, one after, two for a merge |
 | `created_at` | must | UTC, ISO 8601 |
 | `author` | must | Who made it. `name` is required; `email` and others are optional |
-| `message` | must | What changed |
+| `message` | must | What changed. A tool that records how the version was made, such as the commit of the code that built it, adds trailers at the end, as Git does (`Built-From: 1e6e88f…`) |
 | `metadata` | must | The metadata's file name (`metadata.db`), size, sha256, and storage format (`storage`) |
 | `ducklake` | must | The DuckLake format, the snapshot frozen, and the range of snapshots the working metadata made for this version after its parent (first and last). Only the snapshot frozen is in the metadata |
 | `tables` | must | The `tables.json` beside the metadata: its file name, size and sha256 ([tables.json](#tablesjson)). The record of a version past retention may have none |
 | `diff` | may | What changed since the first parent, or in the first version ([diff](#diff)) |
-| `annotations` | may | What the format does not interpret, keyed by the name of whoever reads it (a host, a tool), such as the source files a version was made from |
 
 A reader must ignore fields it does not know.
 

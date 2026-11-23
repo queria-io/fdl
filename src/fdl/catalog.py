@@ -515,7 +515,7 @@ def data_files(catalog_path: Path) -> list[str]:
 
 def storage_version(catalog_path: Path) -> str:
     """The file's storage format as a version records it, such as
-    ``duckdb-v1.5.0`` (fdl.md's `catalog.storage`).
+    ``duckdb-v1.5.0`` (version.json's `metadata.storage`).
 
     A reader on an older DuckDB cannot open a newer file at all, whatever the
     DuckLake format inside it, so a version records both. DuckDB reports the

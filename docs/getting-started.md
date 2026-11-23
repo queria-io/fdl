@@ -23,7 +23,7 @@ fdl init ./towns/
 
 ```
 towns/
-  fdl.json      {"fdl": "0.1", "id": "5f0c…", "data_dir": "data/"}
+  fdl.json      {"fdl": "0.1", "id": "5f0c…", "data_dir": "tables/"}
   HEAD          ref: refs/heads/main
 ```
 
@@ -44,7 +44,7 @@ Before the first version, `clone` makes an empty metadata. Later it copies the m
 
 ```sql
 ATTACH 'ducklake:lake.sqlite' AS lake (
-  DATA_PATH '/abs/path/towns/data/', OVERRIDE_DATA_PATH true,
+  DATA_PATH '/abs/path/towns/tables/', OVERRIDE_DATA_PATH true,
   META_TYPE 'sqlite', DATA_INLINING_ROW_LIMIT 0,
   META_JOURNAL_MODE 'WAL', BUSY_TIMEOUT 5000
 );
@@ -54,7 +54,7 @@ Beside the working metadata, the folder `lake.sqlite.fdl/` remembers the dataset
 
 ## Write
 
-Use any DuckDB client. The Parquet files go straight into the dataset's `data/` folder.
+Use any DuckDB client. The Parquet files go straight into the dataset's `tables/` folder.
 
 ```sql
 CREATE TABLE lake.main.towns AS
@@ -114,7 +114,7 @@ prints the metadata of the version `main` holds. Attach it read-only, and tell D
 
 ```sql
 ATTACH 'ducklake:../towns/versions/019a3c4e-…/metadata.db' AS towns (
-  DATA_PATH '../towns/data/', OVERRIDE_DATA_PATH true, READ_ONLY
+  DATA_PATH '../towns/tables/', OVERRIDE_DATA_PATH true, READ_ONLY
 );
 SELECT count(*) FROM towns.main.towns;
 ```
