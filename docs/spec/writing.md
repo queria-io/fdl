@@ -29,7 +29,7 @@ When freezing, a writer must:
 - keep only the last snapshot: leave out earlier snapshots, the rows that ended before it and the files scheduled for deletion (see [The frozen metadata](/spec/versions#the-frozen-metadata))
 - set the frozen metadata's `data_path` to the absolute URL of `<root><data_dir>`
 - refuse if any data file is recorded with an absolute path, or outside `data_dir`
-- give each live table that has table statistics but no column statistics a column statistic for each column of its live data files, with the null and NaN flags of those files and no minimum or maximum
+- give each live table that has table statistics but no column statistics a column statistic for each column of its live data files, with the null and NaN flags of those files and no minimum or maximum; a table with no live data file gets one for each of its leaf columns, with no nulls
 - refuse frozen metadata that DuckLake cannot attach and list the tables of, or that still has a table with table statistics but no column statistics
 
 ## When nothing changed

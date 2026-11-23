@@ -589,6 +589,26 @@ def test_a_table_without_column_statistics_gets_them_in_the_version(tmp_path: Pa
     assert rows == [(1, False, None, None), (2, True, None, None)]
 
 
+def test_an_emptied_table_without_column_statistics_gets_them_in_the_version(tmp_path: Path, remote) -> None:
+    build(tmp_path / "work.sqlite", remote, "CREATE TABLE lake.main.towns AS SELECT 1 AS id, {'a': 1, 'b': 'x'} AS s")
+    build(tmp_path / "work.sqlite", remote, "DELETE FROM lake.main.towns")
+    frozen = tmp_path / "frozen.duckdb"
+    catalog.convert(tmp_path / "work.sqlite", frozen, data_path=data_path(remote))
+    # No live data file is left to take the flags from.
+    con = duckdb.connect(str(frozen))
+    con.execute("DELETE FROM ducklake_table_column_stats")
+    con.close()
+    version = repo.record(frozen, tmp_path / "local", parent=None, author=AUTHOR, message="m", described=declared.Described(
+        facts=declared.Facts(), views={}, names={"main.towns"}))
+    con = duckdb.connect(str(tmp_path / "local" / version.id / layout.METADATA), read_only=True)
+    rows = con.execute(
+        "SELECT column_id, contains_null, min_value, max_value FROM ducklake_table_column_stats ORDER BY column_id"
+    ).fetchall()
+    con.close()
+    # The leaf columns: id, s.a and s.b, not the struct s itself.
+    assert rows == [(1, False, None, None), (3, False, None, None), (4, False, None, None)]
+
+
 def test_a_table_whose_column_statistics_cannot_be_made_is_not_made_a_version(tmp_path: Path, remote) -> None:
     build(tmp_path / "work.sqlite", remote, "CREATE TABLE lake.main.towns AS SELECT 1 AS id")
     frozen = tmp_path / "frozen.duckdb"
