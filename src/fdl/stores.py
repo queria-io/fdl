@@ -249,6 +249,12 @@ class S3Store:
         return found
 
 
+def _retry_after(exc: urllib.error.HTTPError, default: float) -> float:
+    """The seconds a 429 asks to wait (`Retry-After` in seconds), else ``default``."""
+    value = (exc.headers or {}).get("Retry-After", "")
+    return float(value) if value.strip().isdigit() else default
+
+
 class HttpStore:
     """A dataset served over HTTP by a host that takes writes.
 
@@ -302,9 +308,20 @@ class HttpStore:
                 request.add_header("Authorization", f"Bearer {self.token}")
             return _open(request)
 
+        def send_when_not_busy():
+            # A 429 is a request the host did not carry out, so any request is
+            # safe to send again once the wait it names is over.
+            for attempt in range(self.STORAGE_ATTEMPTS):
+                try:
+                    return send()
+                except urllib.error.HTTPError as exc:
+                    if exc.code != 429 or attempt == self.STORAGE_ATTEMPTS - 1:
+                        raise
+                    time.sleep(_retry_after(exc, self.RETRY_DELAY * 2**attempt))
+
         try:
             try:
-                return send()
+                return send_when_not_busy()
             except urllib.error.HTTPError as exc:
                 if exc.code != 401 or not self._asks:
                     raise
@@ -312,7 +329,7 @@ class HttpStore:
                 if not fresh or fresh == self.token:
                     raise
                 self.token = fresh
-                return send()
+                return send_when_not_busy()
         except urllib.error.HTTPError as exc:
             detail = exc.read().decode(errors="replace").strip()
             raise StoreError(
