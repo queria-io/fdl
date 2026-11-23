@@ -28,6 +28,7 @@ description: バージョン ID、version.json の項目、tables.json、profile
   "author": { "name": "example" },
   "message": "Add the final 2025 figures",
   "metadata": {
+    "path": "metadata.db",
     "storage": "duckdb-v1.5.0",
     "bytes": 4194304,
     "sha256": "9f2c…"
@@ -38,6 +39,7 @@ description: バージョン ID、version.json の項目、tables.json、profile
     "snapshots": [301, 345]
   },
   "tables": {
+    "path": "tables.json",
     "bytes": 1536,
     "sha256": "7a0e…"
   },
@@ -61,14 +63,14 @@ description: バージョン ID、version.json の項目、tables.json、profile
 | `created_at` | must | UTC、ISO 8601 |
 | `author` | must | 作った人。`name` は必須、`email` などは任意 |
 | `message` | must | 何を変えたか。バージョンの作り方（ビルドしたコードのコミットなど）を記録するツールは、Git と同じく末尾にトレーラーを足す（`Built-From: 1e6e88f…`） |
-| `metadata` | must | `metadata.db` の大きさ、sha256、保存形式（`storage`） |
+| `metadata` | must | メタデータのファイル名（`metadata.db`）、大きさ、sha256、保存形式（`storage`） |
 | `ducklake` | must | DuckLake の形式、固めたスナップショット、このバージョンのために作業メタデータが親の後に作ったスナップショットの範囲（最初と最後）。メタデータに入るのは固めたスナップショットだけ |
-| `tables` | must | `tables.json` の大きさ、sha256（[tables.json](#tablesjson)）。保持期間を過ぎたバージョンの記録には無いことがある |
+| `tables` | must | メタデータの隣の `tables.json` のファイル名、大きさ、sha256（[tables.json](#tablesjson)）。保持期間を過ぎたバージョンの記録には無いことがある |
 | `diff` | may | 最初の親からの変更。最初のバージョンでは、そのバージョンの内容（[diff](#diff)） |
 
 読み手は、知らない項目を無視しなければなりません。
 
-バージョンのファイルは、バージョンのフォルダの中で決まった名前を持ちます。`metadata.db` と `tables.json` です。記録にはファイル名を書きません。
+バージョンのファイルは、バージョンのフォルダの中で決まった名前を持ちます。`metadata.db` と `tables.json` です。`metadata`・`tables` の `path` は常にその名前です。読み手は決まった名前のファイルを開き、`path` は読みません。
 
 バージョンの親は 1 つで、マージなら 2 つです。作ったブランチのバージョン、マージで取り込んだバージョンの順に並べます（[マージ](/ja/spec/writing#マージ)）。最初のバージョンには親がありません。読み手は、どんな長さのリストも受け付け、ブランチの履歴をたどるときは最初の要素を、あるバージョンが別のバージョンの子孫かを判定するときはすべての要素をたどらなければなりません。
 

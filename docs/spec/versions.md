@@ -28,6 +28,7 @@ A version is the files under `versions/<version ID>/`. They must not change once
   "author": { "name": "example" },
   "message": "Add the final 2025 figures",
   "metadata": {
+    "path": "metadata.db",
     "storage": "duckdb-v1.5.0",
     "bytes": 4194304,
     "sha256": "9f2c…"
@@ -38,6 +39,7 @@ A version is the files under `versions/<version ID>/`. They must not change once
     "snapshots": [301, 345]
   },
   "tables": {
+    "path": "tables.json",
     "bytes": 1536,
     "sha256": "7a0e…"
   },
@@ -61,14 +63,14 @@ A version is the files under `versions/<version ID>/`. They must not change once
 | `created_at` | must | UTC, ISO 8601 |
 | `author` | must | Who made it. `name` is required; `email` and others are optional |
 | `message` | must | What changed. A tool that records how the version was made, such as the commit of the code that built it, adds trailers at the end, as Git does (`Built-From: 1e6e88f…`) |
-| `metadata` | must | The size, sha256 and storage format (`storage`) of `metadata.db` |
+| `metadata` | must | The metadata's file name (`metadata.db`), size, sha256, and storage format (`storage`) |
 | `ducklake` | must | The DuckLake format, the snapshot frozen, and the range of snapshots the working metadata made for this version after its parent (first and last). Only the snapshot frozen is in the metadata |
-| `tables` | must | The size and sha256 of `tables.json` ([tables.json](#tablesjson)). The record of a version past retention may have none |
+| `tables` | must | The `tables.json` beside the metadata: its file name, size and sha256 ([tables.json](#tablesjson)). The record of a version past retention may have none |
 | `diff` | may | What changed since the first parent, or in the first version ([diff](#diff)) |
 
 A reader must ignore fields it does not know.
 
-The files of a version have fixed names in its folder: `metadata.db` and `tables.json`. The record does not name them.
+The files of a version have fixed names in its folder: `metadata.db` and `tables.json`. The `path` of `metadata` and `tables` is always that name. A reader opens the fixed names and does not read `path`.
 
 A version has one parent, or two for a merge: the version of the branch it was made on, then the version merged into it (see [Merging](/spec/writing#merging)). The first version has none. A reader must accept a list of any length, follow the first entry for the history of a branch, and follow every entry to find whether one version descends from another.
 

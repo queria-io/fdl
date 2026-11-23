@@ -93,6 +93,8 @@ class Version:
             "author": self.author,
             "message": self.message,
             "metadata": {
+                # Readers up to fdl-cli 0.35 look the file up by this name.
+                "path": layout.METADATA,
                 "storage": self.metadata.storage,
                 "bytes": self.metadata.bytes,
                 "sha256": self.metadata.sha256,
@@ -102,7 +104,7 @@ class Version:
                 "snapshot_id": self.ducklake.snapshot_id,
                 "snapshots": list(self.ducklake.snapshots),
             },
-            **({"tables": _entry(self.tables)} if self.tables else {}),
+            **({"tables": {"path": layout.TABLES, **_entry(self.tables)}} if self.tables else {}),
             **({"diff": self.diff} if self.diff is not None else {}),
         }
         return (json.dumps(record, ensure_ascii=False, indent=2) + "\n").encode()
