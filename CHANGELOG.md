@@ -1,6 +1,14 @@
 # CHANGELOG
 
 
+## v0.39.1 (2026-11-23)
+
+### Bug Fixes
+
+- Send a request to an HTTP host again after a 429 ([#99](https://github.com/queria-io/fdl/pull/99),
+  [`45ccc47`](https://github.com/queria-io/fdl/commit/45ccc4710071b1d42034d40fe7c60bbe0848a862))
+
+
 ## v0.39.0 (2026-11-23)
 
 ### Features
