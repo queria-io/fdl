@@ -9,7 +9,7 @@ import duckdb
 import pytest
 from typer.testing import CliRunner
 
-from fdl import catalog, merge, repo
+from fdl import catalog, layout, merge, repo
 from fdl.cli import app
 from fdl.declared import Facts
 from fdl.stores import LocalStore
@@ -353,7 +353,7 @@ def test_a_merge_base_is_the_newest_common_ancestor(tmp_path: Path) -> None:
             created_at=utc_now(),
             author={"name": "tester"},
             message="",
-            metadata=Metadata(path="metadata.db", storage="v1.5.0", bytes=0, sha256="0" * 64),
+            metadata=Metadata(storage="v1.5.0", bytes=0, sha256="0" * 64),
             ducklake=DuckLake(format="1.0", snapshot_id=1, snapshots=(1, 1)),
         )
         store.put(f"versions/{made.id}/version.json", made.to_json())
@@ -515,7 +515,7 @@ def test_a_row_dropped_on_one_side_and_changed_on_the_other_is_a_conflict(branch
 
 def tables_json(store: LocalStore) -> dict:
     version = repo.head(store)
-    return json.loads(store.get(f"versions/{version.id}/{version.tables.path}"))
+    return json.loads(store.get(f"versions/{version.id}/{layout.TABLES}"))
 
 
 def test_columns_each_side_added_or_dropped_are_merged(branches) -> None:

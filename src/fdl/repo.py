@@ -374,7 +374,6 @@ def record(
             author=dict(author),
             message=message,
             metadata=Metadata(
-                path=layout.METADATA,
                 storage=catalog.storage_version(copied),
                 bytes=copied.stat().st_size,
                 sha256=_sha256(copied),
@@ -404,7 +403,7 @@ def _write_tables_index(target: Path, frozen: Path, snapshot_id: int, described:
         **({"dependencies": facts.dependencies} if facts.dependencies else {}),
     }
     written.write_bytes((json.dumps(index, ensure_ascii=False, indent=2) + "\n").encode())
-    return File(path=layout.TABLES, bytes=written.stat().st_size, sha256=_sha256(written))
+    return File(bytes=written.stat().st_size, sha256=_sha256(written))
 
 
 def push(
@@ -448,7 +447,7 @@ def push(
         return
     _refuse_unless_fast_forward(store, current_ref, version)
 
-    frozen = Path(local) / version.metadata.path
+    frozen = Path(local) / layout.METADATA
     if local_data is not None:
         _upload_data_files(store, config, frozen, Path(local_data))
     missing = _missing_data_files(store, config, frozen)
@@ -482,7 +481,7 @@ def _check_tables_index(local: Path, version: Version, frozen: Path) -> None:
     does not list every data file and delete file its metadata names."""
     if version.tables is None:
         raise RepoError(f"{version.id}: version.json names no tables.json")
-    written = (local / version.tables.path).read_bytes()
+    written = (local / layout.TABLES).read_bytes()
     if (len(written), hashlib.sha256(written).hexdigest()) != (version.tables.bytes, version.tables.sha256):
         raise RepoError(f"{version.id}: tables.json is not the one version.json names")
     listed, named = _named_files(json.loads(written)), set(catalog.data_files(frozen))
@@ -572,7 +571,7 @@ def write_profiles(
     before_index: dict | None = None
     if parent is not None and parent.tables is not None:
         try:
-            before_index = json.loads(store.get(layout.version_dir(parent.id) + parent.tables.path))
+            before_index = json.loads(store.get(layout.version_dir(parent.id) + layout.TABLES))
         except Exception as exc:  # noqa: BLE001 - stores raise their own types
             if not is_missing(exc):
                 raise
@@ -772,10 +771,10 @@ def upload(store: Store, local: Path, version: Version) -> None:
     No checks and no ref: for a host that checks and moves its refs itself.
     """
     local = Path(local)
-    _put_once(store, layout.version_metadata(version), local / version.metadata.path)
+    _put_once(store, layout.version_metadata(version), local / layout.METADATA)
     # Before the record, which is what makes a version there at all.
     if version.tables is not None:
-        _put_once(store, layout.version_dir(version.id) + version.tables.path, local / version.tables.path)
+        _put_once(store, layout.version_dir(version.id) + layout.TABLES, local / layout.TABLES)
     profiled = local / layout.PROFILES_DIR
     if profiled.is_dir():
         for written in sorted(profiled.rglob("*.json")):

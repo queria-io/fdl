@@ -10,7 +10,7 @@ A reader that does not know which ref to ask for may read `refs.json` to find th
 1. Read `HEAD`, or the ref asked for. If the content starts with `ref: `, read the ref it names
 2. Read `versions/<ID>/version.json` for the ID found. Check that its `id` matches and that the reader knows its `fdl` major version
 3. If `versions/<ID>/expired.json` exists, stop: the version is past retention or withdrawn
-4. Open the file `metadata.path` names in `versions/<ID>/` (`metadata.db`), read-only
+4. Open `versions/<ID>/metadata.db`, read-only
 
 ```sql
 ATTACH 'ducklake:https://example.org/lake/versions/019a3c4e-…/metadata.db' AS lake (

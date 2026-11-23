@@ -77,19 +77,6 @@ def check_version_id(value: object) -> str:
     return value
 
 
-def check_file_name(value: object) -> str:
-    """Return ``value`` if it is a plain file name in a version's folder, or refuse."""
-    if (
-        not isinstance(value, str)
-        or not value
-        or value in (".", "..")
-        or "/" in value
-        or "\\" in value
-    ):
-        raise LayoutError(f"not a file name in a version's folder: {value!r}")
-    return value
-
-
 #: A segment of `data_dir`: lower-case ASCII letters, digits, `_`, `-` and `.`.
 _DATA_DIR_SEGMENT = re.compile(r"[a-z0-9_.-]+")
 #: Top-level folders of the format, which `data_dir` must not be under.
@@ -127,8 +114,8 @@ def version_record(version_id: str) -> str:
 
 
 def version_metadata(version: Version) -> str:
-    """The version's metadata, at the name its record gives."""
-    return version_dir(version.id) + version.metadata.path
+    """The version's metadata (`metadata.db`)."""
+    return version_dir(version.id) + METADATA
 
 
 def version_expired(version_id: str) -> str:

@@ -10,7 +10,7 @@ description: 読み手が ref をたどり、バージョンを確かめ、メ�
 1. `HEAD` か、指定された ref を読む。中身が `ref: ` で始まっていれば、その先の ref を読む
 2. 見つけた ID の `versions/<ID>/version.json` を読む。`id` が合っているか、`fdl` のメジャーバージョンを知っているかを確かめる
 3. `versions/<ID>/expired.json` があれば止まる。保持期間を過ぎたか、取り下げられている
-4. `versions/<ID>/` の `metadata.path` のファイル（`metadata.db`）を読み取り専用で開く
+4. `versions/<ID>/metadata.db` を読み取り専用で開く
 
 ```sql
 ATTACH 'ducklake:https://example.org/lake/versions/019a3c4e-…/metadata.db' AS lake (
