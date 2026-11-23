@@ -1,6 +1,21 @@
 # CHANGELOG
 
 
+## v0.37.0 (2026-11-23)
+
+### Bug Fixes
+
+- Give column statistics to emptied tables and report fill errors
+  ([#94](https://github.com/queria-io/fdl/pull/94),
+  [`ae2b574`](https://github.com/queria-io/fdl/commit/ae2b574b47bd2e377a137e8ffda5ed5eef65dbd2))
+
+### Features
+
+- Drop id from fdl.json, and match the spec to what hosts check
+  ([#95](https://github.com/queria-io/fdl/pull/95),
+  [`ea386e1`](https://github.com/queria-io/fdl/commit/ea386e1e603b32f4f519f0f8df67f5e542b634b9))
+
+
 ## v0.36.0 (2026-11-23)
 
 ### Bug Fixes
