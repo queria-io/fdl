@@ -749,7 +749,7 @@ def test_a_record_with_a_parent_that_is_not_a_version_id_is_refused(tmp_path: Pa
 def test_the_files_of_a_version_have_fixed_names_whatever_path_a_record_gives(tmp_path: Path, remote) -> None:
     version_id = _pushed(tmp_path, remote)
     record = json.loads(remote.get(layout.version_record(version_id)))
-    assert (record["metadata"]["path"], record["tables"]["path"]) == (layout.METADATA, layout.TABLES)
+    assert "path" not in record["metadata"] and "path" not in record["tables"]
     other = {
         **record,
         "metadata": {**record["metadata"], "path": "../ducklake.duckdb"},

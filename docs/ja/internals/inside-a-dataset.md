@@ -88,9 +88,9 @@ tables/main/towns/ducklake-019a3b….parquet          2 つめだけが参照
   "created_at": "2026-10-15T09:00:00Z",
   "author": { "name": "bob" },
   "message": "Add a note column",
-  "metadata": { "path": "metadata.db", "storage": "duckdb-v1.5.0", "bytes": 4194304, "sha256": "9f2c…" },
+  "metadata": { "storage": "duckdb-v1.5.0", "bytes": 4194304, "sha256": "9f2c…" },
   "ducklake": { "format": "1.0", "snapshot_id": 12, "snapshots": [8, 12] },
-  "tables": { "path": "tables.json", "bytes": 2048, "sha256": "4c1d…" }
+  "tables": { "bytes": 2048, "sha256": "4c1d…" }
 }
 ```
 
