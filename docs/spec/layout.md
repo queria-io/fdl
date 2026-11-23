@@ -40,7 +40,6 @@ A dataset's root must not be under another dataset's root. Deleting the outer da
 ```json
 {
   "fdl": "0.1",
-  "id": "5f0c8a52-6d3e-4f8e-9b1a-2c7d4e9f0a13",
   "data_dir": "tables/"
 }
 ```
@@ -48,16 +47,11 @@ A dataset's root must not be under another dataset's root. Deleting the outer da
 | Field | Required | Meaning |
 | --- | --- | --- |
 | `fdl` | must | The version of this specification. A reader must not read a major version it does not know |
-| `id` | should | A UUID written when the dataset is started and never changed |
 | `data_dir` | may | Where data files are, relative to the root, ending in `/`. Default `tables/` |
 
 `fdl.json` is created with `If-None-Match: *`, so starting a dataset twice leaves the first one's settings in place.
 
 How long versions are kept is not declared here. It is the host's decision.
-
-### id
-
-The `id` lets a copy of the dataset tell that it holds the same one. Mirrors keep it as it is. A host may write its own ID here when it starts the dataset. A dataset without an `id` is still read.
 
 ### data_dir
 

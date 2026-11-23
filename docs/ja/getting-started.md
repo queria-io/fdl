@@ -23,7 +23,7 @@ fdl init ./towns/
 
 ```
 towns/
-  fdl.json      {"fdl": "0.1", "id": "5f0c…", "data_dir": "tables/"}
+  fdl.json      {"fdl": "0.1", "data_dir": "tables/"}
   HEAD          ref: refs/heads/main
 ```
 

@@ -29,7 +29,7 @@ helper から得たトークンにホストが 401 を返すと、fdl は helper
 fdl init <remote> [--data-dir tables/]
 ```
 
-新しい `id` を入れた `fdl.json` と、`HEAD` を書きます。既にあるデータセットに流すと、何も変えずに設定を表示します。
+`fdl.json` と `HEAD` を書きます。既にあるデータセットに流すと、何も変えずに設定を表示します。
 
 ## fdl clone
 

@@ -259,7 +259,7 @@ def _commit(
     out = Path(tempfile.mkdtemp(prefix="commit-", dir=_folder(working).resolve()))
     try:
         parent = repo.read_version(store, state["base"]) if state["base"] else None
-        facts = facts if facts is not None else _declared(store, state, working)
+        facts = facts if facts is not None else _declared(state)
         inherited = repo.declarations(store, parent) if parent else None
         written = _written(store, state)
         reading, setup = _reading(store, state)
@@ -317,14 +317,9 @@ def _commit(
     return version
 
 
-def _declared(store, state: dict, working: Path) -> declaring.Facts:
-    """The declarations kept beside the working metadata.
-
-    A working metadata cloned before they were kept there declares what its base declares.
-    """
-    if "declared" in state:
-        return declaring.Facts.from_json(state["declared"])
-    return repo.declarations(store, repo.read_version(store, state["base"])) if state.get("base") else declaring.Facts()
+def _declared(state: dict) -> declaring.Facts:
+    """The declarations kept beside the working metadata."""
+    return declaring.Facts.from_json(state["declared"])
 
 
 def _check_data_dir(store, working: Path, state: dict) -> None:
@@ -505,7 +500,7 @@ def merge(
             raise repo.RepoError(f"{state['ref']} holds no version yet, so there is nothing to merge into")
         if catalog.last_snapshot(working) != ours.ducklake.snapshot_id:
             raise repo.RepoError(f"the working metadata has changes not committed: commit and push them, or clone again")
-        if _declared(store, state, working) != repo.declarations(store, ours):
+        if _declared(state) != repo.declarations(store, ours):
             raise repo.RepoError("the declarations have changes not committed (fdl declare): commit and push them, or clone again")
         bases = repo.merge_bases(store, ours, theirs)
         if not bases:
@@ -676,7 +671,7 @@ def _change_declarations(working: Path, change) -> None:
     state = _read_state(working)
     store = _store(state["remote"])
     try:
-        before = _declared(store, state, working)
+        before = _declared(state)
         after = change(before)
         reading, setup = _reading(store, state)
         found = declaring.found_in(working, data_path=reading, setup=setup)
@@ -699,12 +694,7 @@ def declare_list(
     as_json: bool = typer.Option(False, "--json", help="Print them as JSON"),
 ) -> None:
     """What the next commit declares, one declaration a line."""
-    state = _read_state(working)
-    store = _store(state["remote"])
-    try:
-        facts = _declared(store, state, working)
-    except ERRORS as exc:
-        raise _fail(exc) from exc
+    facts = _declared(_read_state(working))
     if as_json:
         typer.echo(json.dumps(facts.to_json(), ensure_ascii=False, indent=2))
         return
@@ -942,7 +932,7 @@ def status(
             committed = declaring.from_index(json.loads((_pending_dir(working) / pending_id / layout.TABLES).read_text()))
         else:
             committed = repo.declarations(store, base) if base else declaring.Facts()
-        now = _declared(store, state, working)
+        now = _declared(state)
         named = {*committed.primary_keys, *committed.assets, *committed.unprofiled, *now.primary_keys, *now.assets, *now.unprofiled}
         result["declarations"] = declaring.changed(committed, now, named)
         result["dependencies"] = declaring.dependencies_changed(committed, now)

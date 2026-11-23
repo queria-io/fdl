@@ -12,7 +12,7 @@ FDL keeps the roles and names of Git, and stores things its own way. Anyone who 
 | FDL | Git | Notes |
 | --- | --- | --- |
 | Dataset (a prefix of a store) | Bare repository on a server | No server process is needed |
-| `fdl.json` | `config` | Holds the format, the dataset's `id` and `data_dir` |
+| `fdl.json` | `config` | Holds the format and `data_dir` |
 | `versions/<ID>/version.json` | Commit | Parents, author, message, and the sha256 of the metadata |
 | `versions/<ID>/metadata.db` | Tree | Which tables there are and which data files they are made of |
 | Data file (Parquet) | Blob | Written once and never changed. One file can be named by many versions |

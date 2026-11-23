@@ -29,7 +29,7 @@ When the host answers 401 to a token from the helper, fdl runs the helper once m
 fdl init <remote> [--data-dir tables/]
 ```
 
-Writes `fdl.json`, with a new `id`, and `HEAD`. Running it on an existing dataset changes nothing and prints its settings.
+Writes `fdl.json` and `HEAD`. Running it on an existing dataset changes nothing and prints its settings.
 
 ## fdl clone
 

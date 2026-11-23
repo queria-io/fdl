@@ -13,7 +13,10 @@ description: Test cases for deleting shared objects, which every implementation 
     {
       "name": "keeps the data files a live version's tables.json lists",
       "files": { "fdl.json": {}, "versions/<ID>/version.json": {}, "versions/<ID>/tables.json": {} },
-      "objects": { "tables/main/t/ducklake-a.parquet": "2026-11-01T00:00:00Z" },
+      "objects": {
+        "tables/main/t/ducklake-a.parquet": "2026-11-01T00:00:00Z",
+        "tables/main/t/ducklake-c.parquet": "2026-11-01T00:00:00Z"
+      },
       "deleted": ["tables/main/t/ducklake-c.parquet"]
     }
   ]

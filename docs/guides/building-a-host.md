@@ -44,7 +44,6 @@ What a host adds goes outside the fields FDL defines:
 
 - extra files in a version folder (a preview), which readers ignore
 - trailers at the end of a version's `message`, as Git keeps them
-- its own ID for the dataset in `fdl.json`'s `id`, written at `init` and never changed
 
 Access rules, approvals and billing stay in the host's own database. A dataset copied off the host still reads correctly, with nothing in it that only the host understands.
 
