@@ -361,6 +361,7 @@ def record(
             raise RepoError(f"keeping the last snapshot changed the DuckLake format of {frozen}")
         # What readers will attach: a version they cannot open is not made.
         try:
+            catalog.fill_column_stats(copied)
             catalog.check_opens(copied)
         except catalog.CatalogError as exc:
             raise RepoError(str(exc)) from exc

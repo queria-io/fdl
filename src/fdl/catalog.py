@@ -927,6 +927,39 @@ def keep_last_snapshot(catalog_path: Path) -> None:
         raise CatalogError(f"could not keep only the last snapshot of {catalog_path}: {exc}") from exc
 
 
+def fill_column_stats(catalog_path: Path) -> None:
+    """Give column statistics to the live tables of a frozen catalog that have none.
+
+    DuckDB 2.0 removes a table's column statistics when a delete leaves one of
+    its data files without rows, and DuckDB 1.5 then fails to list the tables.
+    Each column gets the null and NaN flags of its live data files and no
+    minimum or maximum, which readers take as unknown.
+    """
+    con = _open(catalog_path)
+    try:
+        filled = con.execute(
+            """
+            INSERT INTO ducklake_table_column_stats
+                (table_id, column_id, contains_null, contains_nan, min_value, max_value, extra_stats)
+            SELECT f.table_id, f.column_id,
+                   bool_or(coalesce(f.null_count, 1) > 0), bool_or(CAST(f.contains_nan AS BOOLEAN)),
+                   NULL, NULL, NULL
+            FROM ducklake_file_column_stats f
+            JOIN ducklake_data_file d ON d.data_file_id = f.data_file_id AND d.end_snapshot IS NULL
+            JOIN ducklake_table t ON t.table_id = f.table_id AND t.end_snapshot IS NULL
+            WHERE EXISTS (SELECT 1 FROM ducklake_table_stats s WHERE s.table_id = f.table_id)
+              AND NOT EXISTS (SELECT 1 FROM ducklake_table_column_stats c WHERE c.table_id = f.table_id)
+            GROUP BY f.table_id, f.column_id
+            """
+        ).fetchone()[0]
+        if filled:
+            con.execute("CHECKPOINT")
+    finally:
+        con.close()
+    if filled and _duckdb_major() >= 2:
+        _downgrade_storage(catalog_path)
+
+
 def check_opens(catalog_path: Path) -> None:
     """Raise `CatalogError` unless DuckLake can open a frozen catalog and list its tables.
 

@@ -1,6 +1,146 @@
 # CHANGELOG
 
 
+## v0.36.0 (2026-11-23)
+
+### Bug Fixes
+
+- Give column statistics to tables DuckDB 2.0 left without them
+  ([#93](https://github.com/queria-io/fdl/pull/93),
+  [`c2ed333`](https://github.com/queria-io/fdl/commit/c2ed3333ce447cc29204ef5b4f81ba85ee8b8fda))
+
+* docs(spec)!: define the _fdl schema and list views in files.json
+
+Primary keys, assets, catalogs and profile settings move from DuckLake tags to ordinary tables in
+  the reserved schema _fdl, together with the descriptions of the dataset, its schemas, tables and
+  columns, its files and attributes for other readers. files.json gains views (sql and columns) and
+  catalogs. Tags and dataset.json are kept only as the form of earlier versions.
+
+BREAKING CHANGE: writers no longer write fdl. tags; they write _fdl.
+
+* docs(spec): close gaps in the _fdl schema rules
+
+Treat sha256 of _fdl.files as an asset column, keep _fdl rows in step with renames, check merge
+  results, keep a commit from a tags-only version empty when nothing changed, and refuse primary_key
+  and asset on views.
+
+* docs(spec): name _fdl keywords topics
+
+* docs(spec): drop topics from _fdl
+
+* docs(spec): let fdl-cli write _fdl
+
+* docs(spec): leave reader-specific columns to _fdl.attributes
+
+License flags, the column entity, and the build tool's materialized and source_path are for
+  particular readers, so they go to attributes.
+
+* docs(spec)!: keep FDL's tables beside DuckLake's and merge by cells
+
+The tables FDL reads move out of a DuckLake schema into plain fdl_ tables in the metadata file,
+  beside DuckLake's own, with a copy in fdl_tables.json. files.json lists DuckLake tables only.
+  Tables, the fdl_ ones among them, merge cell by cell. A view's sql keeps {DUCKLAKE_CATALOG}, which
+  a reader replaces.
+
+* docs(spec): return to main's spec before the declarations rewrite
+
+* docs(spec)!: declare keys, assets and profiles in tables.json and merge by cells
+
+- files.json becomes tables.json, required in every version: tables with their files and columns,
+  views with their SQL and columns, and the declarations FDL reads (primary_key, assets, profile,
+  datasets) - a commit carries the parent's declarations over; tags and files.json are read only
+  from earlier versions - views read other datasets by the names in datasets, optionally at a fixed
+  version - every table merges three-way cell by cell (primary key x column) - the spec calls a
+  repository a dataset
+
+* docs(spec)!: drop earlier version formats and rename datasets to dependencies
+
+- every live version has tables.json; the spec no longer describes files.json, fdl. tags,
+  dataset.json, tree.json, objects/, inputs, ducklake.duckdb or metadata with earlier snapshots.
+  Existing datasets are migrated to the current layout before readers drop them - the declaration of
+  the other datasets views read is dependencies
+
+* docs(spec): write view SQL in tables.json without DuckLake's catalog placeholder
+
+* docs(spec): close gaps in cell merges, dependencies and push checks
+
+* docs: say the format may change before 1.0 and fdl migrate moves datasets
+
+* docs: remove the stability page
+
+* docs(spec): merge rows of tables without a primary key as a multiset
+
+* docs(spec): settle merges across primary key changes, rebuilt tables and dependency names
+
+* docs(spec)!: rename collection cases to gc cases and retention cases to expire cases
+
+* chore: remove the one-off tables.json migration script
+
+Every dataset on the hosted store has been migrated, so the script and its tests are no longer
+  needed.
+
+* fix: refuse to make a version DuckLake cannot open
+
+A frozen metadata can hold table statistics without column statistics, and DuckLake then fails to
+  list its tables with an internal error. Open the copy a version is made of and stop before it can
+  be pushed.
+
+* fix: state the open check in the writing spec and keep its message safe
+
+Name the refusal in the spec's freezing list (English and Japanese), and take the error's first line
+  without failing on an empty message.
+
+* fix: refuse tables with no column statistics on every DuckDB version
+
+DuckDB 2.0 lists a table that has table statistics but no column statistics, while DuckDB 1.5 fails
+  with an internal error. Check the catalog rows before attaching, so the writer refuses such
+  metadata on both versions, and cover the attach check with a catalog that has no columns.
+
+* fix: report catalog read errors and schema-qualified names in check_opens
+
+* fix: give column statistics to tables DuckDB 2.0 left without them
+
+DuckDB 2.0 removes all column statistics of a table when a delete leaves one of its data files
+  without rows, and DuckDB 1.5 then fails to list the tables. When freezing, give each such table a
+  column statistic per column of its live data files, with the null and NaN flags of those files and
+  no minimum or maximum, instead of refusing the version.
+
+### Continuous Integration
+
+- Release on every push to main ([#92](https://github.com/queria-io/fdl/pull/92),
+  [`689724e`](https://github.com/queria-io/fdl/commit/689724e1295e29f87b4afc5ed5a8b76be4b3b48b))
+
+### Features
+
+- Drop annotations from version.json and point docs at tables/
+  ([#91](https://github.com/queria-io/fdl/pull/91),
+  [`c691eb6`](https://github.com/queria-io/fdl/commit/c691eb68e85ea07805395fe0fb99f98937179ca4))
+
+* feat!: drop annotations from version.json and point docs at tables/
+
+A version no longer has an `annotations` object. A tool that records how a version was made adds
+  trailers at the end of `message`, as Git does (`Built-From: <commit>`). `repo.commit` and
+  `repo.record` lose the `annotations` argument. Readers ignore the key in versions written before.
+
+The docs, README and examples now use the default data_dir `tables/` instead of `data/`, and two
+  docstrings name version.json's `metadata` instead of the old catalog fields.
+
+BREAKING CHANGE: `annotations` is removed from version.json and from the `commit` and `record`
+  functions.
+
+* fix: address review on dropping annotations
+
+Withdrawal also drops matching annotations entries in records written by an earlier fdl. fdl log and
+  fdl show indent every line of a message so trailers stay with their version. Add a test that such
+  a record still reads.
+
+### Breaking Changes
+
+- `annotations` is removed from version.json and from the `commit` and `record` functions.
+
+- Writers no longer write fdl. tags; they write _fdl.
+
+
 ## v0.35.0 (2026-11-23)
 
 ### Bug Fixes

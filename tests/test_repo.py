@@ -569,15 +569,33 @@ def _pushed(tmp_path: Path, remote) -> str:
     return version.id
 
 
-def test_a_metadata_duckdb_cannot_open_is_not_made_a_version(tmp_path: Path, remote) -> None:
-    build(tmp_path / "work.sqlite", remote, "CREATE TABLE lake.main.towns AS SELECT 1 AS id")
+def test_a_table_without_column_statistics_gets_them_in_the_version(tmp_path: Path, remote) -> None:
+    build(tmp_path / "work.sqlite", remote, "CREATE TABLE lake.main.towns AS SELECT * FROM (VALUES (1, 'a'), (2, NULL)) t(id, name)")
     frozen = tmp_path / "frozen.duckdb"
     catalog.convert(tmp_path / "work.sqlite", frozen, data_path=data_path(remote))
-    # Table statistics without column statistics: DuckLake 1.5 fails to list the tables.
+    # What DuckDB 2.0 leaves after a delete empties a data file: DuckDB 1.5 fails to list the tables.
     con = duckdb.connect(str(frozen))
     con.execute("DELETE FROM ducklake_table_column_stats")
     con.close()
-    with pytest.raises(repo.RepoError, match="cannot open"):
+    version = repo.record(frozen, tmp_path / "local", parent=None, author=AUTHOR, message="m", described=declared.Described(
+        facts=declared.Facts(), views={}, names={"main.towns"}))
+    con = duckdb.connect(str(tmp_path / "local" / version.id / layout.METADATA), read_only=True)
+    rows = con.execute(
+        "SELECT column_id, contains_null, min_value, max_value FROM ducklake_table_column_stats ORDER BY column_id"
+    ).fetchall()
+    con.close()
+    assert rows == [(1, False, None, None), (2, True, None, None)]
+
+
+def test_a_table_whose_column_statistics_cannot_be_made_is_not_made_a_version(tmp_path: Path, remote) -> None:
+    build(tmp_path / "work.sqlite", remote, "CREATE TABLE lake.main.towns AS SELECT 1 AS id")
+    frozen = tmp_path / "frozen.duckdb"
+    catalog.convert(tmp_path / "work.sqlite", frozen, data_path=data_path(remote))
+    con = duckdb.connect(str(frozen))
+    con.execute("DELETE FROM ducklake_table_column_stats")
+    con.execute("DELETE FROM ducklake_file_column_stats")
+    con.close()
+    with pytest.raises(repo.RepoError, match="no column statistics: main.towns"):
         repo.record(frozen, tmp_path / "local", parent=None, author=AUTHOR, message="m", described=declared.Described(
             facts=declared.Facts(), views={}, names={"main.towns"}))
     assert not any((tmp_path / "local").iterdir())
