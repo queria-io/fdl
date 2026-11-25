@@ -1,6 +1,15 @@
 # CHANGELOG
 
 
+## v0.39.2 (2026-11-25)
+
+### Bug Fixes
+
+- Count every changed table before reading rows, and ask for the token again in commit
+  ([#100](https://github.com/queria-io/fdl/pull/100),
+  [`0f0d9a6`](https://github.com/queria-io/fdl/commit/0f0d9a683047030e130799bd1b8f1758d7352e7f))
+
+
 ## v0.39.1 (2026-11-23)
 
 ### Bug Fixes
