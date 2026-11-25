@@ -441,6 +441,28 @@ def test_a_refused_token_is_asked_for_again(tmp_path: Path, monkeypatch) -> None
     assert not (tmp_path / "b.txt").exists()
 
 
+def test_refresh_asks_only_for_a_token_it_asked_for(monkeypatch) -> None:
+    answers = iter(["first", "second"])
+    monkeypatch.setattr(stores, "credentials_for", lambda url: next(answers))
+    asked = HttpStore("http://127.0.0.1:1/")
+    asked.refresh()
+    assert asked.token == "second"
+    handed = HttpStore("http://127.0.0.1:1/", token="handed")
+    handed.refresh()
+    assert handed.token == "handed"
+
+
+def test_a_commit_hands_duckdb_the_token_asked_for_again(served, monkeypatch) -> None:
+    from fdl.cli import _fresh_reading
+
+    _, url, _ = served
+    answers = iter(["first", "second"])
+    monkeypatch.setattr(stores, "credentials_for", lambda url: next(answers))
+    store = HttpStore(url)
+    _, setup = _fresh_reading(store, {})
+    assert any("BEARER_TOKEN 'second'" in statement for statement in setup)
+
+
 def test_a_merge_over_http(served, tmp_path: Path) -> None:
     local, url, _ = served
     main, feature = tmp_path / "main" / "lake.sqlite", tmp_path / "feature" / "lake.sqlite"

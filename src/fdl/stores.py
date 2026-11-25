@@ -289,6 +289,12 @@ class HttpStore:
     def url(self) -> str:
         return self.root
 
+    def refresh(self) -> None:
+        """Ask for the token again, when fdl asked for it: a short-lived one
+        handed to DuckDB may run out before a long read is done."""
+        if self._asks:
+            self.token = credentials_for(self.root) or self.token
+
     def _request(
         self,
         method: str,

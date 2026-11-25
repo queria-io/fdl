@@ -21,7 +21,7 @@ helper = "example-cli fdl-credential"
 
 fdl は `<helper> get` を実行し、標準入力に `protocol=`・`host=`・`path=` の行と空行を渡して、出力の `password=` の行を読みます。何も出さないか、エラーで終わったら、トークンは無いものとします。トークンの保存と helper の書き込みは、ホストの側の道具が行います。
 
-helper から得たトークンにホストが 401 を返すと、fdl は helper をもう一度実行し、別のトークンが返ればそれでリクエストを送り直します。helper は期限の短いトークンを渡せます。`FDL_TOKEN` のトークンは取り直しません。
+helper から得たトークンにホストが 401 を返すと、fdl は helper をもう一度実行し、別のトークンが返ればそれでリクエストを送り直します。helper は期限の短いトークンを渡せます。`fdl commit` はデータファイルの読み込みを始める前にも helper を実行し、期限の切れていないトークンを DuckDB に渡します。`FDL_TOKEN` のトークンは取り直しません。
 
 ## fdl init
 

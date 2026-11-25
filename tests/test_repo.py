@@ -930,3 +930,17 @@ def test_a_change_of_declarations_alone_makes_a_version(tmp_path: Path, remote) 
     keyed = declared.Facts(primary_keys={"main.towns": ["id"]})
     second = commit(tmp_path, remote, parent=first, allow_empty=False, facts=keyed, inherited=declared.Facts())
     assert second.diff["declarations"] == ["main.towns"]
+
+
+def test_tables_are_counted_before_any_rows_are_read(tmp_path: Path, remote) -> None:
+    working = tmp_path / "work.sqlite"
+    build(working, remote, "CREATE TABLE lake.main.a AS SELECT 1 AS id; CREATE TABLE lake.main.b AS SELECT 1 AS id")
+    since = catalog.last_snapshot(working)
+    before = set(Path(data_path(remote)).rglob("*.parquet"))
+    build(working, remote, "CREATE OR REPLACE TABLE lake.main.a AS SELECT 1 AS id")
+    rewritten = set(Path(data_path(remote)).rglob("*.parquet")) - before
+    build(working, remote, "CREATE OR REPLACE TABLE lake.main.b AS SELECT * FROM range(2) t(id)")
+    for file in rewritten:
+        file.unlink()
+    # main.a's rows cannot be read, and need not be: main.b holds another count.
+    assert not catalog.same_contents(working, since, data_path=data_path(remote))
