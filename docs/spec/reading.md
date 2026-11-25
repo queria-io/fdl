@@ -10,7 +10,7 @@ A reader that does not know which ref to ask for may read `refs.json` to find th
 1. Read `HEAD`, or the ref asked for. If the content starts with `ref: `, read the ref it names
 2. Read `versions/<ID>/version.json` for the ID found. Check that its `id` matches and that the reader knows its `fdl` major version
 3. If `versions/<ID>/expired.json` exists, stop: the version is past retention or withdrawn
-4. Open `versions/<ID>/metadata.db`, read-only
+4. Open `versions/<ID>/metadata.db`, read-only. If the reader cannot open its `ducklake.format` or `metadata.storage`, read `versions/<ID>/converted/index.json` and open instead the file of an entry whose formats it can open ([Converted metadata](/spec/versions#converted-metadata)). With no such entry, the reader cannot read the version
 
 ```sql
 ATTACH 'ducklake:https://example.org/lake/versions/019a3c4e-…/metadata.db' AS lake (
@@ -52,7 +52,7 @@ The metadata's `data_path` is the absolute URL of the data folder where the writ
 
 A metadata file is written by whoever can write the dataset, and DuckDB reads every file it names with the reader's credentials. Before a reader attaches a metadata file with credentials that reach more than the dataset, it should check that:
 
-- the metadata's sha256 is `metadata.sha256` in `version.json`
+- the metadata's sha256 is `metadata.sha256` in `version.json`, or, for a converted file, `metadata.sha256` of its entry in `converted/index.json`
 - every data file it names is recorded relative to the data path, with no empty, `.` or `..` segment
 
 A metadata file that names a file by an absolute path, or outside `data_dir`, makes the reader fetch whatever it points at.
@@ -64,6 +64,7 @@ Over HTTP, a reader sends its token only to the origin of the dataset, and only 
 - A version's files never change except as described in [Versions](/spec/versions), so its metadata may be cached forever
 - `HEAD`, `refs/` and `refs.json` must not be cached
 - `expired.json` may appear later. A cache of a version folder should be dropped when it does
+- `converted/index.json` gains entries later, so it may be cached only for a short time. Each converted file never changes and may be cached forever
 
 Over HTTP, `HEAD` and `refs/` are served as `Content-Type: text/plain; charset=utf-8` with `Cache-Control: no-store`.
 

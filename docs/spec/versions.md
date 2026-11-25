@@ -8,6 +8,7 @@ A version is the files under `versions/<version ID>/`. They must not change once
 - `expired.json` is added and the metadata files deleted when the version falls out of retention ([Data files](/spec/data-files#past-retention))
 - on withdrawal, `expired.json` is added with `"reason": "withdrawn"` and the metadata files deleted, and `version.json` is rewritten without the withdrawn data if it holds it ([Data files](/spec/data-files#withdrawal))
 - `profiles/<schema>/<table>.json` may be added later for a table that has none. Profiles already there are not changed
+- a host may add [converted metadata](#converted-metadata) under `converted/`. A converted file already there is not changed, and `converted/index.json` only gains entries
 
 ## Version ID
 
@@ -232,6 +233,43 @@ The metadata is the file `metadata.db` in the version's folder. It is a DuckLake
 - Every data file it names is under `data_dir`, recorded relative to the metadata's data path. A writer must check this; a host may check it too
 - Its `data_path` is the absolute URL of the data folder where the writer published: the root plus `data_dir`. Readers override it (see [Reading](/spec/reading))
 - A reader reads an earlier version by opening that version's metadata ([Reading](/spec/reading#an-earlier-version)), not by `AT (VERSION => n)` in another version's metadata
+
+## Converted metadata
+
+A later DuckDB may stop opening the DuckLake format or the storage format a version's metadata was written in. The data files are Parquet and stay readable, but the version would be lost with its metadata. A host keeps such a version readable by adding a copy of its metadata converted to a newer format. The data files are shared and are not converted.
+
+```
+versions/<ID>/
+  metadata.db                                  the original, never changed
+  converted/
+    index.json                                 the record of the converted copies
+    metadata-<ducklake.format>-<metadata.storage>.db
+```
+
+```json converted/index.json
+{
+  "converted": [
+    {
+      "metadata": { "storage": "duckdb-v2.0.0", "bytes": 4210688, "sha256": "c41d…" },
+      "ducklake": { "format": "1.1" },
+      "created_at": "2031-04-01T00:00:00Z"
+    }
+  ]
+}
+```
+
+| Field | Required | Meaning |
+| --- | --- | --- |
+| `metadata` | must | The storage format, size and sha256 of the converted file, as `metadata` of `version.json` gives them for the original |
+| `ducklake` | must | `format`: the DuckLake format of the converted file |
+| `created_at` | must | When the host added it. UTC, ISO 8601 |
+
+- The file of an entry is `converted/metadata-<ducklake.format>-<metadata.storage>.db`, so there is one file for each pair of formats. Both values are made of lower-case ASCII letters, digits, `.` and `-`; a host makes no copy for a pair that is not, and a reader ignores such an entry
+- A converted file holds the same snapshot as the original: the same `ducklake.snapshot_id`, tables, views, columns, data files and delete files. It follows the rules of [the frozen metadata](#the-frozen-metadata), and `tables.json` and the profiles describe it as they describe the original. The host checks that it returns the same rows as the original before it records it
+- The host converts while a DuckDB that opens both the original and the new format is still available. Converting is reading the original, so a version whose original no DuckDB opens any more cannot be converted
+- Only a host adds converted metadata. A writer does not push it, and the original's `metadata` in `version.json` is not changed
+- The host puts the file first, with `If-None-Match: *`, then `index.json` on condition (`If-None-Match: *` for the first entry, `If-Match` after), so the record never names a file that is not there. An entry is never changed or removed, and a converted file is never replaced
+- A reader ignores fields it does not know, in `index.json` and in each entry
 
 ## Declarations
 

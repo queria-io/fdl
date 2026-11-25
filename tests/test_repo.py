@@ -275,6 +275,9 @@ def pushed_chain(tmp_path: Path, store, count: int) -> list:
 
 def test_expire_marks_and_drops_the_metadata_but_keeps_the_record(tmp_path: Path, remote) -> None:
     first, second = pushed_chain(tmp_path, remote, 2)
+    converted = layout.version_dir(first.id) + layout.CONVERTED_DIR
+    remote.put(converted + "metadata-1.1-duckdb-v2.0.0.db", b"converted")
+    remote.put(converted + "index.json", b"{}")
     repo.expire(remote, first.id)
 
     assert json.loads(remote.get(layout.version_expired(first.id)))["reason"] == "retention"

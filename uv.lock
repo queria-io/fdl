@@ -360,7 +360,7 @@ wheels = [
 
 [[package]]
 name = "fdl-cli"
-version = "0.38.0"
+version = "0.39.2"
 source = { editable = "." }
 dependencies = [
     { name = "duckdb" },

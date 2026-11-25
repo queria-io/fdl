@@ -26,6 +26,8 @@ TABLES = "tables.json"
 EXPIRED = "expired.json"
 #: A summary of each table, made from the data, under the version (optional).
 PROFILES_DIR = "profiles/"
+#: Copies of the metadata a host converted to newer formats, and their record (optional).
+CONVERTED_DIR = "converted/"
 #: Files the rows of a table point at, by sha256 (shared).
 ASSETS_DIR = "assets/"
 

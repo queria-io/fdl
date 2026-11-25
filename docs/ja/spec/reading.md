@@ -10,7 +10,7 @@ description: 読み手が ref をたどり、バージョンを確かめ、メ�
 1. `HEAD` か、指定された ref を読む。中身が `ref: ` で始まっていれば、その先の ref を読む
 2. 見つけた ID の `versions/<ID>/version.json` を読む。`id` が合っているか、`fdl` のメジャーバージョンを知っているかを確かめる
 3. `versions/<ID>/expired.json` があれば止まる。保持期間を過ぎたか、取り下げられている
-4. `versions/<ID>/metadata.db` を読み取り専用で開く
+4. `versions/<ID>/metadata.db` を読み取り専用で開く。その `ducklake.format` か `metadata.storage` を開けない読み手は、`versions/<ID>/converted/index.json` を読み、開ける形式の項目のファイルを代わりに開く（[変換したメタデータ](/ja/spec/versions#変換したメタデータ)）。そのような項目が無ければ、そのバージョンは読めない
 
 ```sql
 ATTACH 'ducklake:https://example.org/lake/versions/019a3c4e-…/metadata.db' AS lake (
@@ -52,7 +52,7 @@ ATTACH 'ducklake:https://example.org/census/versions/019a2f10-…/metadata.db' A
 
 メタデータはデータセットに書き込める人が書きます。DuckDB は、メタデータが指すファイルをすべて読み手の認証情報で読みます。データセットの外にも届く認証情報でメタデータを ATTACH する読み手は、その前に次のことを確認するべきです。
 
-- メタデータの sha256 が `version.json` の `metadata.sha256` と一致する
+- メタデータの sha256 が `version.json` の `metadata.sha256` と一致する。変換したファイルでは、`converted/index.json` のその項目の `metadata.sha256` と一致する
 - メタデータが指すデータファイルはすべてデータパスからの相対パスで記録されていて、空・`.`・`..` の要素を含まない
 
 絶対パスや `data_dir` の外のファイルを指すメタデータを開くと、読み手はその指す先を取得してしまいます。
@@ -64,6 +64,7 @@ HTTP では、読み手はトークンをデータセットと同じオリジン
 - バージョンのファイルは、[バージョン](/ja/spec/versions)に書いた例外を除いて変わらないので、メタデータはいつまでもキャッシュしてよい
 - `HEAD`、`refs/`、`refs.json` はキャッシュしてはいけない
 - `expired.json` はあとから増えることがある。増えたら、バージョンのフォルダのキャッシュを捨てるのがよい
+- `converted/index.json` はあとから項目が増えるので、短い時間だけキャッシュしてよい。変換したファイルは変わらないので、いつまでもキャッシュしてよい
 
 HTTP では、`HEAD` と `refs/` を `Content-Type: text/plain; charset=utf-8`、`Cache-Control: no-store` で返します。
 

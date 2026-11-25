@@ -8,6 +8,7 @@ description: バージョン ID、version.json の項目、tables.json、profile
 - 保持期間を過ぎたとき、`expired.json` を足し、メタデータを消す（[データファイル](/ja/spec/data-files#保持期間を過ぎたとき)）
 - 取り下げのとき、`"reason": "withdrawn"` の `expired.json` を足してメタデータを消し、`version.json` に取り下げるデータがあれば、それを除いて書き換える（[データファイル](/ja/spec/data-files#取り下げ)）
 - `profiles/<schema>/<table>.json` は、profile の無いテーブルについてあとから足してよい。既にある profile は変えない
+- ホストは `converted/` の下に[変換したメタデータ](#変換したメタデータ)を追加してよい。既にある変換したファイルは変えず、`converted/index.json` には項目を追加するだけにする
 
 ## バージョン ID
 
@@ -232,6 +233,43 @@ profile は、`ducklake.snapshot_id` の時点の 1 つのテーブルの要約�
 - 参照するデータファイルはすべて `data_dir` の下にあり、メタデータのデータパスからの相対で記録されている。書き手はこれを確かめなければならず、ホストも確かめてよい
 - `data_path` は、書き手が公開したデータフォルダの絶対 URL（ルートと `data_dir`）。読み手はこれを上書きする（[読む](/ja/spec/reading)を参照）
 - 読み手は、前のバージョンをそのバージョンのメタデータを開いて読む（[読む](/ja/spec/reading#前のバージョン)）。別のバージョンのメタデータで `AT (VERSION => n)` を使って読まない
+
+## 変換したメタデータ
+
+後の DuckDB が、バージョンのメタデータを書いた DuckLake の形式やストレージ形式を開けなくなることがあります。データファイルは Parquet なので読めますが、メタデータを開けなければそのバージョンは読めません。ホストは、メタデータを新しい形式に変換したコピーを追加して、そのバージョンを読める状態に保ちます。データファイルは共有しているので変換しません。
+
+```
+versions/<ID>/
+  metadata.db                                  元のメタデータ。変えない
+  converted/
+    index.json                                 変換したコピーの記録
+    metadata-<ducklake.format>-<metadata.storage>.db
+```
+
+```json converted/index.json
+{
+  "converted": [
+    {
+      "metadata": { "storage": "duckdb-v2.0.0", "bytes": 4210688, "sha256": "c41d…" },
+      "ducklake": { "format": "1.1" },
+      "created_at": "2031-04-01T00:00:00Z"
+    }
+  ]
+}
+```
+
+| 項目 | 必須 | 意味 |
+| --- | --- | --- |
+| `metadata` | 必須 | 変換したファイルのストレージ形式・サイズ・sha256。`version.json` の `metadata` が元のメタデータについて書くものと同じ |
+| `ducklake` | 必須 | `format`: 変換したファイルの DuckLake の形式 |
+| `created_at` | 必須 | ホストが追加した日時。UTC、ISO 8601 |
+
+- 項目のファイルは `converted/metadata-<ducklake.format>-<metadata.storage>.db` で、形式の組ごとに 1 つ。どちらの値も小文字の ASCII 英字・数字・`.`・`-` だけでできている。そうでない組についてホストはコピーを作らず、読み手はその項目を無視する
+- 変換したファイルは元のメタデータと同じスナップショットを持つ。`ducklake.snapshot_id`、テーブル、ビュー、列、データファイル、削除ファイルが同じ。[固めたメタデータ](#固めたメタデータ)の決まりに従い、`tables.json` と profile は元のメタデータと同じようにこのファイルにも当てはまる。ホストは、元のメタデータと同じ行を返すことを確認してから記録する
+- ホストは、元のメタデータと新しい形式の両方を開ける DuckDB があるうちに変換する。変換は元のメタデータを読む処理なので、どの DuckDB でも開けなくなったバージョンは変換できない
+- 変換したメタデータを追加するのはホストだけ。書き手は push しない。`version.json` の元のメタデータの `metadata` は変えない
+- ホストは、先にファイルを `If-None-Match: *` で置き、次に `index.json` を条件付きで置く（最初の項目は `If-None-Match: *`、それ以降は `If-Match`）。記録が、まだ無いファイルを指すことはない。項目は変えず消さず、変換したファイルも置き換えない
+- 読み手は、`index.json` と各項目の知らない項目を無視する
 
 ## 宣言
 

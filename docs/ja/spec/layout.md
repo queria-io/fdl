@@ -21,6 +21,8 @@ description: データセットのファイル、そのパス、fdl.json の中�
     metadata.db                    固めたメタデータ
     tables.json                    テーブルとビュー、そのデータファイルと列、FDL の宣言
     profiles/<schema>/<table>.json データから測ったテーブルごとの要約（任意）
+    converted/index.json           変換したメタデータのコピーの記録（任意）
+    converted/metadata-<format>-<storage>.db  ホストが新しい形式に変換したメタデータ（任意）
     expired.json                   保持期間を過ぎた印（過ぎたときだけ）
     <others>                       ホストが足すファイル
   <data_dir><schema>/<table>/ducklake-<uuid>.parquet   データファイル（共有、変えない）

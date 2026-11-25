@@ -21,6 +21,8 @@ Paths are relative to the root, lower case, and separated by `/`. The root is wh
     metadata.db                    the frozen metadata
     tables.json                    the tables and views, their data files and columns, and FDL's declarations
     profiles/<schema>/<table>.json a summary of each table, measured from the data (optional)
+    converted/index.json           the record of the converted copies of the metadata (optional)
+    converted/metadata-<format>-<storage>.db  the metadata converted to a newer format by the host (optional)
     expired.json                   the past-retention mark (only once expired)
     <others>                       files a host adds
   <data_dir><schema>/<table>/ducklake-<uuid>.parquet   data files (shared, immutable)
