@@ -113,7 +113,7 @@ fdl declare dependency lake.sqlite census https://example.org/census/
 fdl push <working.sqlite> [--no-profile]
 ```
 
-`fdl commit` が作ったバージョンをアップロードし、条件付きでブランチをそこへ動かします（[書き込みの順番](/ja/spec/writing#書き込みの順番)）。ブランチ、バージョン ID、`seq` を表示します。fast-forward の `fdl merge` のあとは、何もアップロードせず、ブランチをマージしたバージョンへ動かします。コミットしたものが無いときは `Nothing to push` と表示します。
+`fdl commit` が作ったバージョンをアップロードし、条件付きでブランチをそこへ動かします（[書き込みの順番](/ja/spec/writing#書き込みの順番)）。ブランチ、バージョン ID、`seq` を表示します。fast-forward の `fdl merge` のあとは、何もアップロードせず、ブランチをマージしたバージョンへ動かします。コミットしたものが無いときは `Nothing to push` と表示します。HTTP のホストが push を止めない警告を返したときは、1 つずつ `warning: …` と表示します（[HTTP での push](/ja/spec/http)）。
 
 アップロードの前に、テーブルとビューごとの profile（[profiles/](/ja/spec/versions#profiles)）を書き、`version.json` より前にアップロードします。ブランチが動く時点で profile がデータセットにあります。読むのは、データファイルか列が親から変わったテーブルだけで、ほかのテーブルは親の profile を引き継ぎます。ビューは、そのクエリか、クエリが読むテーブル・ビューが変わると、クエリを実行して測り直します。`profile` を `false` と宣言したテーブルとビューには profile を書きません。読めなかったテーブルには profile を書かず、警告を出します。コミットのあとに作業メタデータが変わっていたときは profile を書かずに警告します。`--no-profile` を付けると profile を書きません。`fdl profile` であとから足せます。
 

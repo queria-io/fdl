@@ -255,6 +255,16 @@ def _retry_after(exc: urllib.error.HTTPError) -> float:
     return float(value) if value.strip().isdigit() else 0.0
 
 
+def _warnings(body: bytes) -> list[str]:
+    """The ``warnings`` of a host's answer to a write, or none when it has no such list."""
+    try:
+        answer = json.loads(body) if body.strip() else None
+    except ValueError:
+        return []
+    found = answer.get("warnings") if isinstance(answer, dict) else None
+    return [entry for entry in found if isinstance(entry, str)] if isinstance(found, list) else []
+
+
 class HttpStore:
     """A dataset served over HTTP by a host that takes writes.
 
@@ -284,6 +294,9 @@ class HttpStore:
         self._asks = token is None
         self.token = token if token is not None else credentials_for(self.root)
         self.part_size = part_size or self.PART_SIZE
+        #: What the host said about the writes without refusing them
+        #: ("Pushing over HTTP"), for the writer to show.
+        self.warnings: list[str] = []
 
     @property
     def url(self) -> str:
@@ -376,6 +389,7 @@ class HttpStore:
     ) -> str:
         headers = self._conditions(content_type, if_match, if_none_match)
         with self._request("PUT", key, data=data, headers=headers) as answer:
+            self.warnings += _warnings(answer.read())
             return answer.headers.get("ETag", "")
 
     def put_file(self, key: str, path: Path, **kwargs) -> str:
