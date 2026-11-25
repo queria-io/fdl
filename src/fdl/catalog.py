@@ -1135,6 +1135,7 @@ def same_contents(
                 SELECT s.schema_name, t.table_name, t.table_id
                 FROM {meta}.ducklake_table t JOIN {meta}.ducklake_schema s USING (schema_id)
                 WHERE {live('t')} AND {live('s')}
+                ORDER BY s.schema_name, t.table_name
                 """,
                 {"s": snapshot},
             ).fetchall()
@@ -1172,19 +1173,26 @@ def same_contents(
                 f"(DESCRIBE SELECT * FROM {name} AT (VERSION => {int(snapshot)}))"
             ).fetchall()
 
+        def rows(name: str, snapshot: int) -> str:
+            return f"SELECT * FROM {name} AT (VERSION => {int(snapshot)})"
+
+        def same_count(name: str) -> bool:
+            counts = con.execute(
+                f"SELECT (SELECT count(*) FROM ({rows(name, since)})), "
+                f"(SELECT count(*) FROM ({rows(name, last)}))"
+            ).fetchone()
+            return counts[0] == counts[1]
+
         def same_rows(name: str) -> bool:
             # Compared as values, not hashes: DuckDB's hash() gives a NULL
             # list, struct or map the hash of an empty one, so a sum of row
             # hashes misses rows that trade the two. With the counts equal,
             # nothing left by EXCEPT ALL means the same multiset.
-            old = f"SELECT * FROM {name} AT (VERSION => {int(since)})"
-            new = f"SELECT * FROM {name} AT (VERSION => {int(last)})"
-            counts = con.execute(
-                f"SELECT (SELECT count(*) FROM ({old})), (SELECT count(*) FROM ({new}))"
-            ).fetchone()
-            if counts[0] != counts[1]:
-                return False
-            return bool(con.execute(f"SELECT NOT EXISTS ({old} EXCEPT ALL {new})").fetchone()[0])
+            return bool(
+                con.execute(
+                    f"SELECT NOT EXISTS ({rows(name, since)} EXCEPT ALL {rows(name, last)})"
+                ).fetchone()[0]
+            )
 
         def quoted(identifier: str) -> str:
             return '"' + identifier.replace('"', '""') + '"'
@@ -1192,6 +1200,7 @@ def same_contents(
         before, after = tables(since), tables(last)
         if before.keys() != after.keys() or views(since) != views(last):
             return False
+        changed = []
         for (schema, table), table_id in after.items():
             name = f"lake.{quoted(schema)}.{quoted(table)}"
             if shape(name, since) != shape(name, last):
@@ -1200,9 +1209,13 @@ def same_contents(
                 table_id, last
             ):
                 continue
-            if not same_rows(name):
-                return False
-        return True
+            changed.append(name)
+        # Counts come from the catalog's metadata, rows from the data files:
+        # every table is counted before any is read, so one table with
+        # another count settles it without reading the others' rows.
+        if not all(same_count(name) for name in changed):
+            return False
+        return all(same_rows(name) for name in changed)
     except CatalogError:
         raise
     except Exception as exc:  # noqa: BLE001 - duckdb raises several types

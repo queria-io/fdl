@@ -262,9 +262,9 @@ def _commit(
         facts = facts if facts is not None else _declared(state)
         inherited = repo.declarations(store, parent) if parent else None
         written = _written(store, state)
-        reading, setup = _reading(store, state)
 
         def make(allow_empty: bool):
+            setup = _fresh_reading(store, state)[1]
             return repo.commit(
                 working,
                 out,
@@ -286,6 +286,7 @@ def _commit(
             typer.echo(f"warning: could not tell whether anything changed ({exc}); committing", err=True)
             version = make(True)
         index = json.loads((out / version.id / layout.TABLES).read_text(encoding="utf-8"))
+        reading, setup = _fresh_reading(store, state)
         held = objects.asset_values(
             working, objects.indexed_asset_columns(index), data_path=reading, setup=setup
         )
@@ -354,6 +355,14 @@ def _written(store, state: dict) -> str | None:
 def _reading(store, state: dict) -> tuple[str, list[str]]:
     """Where the working metadata's data files are read from, and the setup to read them."""
     return _written(store, state) or repo.data_url(store), _read_setup(store) + _storage_setup(state.get("storage"))
+
+
+def _fresh_reading(store, state: dict) -> tuple[str, list[str]]:
+    """`_reading` with the token asked for again, for each long read to start with a fresh one."""
+    refresh = getattr(store, "refresh", None)
+    if refresh:
+        refresh()
+    return _reading(store, state)
 
 
 @app.command()
