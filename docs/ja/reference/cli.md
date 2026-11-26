@@ -83,21 +83,21 @@ fdl commit <working.sqlite> -m "What changed" [--author alice] [--allow-empty] [
 ## fdl table
 
 ```bash
-fdl table <working.sqlite> [<schema.name>] [--primary-key <columns>] [--assets <columns>] [--profile | --no-profile] [--json]
+fdl table <working.sqlite> [<schema.name>] [--primary-key <column>]... [--no-primary-key] [--assets <column>]... [--no-assets] [--profile | --no-profile] [--json]
 ```
 
 次のコミットがテーブルやビューについて[宣言](/ja/spec/versions#宣言)する内容を表示し、変更します。宣言は `<working.sqlite>.fdl/` に保存し、作業メタデータをクローンしたバージョンの宣言から始まります。コミットがそれを `tables.json` に書きます。
 
 ```bash
-fdl table lake.sqlite main.population --primary-key code,year
+fdl table lake.sqlite main.population --primary-key code --primary-key year
 fdl table lake.sqlite main.reports --assets pdf_sha256
 fdl table lake.sqlite main.stg_population --no-profile
 ```
 
-- `--primary-key` は、テーブルの行を識別する列をカンマ区切りで設定します。[セル単位のマージ](/ja/spec/writing#主キーでのセルのマージ)に使います。空の値（`--primary-key ""`）で主キーを外します
-- `--assets` は、ファイルの sha256 を持つテーブルの `varchar` 列をカンマ区切りで設定します。空の値で外します
+- `--primary-key` は、テーブルの行を識別する列を、1 つのオプションに 1 列ずつ設定します。[セル単位のマージ](/ja/spec/writing#主キーでのセルのマージ)に使います。`--no-primary-key` で主キーを外します
+- `--assets` は、ファイルの sha256 を持つテーブルの `varchar` 列を、1 つのオプションに 1 列ずつ設定します。`--no-assets` で外します
 - `--no-profile` は、ビルドの中間テーブルなどに push が profile を書かないようにします。`--profile` でそれを外します
-- これらのオプションが無いときは、そのテーブルかビューの宣言を 1 行に 1 つ表示します。`<schema.name>` を省くと、すべてのテーブルとビューの宣言を表示します。`--json` を付けると、`primary_keys`・`assets`・`unprofiled` を持つ 1 つのオブジェクトで表示します
+- これらのオプションが無いときは、そのテーブルかビューの宣言を 1 行に 1 つ表示します。`<schema.name>` を省くと、すべてのテーブルとビューの宣言を表示します。作業メタデータに無い名前は断ります。`--json` を付けると、`primary_keys`・`assets`・`unprofiled` を持つ 1 つのオブジェクトで表示します
 
 テーブルとビューに照らして通らない変更は断ります。無いテーブルや列、ビューへの主キーやアセット列、`varchar` でないアセット列です。
 

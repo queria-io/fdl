@@ -700,28 +700,41 @@ def _with(found: dict, name: str, value) -> dict:
 Table = typer.Argument(None, help="The table or view, as schema.name. Without it, all of them are listed")
 
 
-def _columns(value: str | None) -> list[str] | None:
-    """Comma-separated column names; an empty value names none."""
-    return None if value is None else [c.strip() for c in value.split(",") if c.strip()]
+def _objects(working: Path, state: dict):
+    """The tables and views of the working metadata."""
+    store = _store(state["remote"])
+    try:
+        reading, setup = _reading(store, state)
+        return declaring.found_in(working, data_path=reading, setup=setup)
+    except (*ERRORS, catalog.CatalogError) as exc:
+        raise _fail(exc) from exc
 
 
 @app.command()
 def table(
     working: Path = Working,
     name: str | None = Table,
-    primary_key: str | None = typer.Option(
-        None, "--primary-key", help="The columns that identify a row, comma-separated. Empty removes the primary key"
+    primary_key: list[str] | None = typer.Option(
+        None, "--primary-key", help="A column that identifies a row. Repeat it for each column"
     ),
-    asset_columns: str | None = typer.Option(
-        None, "--assets", help="The VARCHAR columns that hold a file's sha256, comma-separated. Empty removes them"
+    no_primary_key: bool = typer.Option(False, "--no-primary-key", help="Remove the primary key"),
+    asset_columns: list[str] | None = typer.Option(
+        None, "--assets", help="A VARCHAR column that holds a file's sha256. Repeat it for each column"
     ),
+    no_assets: bool = typer.Option(False, "--no-assets", help="Remove the asset columns"),
     profiled: bool | None = typer.Option(None, "--profile/--no-profile", help="Whether a push profiles it"),
     as_json: bool = typer.Option(False, "--json", help="Print the declarations as JSON"),
 ) -> None:
     """Show or set what the next commit declares of a table or view: its primary key, its asset
     columns and whether a push profiles it. A commit starts from its parent's declarations."""
-    keys, kept = _columns(primary_key), _columns(asset_columns)
-    if name is not None and (keys is not None or kept is not None or profiled is not None):
+    keys = [] if no_primary_key else (list(primary_key) if primary_key else None)
+    kept = [] if no_assets else (list(asset_columns) if asset_columns else None)
+    if (no_primary_key and primary_key) or (no_assets and asset_columns):
+        raise _fail(declaring.DeclarationError(["give the columns or remove them, not both"]))
+    changing = keys is not None or kept is not None or profiled is not None
+    if changing and name is None:
+        raise _fail(declaring.DeclarationError(["name the table or view to declare"]))
+    if changing:
 
         def change(f: declaring.Facts) -> declaring.Facts:
             return dataclasses.replace(
@@ -734,20 +747,25 @@ def table(
             )
 
         _change_declarations(working, change)
-        return
-    if keys is not None or kept is not None or profiled is not None:
-        raise _fail(declaring.DeclarationError(["name the table or view to declare"]))
-    facts = _declared(_read_state(working))
+        if not as_json:
+            return
+    state = _read_state(working)
+    facts = _declared(state)
     if name is not None:
         facts = facts.only({name})
+        # Nothing declared of a name it does not hold would look like a table with no declarations
+        if not changing and not (facts.primary_keys or facts.assets or facts.unprofiled):
+            found = _objects(working, state)
+            if name not in found.tables and name not in found.views:
+                raise _fail(declaring.DeclarationError([f"there is no table or view {name}"]))
     if as_json:
         held = facts.to_json()
-        typer.echo(json.dumps({k: held[k] for k in ("primary_keys", "assets", "unprofiled") if k in held}, ensure_ascii=False, indent=2))
+        typer.echo(json.dumps({k: held[k] for k in ("primary_keys", "assets", "unprofiled")}, ensure_ascii=False, indent=2))
         return
     for key, columns in sorted(facts.primary_keys.items()):
-        typer.echo(f"{key} primary_key {','.join(columns)}")
+        typer.echo(f"{key} primary_key {' '.join(columns)}")
     for key, columns in sorted(facts.assets.items()):
-        typer.echo(f"{key} assets {','.join(columns)}")
+        typer.echo(f"{key} assets {' '.join(columns)}")
     for key in sorted(facts.unprofiled):
         typer.echo(f"{key} profile false")
 

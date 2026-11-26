@@ -82,21 +82,21 @@ Refused when:
 ## fdl table
 
 ```bash
-fdl table <working.sqlite> [<schema.name>] [--primary-key <columns>] [--assets <columns>] [--profile | --no-profile] [--json]
+fdl table <working.sqlite> [<schema.name>] [--primary-key <column>]... [--no-primary-key] [--assets <column>]... [--no-assets] [--profile | --no-profile] [--json]
 ```
 
 Shows or changes what the next commit [declares](/spec/versions#declarations) of a table or view. The declarations are kept in `<working.sqlite>.fdl/`, starting from those of the version the working metadata was cloned from, and the commit writes them into `tables.json`.
 
 ```bash
-fdl table lake.sqlite main.population --primary-key code,year
+fdl table lake.sqlite main.population --primary-key code --primary-key year
 fdl table lake.sqlite main.reports --assets pdf_sha256
 fdl table lake.sqlite main.stg_population --no-profile
 ```
 
-- `--primary-key` sets the columns that identify a row of a table, comma-separated, used to [merge it cell by cell](/spec/writing#cells-merged-by-primary-key). An empty value (`--primary-key ""`) removes the primary key
-- `--assets` sets the `varchar` columns of a table that hold the sha256 of files, comma-separated. An empty value removes them
+- `--primary-key` sets the columns that identify a row of a table, one column per option, used to [merge it cell by cell](/spec/writing#cells-merged-by-primary-key). `--no-primary-key` removes the primary key
+- `--assets` sets the `varchar` columns of a table that hold the sha256 of files, one column per option. `--no-assets` removes them
 - `--no-profile` makes the push write no profile for a table or view, such as an intermediate table of a build; `--profile` removes that
-- Without these options, it prints the declarations of the table or view, one a line, or of every table and view without `<schema.name>`. `--json` prints them as one object with `primary_keys`, `assets` and `unprofiled`
+- Without these options, it prints the declarations of the table or view, one a line, or of every table and view without `<schema.name>`. A name the working metadata does not hold is refused. `--json` prints them as one object with `primary_keys`, `assets` and `unprofiled`
 
 A change is refused when the tables and views refuse it: a table or column that is not there, a primary key or asset columns on a view, or an asset column that is not `varchar`.
 
