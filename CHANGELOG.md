@@ -1,6 +1,15 @@
 # CHANGELOG
 
 
+## v0.44.0 (2026-11-26)
+
+### Features
+
+- Replace fdl declare with fdl table and fdl dependency add/remove/list
+  ([#107](https://github.com/queria-io/fdl/pull/107),
+  [`6171a76`](https://github.com/queria-io/fdl/commit/6171a76aa53c81886efa771d8af877494d04f106))
+
+
 ## v0.43.0 (2026-11-26)
 
 ### Bug Fixes
