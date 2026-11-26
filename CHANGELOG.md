@@ -1,6 +1,36 @@
 # CHANGELOG
 
 
+## v0.43.0 (2026-11-26)
+
+### Bug Fixes
+
+- Keep a dependency's recorded version when it cannot be read, and read HEAD when it is gone
+  ([#106](https://github.com/queria-io/fdl/pull/106),
+  [`0c6ec83`](https://github.com/queria-io/fdl/commit/0c6ec8356818936135d99bdde1b1e5b10e059d4f))
+
+* feat!: fdl commit records the version of each dependency it bound the views against
+
+Each commit reads the version a dependency's HEAD holds, binds the views against it and writes its
+  ID as dependencies[name].version in tables.json. Working declarations hold only the url, so a pin
+  never carries over a clone or a merge.
+
+BREAKING CHANGE: fdl declare dependency no longer takes --version.
+
+* fix: keep the parent's dependency version when the dependency cannot be read
+
+Also document Facts.declared(), how a revert binds dependencies, and that fdl status does not show a
+  dependency whose default branch moved.
+
+* docs: read HEAD when a dependency's recorded version is gone
+
+* test: an unreadable dependency makes no version when nothing else changed
+
+### Breaking Changes
+
+- Fdl declare dependency no longer takes --version.
+
+
 ## v0.42.0 (2026-11-26)
 
 ### Features
