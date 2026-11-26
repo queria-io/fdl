@@ -34,7 +34,7 @@ ATTACH 'ducklake:https://example.org/lake/versions/019a2f10-…/metadata.db' AS 
 
 ## ほかのデータセットを読むビュー
 
-ビューの SQL は、[tables.json](/ja/spec/versions#tablesjson) の `dependencies` が決める名前で、ほかのデータセットのテーブルを読むことがあります。そのビューを読む前に、読み手は `dependencies` のそれぞれを上の手順でその名前で ATTACH します。`version` があればそのバージョンを、無ければ `main` が指すバージョンを ATTACH します。
+ビューの SQL は、[tables.json](/ja/spec/versions#tablesjson) の `dependencies` が決める名前で、ほかのデータセットのテーブルを読むことがあります。そのビューを読む前に、読み手は `dependencies` のそれぞれを上の手順でその名前で ATTACH します。`version` があればそのバージョンを、無ければ `HEAD` が指すバージョンを ATTACH します。
 
 ```sql
 ATTACH 'ducklake:https://example.org/census/versions/019a2f10-…/metadata.db' AS census (

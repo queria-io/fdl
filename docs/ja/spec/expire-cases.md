@@ -3,7 +3,7 @@ title: expire のテストケース
 description: 保持期間を終わらせるバージョンを選ぶ処理のテストケース。すべての実装が実行し、同じ結果になります。
 ---
 
-[`cases/expire.json`](https://github.com/queria-io/fdl/blob/main/cases/expire.json) には、データセットと、それぞれで `keep` と `since` によって保持期間を終わらせる処理（[データファイル](/ja/spec/data-files#保持期間を終わらせるバージョンの選び方)）が保持期間を終わらせるバージョンが入っています。この処理の実装は、すべてのケースを実行し、ちょうどそれらの保持期間を終わらせます。
+[`cases/expire.json`](https://github.com/queria-io/fdl/blob/main/cases/expire.json) には、データセットと、それぞれで `keep` と `since` によって保持期間を終わらせる処理（[データファイル](/ja/spec/data-files#保持期間を終わらせるバージョンの選び方)）が保持期間を終わらせるバージョンが入っています。この処理の実装は、すべてのケースを実行し、ちょうどそれらの保持期間を終わらせます。`head` は `HEAD` が指すブランチです。無いときは `HEAD` は `refs/heads/main` を指します。
 
 ```json
 {

@@ -1267,16 +1267,17 @@ def plan_retention(
     """The live versions to take out of retention (Data files, "Choosing the versions to take out").
 
     Kept are the versions a ref points at, the merge bases of each ref with
-    main, the ``keep`` newest on each branch's first-parent line, those made at
-    or after ``since`` (an ISO time, as ``created_at`` is written), and those
-    made within ``grace``. Nothing is taken out before main has a version.
+    the default branch, the ``keep`` newest on each branch's first-parent line,
+    those made at or after ``since`` (an ISO time, as ``created_at`` is
+    written), and those made within ``grace``. Nothing is taken out before the
+    default branch has a version.
     Returns the IDs to take out, newest first.
     """
     if keep < 1:
         raise ValueError(f"keep must be >= 1, got {keep}")
     targets = _refs(store)
-    main = targets.get(layout.DEFAULT_BRANCH)
-    if main is None:
+    default = targets.get(default_branch(store))
+    if default is None:
         return []
     known: dict[str, Version] = {}
 
@@ -1286,10 +1287,10 @@ def plan_retention(
         return known[version_id]
 
     kept = set(targets.values())
-    behind_main = _ancestors(read, main)
+    behind_default = _ancestors(read, default)
     for name, target in targets.items():
-        if target != main:
-            kept.update(_bases(behind_main, _ancestors(read, target)))
+        if target != default:
+            kept.update(_bases(behind_default, _ancestors(read, target)))
         if name.startswith(layout.BRANCH_PREFIX):
             kept.update(_first_parents(read, target, keep))
     cutoff = _utc(now or dt.datetime.now(dt.timezone.utc)) - grace
@@ -1449,6 +1450,11 @@ def delete_branch(store: Store, name: str) -> None:
         raise RepoError(f"HEAD names {ref}, so it is kept")
     refs.delete(store, ref)
     update_refs_index(store)
+
+
+def default_branch(store: Store) -> str:
+    """The branch HEAD names (``refs/heads/<name>``)."""
+    return refs.resolve(store, layout.HEAD)[0]
 
 
 def branches(store: Store) -> dict[str, str]:

@@ -23,7 +23,7 @@ FDL is a storage layout for keeping versions of [DuckLake](https://ducklake.sele
 
 ## What it leaves to hosts
 
-- who can read a dataset, and who may move `main`. Everything in one dataset is readable by the same people
+- who can read a dataset, and who may move the default branch. Everything in one dataset is readable by the same people
 - authentication, URL shapes and retention defaults
 - the content of the DuckLake metadata itself, which is DuckLake's specification
 - how to record what a dataset, a table or a column means to people: titles, descriptions, licenses, sources and guides. FDL defines no field or declaration for them

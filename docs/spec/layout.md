@@ -10,10 +10,10 @@ Paths are relative to the root, lower case, and separated by `/`. The root is wh
 ```
 <root>/
   fdl.json                         dataset settings
-  HEAD                             the default ref: "ref: refs/heads/main"
+  HEAD                             the default branch: "ref: refs/heads/main"
   refs.json                        every ref and the version it holds, for readers that cannot list
   refs/
-    heads/<name>                   branches. They move; main is what readers see by default
+    heads/<name>                   branches. They move; HEAD names the one readers see by default
     tags/<name>                    tags. Never moved once made
     requests/<number>              for the host's own use, such as pending approvals (optional)
   versions/<version ID>/

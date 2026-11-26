@@ -34,10 +34,10 @@ fdl init <remote> [--data-dir tables/]
 ## fdl clone
 
 ```bash
-fdl clone <remote> [<working.sqlite>] [--branch main] [--storage s3://bucket/prefix/]
+fdl clone <remote> [<working.sqlite>] [--branch <name>] [--storage s3://bucket/prefix/]
 ```
 
-ブランチが指すバージョンのメタデータから作業メタデータ（SQLite の DuckLake）を作ります。最初のバージョンの前は空のものを作ります。`<working.sqlite>` を省くと、今のフォルダにデータセットの URL の最後の部分の名前で作ります（`https://example.com/towns/` なら `towns.sqlite`）。`--branch` には `main` のようなブランチ名か、`refs/heads/main` のような ref を渡します。隣のフォルダ `<working.sqlite>.fdl/` に、データセット、ブランチ、元のバージョンを記録します。Git の作業ツリーの `.git/` に当たります。書くときの `ATTACH` 文を表示します。
+ブランチが指すバージョンのメタデータから作業メタデータ（SQLite の DuckLake）を作ります。最初のバージョンの前は空のものを作ります。`<working.sqlite>` を省くと、今のフォルダにデータセットの URL の最後の部分の名前で作ります（`https://example.com/towns/` なら `towns.sqlite`）。`--branch` には `main` のようなブランチ名か、`refs/heads/main` のような ref を渡します。省くと[既定のブランチ](/ja/spec/refs#既定のブランチ)の上に作ります。隣のフォルダ `<working.sqlite>.fdl/` に、データセット、ブランチ、元のバージョンを記録します。Git の作業ツリーの `.git/` に当たります。書くときの `ATTACH` 文を表示します。
 
 HTTP のデータセットでは、新しいデータファイルは `<working.sqlite>.fdl/data/` に書かれ、push でアップロードされます。データセットに既にあるファイルは、その場所から HTTP で読みます。push はアップロードを終えると、新しいバージョンから作業メタデータを作り直して手元の写しを削除するので、このフォルダにはまだ push していないファイルだけが残ります。
 
@@ -279,10 +279,10 @@ fdl withdraw <remote> [<version>...] [--objects <file>] [--json] [--yes] [--by <
 ## fdl profile
 
 ```bash
-fdl profile <remote> [--ref refs/heads/main]
+fdl profile <remote> [--ref <ref>]
 ```
 
-ブランチかタグが指すバージョンのテーブルとビューのうち、[profile](/ja/spec/versions#profiles) が無いものを測り、profile をバージョンの横に置きます。`fdl push` はアップロードするバージョンの profile を作ります。このコマンドは profile 無しで push したバージョンに使います。fdl が profile を書く前に作ったバージョン、`--no-profile` で push したバージョン、そのときテーブルを読めなかったバージョンです。既にある profile は変えません。保持期間を過ぎたバージョンはメタデータが無いので断られます。
+ブランチかタグ（既定は既定のブランチ）が指すバージョンのテーブルとビューのうち、[profile](/ja/spec/versions#profiles) が無いものを測り、profile をバージョンの横に置きます。`fdl push` はアップロードするバージョンの profile を作ります。このコマンドは profile 無しで push したバージョンに使います。fdl が profile を書く前に作ったバージョン、`--no-profile` で push したバージョン、そのときテーブルを読めなかったバージョンです。既にある profile は変えません。保持期間を過ぎたバージョンはメタデータが無いので断られます。
 
 ## fdl expire
 
@@ -290,7 +290,7 @@ fdl profile <remote> [--ref refs/heads/main]
 fdl expire <remote> [--keep 1] [--since 2026-10-01T00:00:00Z] [--grace 7d] [--by <name>] [-m <message>]
 ```
 
-バージョンの保持期間を終わらせます。`expired.json` を置き、メタデータを消します。残すのは、各ブランチの最初の親のつながりで新しい `--keep` 個、ref が指すバージョン、その main との共通祖先、`--since` 以降または `--grace` のうちに作ったバージョンです。それ以外（マージが取り込んだ最初の親以外の親など）は保持期間を終わらせます（[保持期間を終わらせるバージョンの選び方](/ja/spec/data-files#保持期間を終わらせるバージョンの選び方)）。main にバージョンが無いうちは何も終わらせません。データファイルは消しません。消すのは `fdl gc` です。`--by` は保持期間を終わらせた人を、`--message` はその理由を `expired.json` に記録します。`fdl withdraw` の同じオプションも同じです。
+バージョンの保持期間を終わらせます。`expired.json` を置き、メタデータを消します。残すのは、各ブランチの最初の親のつながりで新しい `--keep` 個、ref が指すバージョン、その既定のブランチとの共通祖先、`--since` 以降または `--grace` のうちに作ったバージョンです。それ以外（マージが取り込んだ最初の親以外の親など）は保持期間を終わらせます（[保持期間を終わらせるバージョンの選び方](/ja/spec/data-files#保持期間を終わらせるバージョンの選び方)）。既定のブランチにバージョンが無いうちは何も終わらせません。データファイルは消しません。消すのは `fdl gc` です。`--by` は保持期間を終わらせた人を、`--message` はその理由を `expired.json` に記録します。`fdl withdraw` の同じオプションも同じです。
 
 ## fdl gc
 

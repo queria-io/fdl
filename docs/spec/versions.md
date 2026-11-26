@@ -242,7 +242,7 @@ What FDL needs to know about a table, a view or the dataset beyond what DuckLake
 | `primary_key` | a table | The names of the columns that identify a row, as a list | [Merging by cells](/spec/writing#cells-merged-by-primary-key) |
 | `assets` | a table | The names of the columns that hold assets, as a list | [Assets](#assets) |
 | `profile` | a table or a view | `false`: the writer makes no profile for it. Left out, it is `true` | [profiles/](#profiles) |
-| `dependencies` | the version | Each other dataset the views' SQL reads, keyed by the name the SQL reads it under: `url`, the URL of its root, and `version`, the ID of the version to read. Without `version`, the version `main` holds is read | [Reading a view](/spec/reading#views-that-read-other-datasets) |
+| `dependencies` | the version | Each other dataset the views' SQL reads, keyed by the name the SQL reads it under: `url`, the URL of its root, and `version`, the ID of the version to read. Without `version`, the version `HEAD` names is read | [Reading a view](/spec/reading#views-that-read-other-datasets) |
 
 - A writer's tool sets declarations between the clone and the commit. How it keeps them until the commit is up to it
 - A commit starts from the parent's declarations, so a declaration stays until a tool changes or removes it. A table or view is found by `schema.table`, so a table made again under the same name, as dbt's `CREATE OR REPLACE` does, keeps its declarations. A table or view that is dropped loses them

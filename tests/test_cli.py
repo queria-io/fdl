@@ -751,3 +751,21 @@ def test_a_working_metadata_cloned_by_an_earlier_fdl_says_so(tmp_path: Path) -> 
     (tmp_path / "lake.sqlite.fdl.json").write_text("{}", encoding="utf-8")
     result = runner.invoke(app, ["status", str(working)])
     assert result.exit_code != 0 and "earlier fdl" in result.output
+
+
+def test_a_clone_that_names_no_branch_builds_on_the_branch_head_names(tmp_path: Path) -> None:
+    remote, working = tmp_path / "remote", tmp_path / "work" / "lake.sqlite"
+    store = LocalStore(remote)
+    run("init", remote)
+    run("clone", remote, working)
+    write(working, store, "CREATE TABLE lake.main.towns AS SELECT 1 AS id")
+    commit(working, "-m", "first", "--author", "tester")
+    run("branch", remote, "stable")
+    # A host changes the default branch by writing HEAD.
+    (remote / "HEAD").write_text("ref: refs/heads/stable\n")
+
+    from fdl.cli import _read_state
+
+    run("clone", remote, tmp_path / "second.sqlite")
+    assert _read_state(tmp_path / "second.sqlite")["ref"] == "refs/heads/stable"
+    assert runner.invoke(app, ["branch", str(remote), "stable", "-d"]).exit_code == 1

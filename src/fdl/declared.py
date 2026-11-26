@@ -374,7 +374,7 @@ def _views(con) -> dict[str, dict[str, Any]]:
 
 
 def _attach_dependency(con, name: str, entry: dict[str, str]) -> bool:
-    """Attach the version of another dataset its entry names (else what its main holds)
+    """Attach the version of another dataset its entry names (else what its default branch holds)
     under ``name``. False when it cannot be read."""
     from . import layout, repo
     from .stores import open_store
@@ -382,7 +382,7 @@ def _attach_dependency(con, name: str, entry: dict[str, str]) -> bool:
     try:
         store = open_store(entry["url"])
         version = (
-            repo.read_version(store, entry["version"]) if entry.get("version") else repo.readable(store, "refs/heads/main")
+            repo.read_version(store, entry["version"]) if entry.get("version") else repo.readable(store)
         )
         where = store.url.rstrip("/") + "/" + layout.version_metadata(version)
         con.execute(
