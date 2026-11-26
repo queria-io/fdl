@@ -34,10 +34,10 @@ Writes `fdl.json` and `HEAD`. Running it on an existing dataset changes nothing 
 ## fdl clone
 
 ```bash
-fdl clone <remote> [<working.sqlite>] [--branch main] [--storage s3://bucket/prefix/]
+fdl clone <remote> [<working.sqlite>] [--branch <name>] [--storage s3://bucket/prefix/]
 ```
 
-Makes a working metadata file (DuckLake in SQLite) from the metadata of the version the branch holds, or an empty one before the first version. Without `<working.sqlite>`, it is named after the dataset's last path segment in the current folder (`towns.sqlite` for `https://example.com/towns/`). `--branch` takes a branch name such as `main`, or a ref such as `refs/heads/main`. Beside it, the folder `<working.sqlite>.fdl/` remembers the dataset, the branch and the version it was made from, as `.git/` does in a Git working tree. It prints the `ATTACH` statement to write with.
+Makes a working metadata file (DuckLake in SQLite) from the metadata of the version the branch holds, or an empty one before the first version. Without `<working.sqlite>`, it is named after the dataset's last path segment in the current folder (`towns.sqlite` for `https://example.com/towns/`). `--branch` takes a branch name such as `main`, or a ref such as `refs/heads/main`. Without it, the clone builds on the [default branch](/spec/refs#the-default-branch). Beside it, the folder `<working.sqlite>.fdl/` remembers the dataset, the branch and the version it was made from, as `.git/` does in a Git working tree. It prints the `ATTACH` statement to write with.
 
 For a dataset over HTTP, new data files are written to `<working.sqlite>.fdl/data/` and uploaded by the push. Files already in the dataset are read over HTTP where they are. Once a push has uploaded them, it makes the working metadata again from the new version and deletes the local copies, so the folder holds only what has not been pushed.
 
@@ -67,7 +67,7 @@ Freezes the working metadata into a new version whose parent is the version it w
 
 The command checks the declarations kept beside the working metadata (see `fdl declare`) against its tables and views first. A commit starts from its parent's declarations: a table made again under the same name, as dbt's `CREATE OR REPLACE` does, keeps them, a table dropped loses them, and a column renamed since it was declared is declared under its new name.
 
-It writes the version's `tables.json` (see [tables.json](/spec/versions#tablesjson)): each table's data files and columns with its `primary_key`, `assets` and `profile`, each view's SQL and the columns its query returns, and `dependencies`. To find a view's columns, it attaches each dependency under its name, at the version it names or else the one its `main` holds; a view whose query it cannot bind is listed without columns. Comments in the metadata (`COMMENT ON`) are kept as they are and not read.
+It writes the version's `tables.json` (see [tables.json](/spec/versions#tablesjson)): each table's data files and columns with its `primary_key`, `assets` and `profile`, each view's SQL and the columns its query returns, and `dependencies`. To find a view's columns, it attaches each dependency under its name, at the version it names or else the one its default branch holds; a view whose query it cannot bind is listed without columns. Comments in the metadata (`COMMENT ON`) are kept as they are and not read.
 
 The columns declared in `assets` hold the sha256 of files (see [Assets](/spec/versions#assets)). The command reads the values those columns hold, and the push uploads the files the dataset lacks from the `--assets` folder to `assets/<sha256>`, by their content: file names in the folder do not matter. Keep the dataset's documents (a `README.md`, its images) in a table of your own whose `sha256` column is declared an asset column, and their files in the `--assets` folder (see `fdl assets`).
 
@@ -101,7 +101,7 @@ fdl declare dependency lake.sqlite census https://example.org/census/
 - `primary-key` sets the columns that identify a row of a table, used to [merge it cell by cell](/spec/writing#cells-merged-by-primary-key). Without columns, it removes the primary key
 - `assets` sets the `varchar` columns of a table that hold the sha256 of files. Without columns, it removes them
 - `profile false` makes the push write no profile for a table or view, such as an intermediate table of a build; `profile true` removes that
-- `dependency` names another dataset the views' SQL reads, under the name the SQL uses. Without `--version`, the views read the version its `main` holds. Without `<url>`, it removes the dependency
+- `dependency` names another dataset the views' SQL reads, under the name the SQL uses. Without `--version`, the views read the version its default branch holds. Without `<url>`, it removes the dependency
 - `list` prints one declaration a line, and `--json` all of them as one object
 
 A change is refused when the tables and views refuse it: a table or column that is not there, a primary key or asset columns on a view, an asset column that is not `varchar`, or a dependency whose name or `url` the commit would refuse.
@@ -278,10 +278,10 @@ Without `--yes` it only prints what it would delete. Files a kept version still 
 ## fdl profile
 
 ```bash
-fdl profile <remote> [--ref refs/heads/main]
+fdl profile <remote> [--ref <ref>]
 ```
 
-Profiles the tables and views of the version the branch or tag holds that have no [profile](/spec/versions#profiles), and puts the profiles beside the version. `fdl push` profiles the version it uploads; this is for a version pushed without them: made before fdl wrote profiles, pushed with `--no-profile`, or whose tables could not be read then. Profiles already there are left as they are. Refused for a version past retention, which has no metadata.
+Profiles the tables and views of the version the branch or tag holds (default: the default branch) that have no [profile](/spec/versions#profiles), and puts the profiles beside the version. `fdl push` profiles the version it uploads; this is for a version pushed without them: made before fdl wrote profiles, pushed with `--no-profile`, or whose tables could not be read then. Profiles already there are left as they are. Refused for a version past retention, which has no metadata.
 
 ## fdl expire
 
@@ -289,7 +289,7 @@ Profiles the tables and views of the version the branch or tag holds that have n
 fdl expire <remote> [--keep 1] [--since 2026-10-01T00:00:00Z] [--grace 7d] [--by <name>] [-m <message>]
 ```
 
-Takes versions out of retention: puts `expired.json` and deletes their metadata files. Kept are the newest `--keep` on each branch's first-parent line, the versions refs point at, their merge bases with main, and the versions made at or after `--since` or within `--grace`. Other versions, such as the parents a merge brought in other than its first, are taken out ([Choosing the versions to take out](/spec/data-files#choosing-the-versions-to-take-out)). Nothing is taken out before main has a version. Data files are not deleted; `fdl gc` deletes them. `--by` records who takes the versions out in `expired.json`, and `--message` why, as do the same options of `fdl withdraw`.
+Takes versions out of retention: puts `expired.json` and deletes their metadata files. Kept are the newest `--keep` on each branch's first-parent line, the versions refs point at, their merge bases with the default branch, and the versions made at or after `--since` or within `--grace`. Other versions, such as the parents a merge brought in other than its first, are taken out ([Choosing the versions to take out](/spec/data-files#choosing-the-versions-to-take-out)). Nothing is taken out before the default branch has a version. Data files are not deleted; `fdl gc` deletes them. `--by` records who takes the versions out in `expired.json`, and `--message` why, as do the same options of `fdl withdraw`.
 
 ## fdl gc
 

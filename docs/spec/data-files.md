@@ -75,12 +75,12 @@ A version is taken out of retention in this order:
 How long to keep versions is the host's choice: the newest `keep` on each branch, those made at or after `since`, or both. A process that takes versions out by such a choice decides for every live version at once, and keeps a version when any of these holds:
 
 1. A ref points at it
-2. It is a merge base of a ref and `refs/heads/main` ([Writing](/spec/writing#merging)): merging the ref into main, or main into the ref, reads it
+2. It is a merge base of a ref and the [default branch](/spec/refs#the-default-branch) ([Writing](/spec/writing#merging)): merging the ref into the default branch, or the default branch into the ref, reads it
 3. It is among the `keep` newest on the first-parent line of a branch (`refs/heads/<name>`), counting from the version the branch points at
 4. It was made at or after `since`
 5. It was made within the grace period. A writer puts a version before it moves a ref to it
 
-The others are taken out. A dataset without `refs/heads/main` has nothing taken out. This also takes out versions on no branch's first-parent line once nothing above keeps them: the parents a merge brought in other than its first, the versions of a deleted branch, and the head of a request the host closed and deleted. A version counts as made at its `created_at`.
+The others are taken out. A dataset whose default branch holds no version has nothing taken out. This also takes out versions on no branch's first-parent line once nothing above keeps them: the parents a merge brought in other than its first, the versions of a deleted branch, and the head of a request the host closed and deleted. A version counts as made at its `created_at`.
 
 Implementations of this choice agree on the cases in [Expire cases](/spec/expire-cases).
 

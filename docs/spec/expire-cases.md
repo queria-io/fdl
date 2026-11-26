@@ -37,6 +37,7 @@ description: Test cases for choosing the versions to take out of retention, whic
 | `versions` | The versions in the dataset |
 | `expired` | The versions already past retention: they have `expired.json` |
 | `refs` | The refs, each with the version it points at |
+| `head` | The branch `HEAD` names. Left out, `HEAD` names `refs/heads/main` |
 | `take_out` | The versions taken out |
 
 A change to which versions are taken out comes with a case here, in the same change as this specification.

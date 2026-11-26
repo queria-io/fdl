@@ -411,13 +411,13 @@ def push(
     local: Path,
     version: Version,
     *,
-    ref: str = layout.DEFAULT_BRANCH,
+    ref: str | None = None,
     move_ref: bool = True,
     local_data: Path | None = None,
     assets: Iterable[str] = (),
     local_objects: Mapping[str, Path] | None = None,
 ) -> None:
-    """Upload a committed version, then move ``ref`` to it.
+    """Upload a committed version, then move ``ref`` (default: the default branch) to it.
 
     In the order the format asks for: the data files must already be there,
     then the metadata, then `version.json`, and the ref last. A push stopped
@@ -436,6 +436,7 @@ def push(
     still lacks one is refused.
     """
     config = read_config(store)
+    ref = ref or default_branch(store)
     current_ref = refs.read(store, layout.check_ref(ref))
     if current_ref is not None and current_ref.target == version.id:
         # This push again, after a run whose answer was lost. That run may
@@ -1267,16 +1268,17 @@ def plan_retention(
     """The live versions to take out of retention (Data files, "Choosing the versions to take out").
 
     Kept are the versions a ref points at, the merge bases of each ref with
-    main, the ``keep`` newest on each branch's first-parent line, those made at
-    or after ``since`` (an ISO time, as ``created_at`` is written), and those
-    made within ``grace``. Nothing is taken out before main has a version.
+    the default branch, the ``keep`` newest on each branch's first-parent line,
+    those made at or after ``since`` (an ISO time, as ``created_at`` is
+    written), and those made within ``grace``. Nothing is taken out before the
+    default branch has a version.
     Returns the IDs to take out, newest first.
     """
     if keep < 1:
         raise ValueError(f"keep must be >= 1, got {keep}")
     targets = _refs(store)
-    main = targets.get(layout.DEFAULT_BRANCH)
-    if main is None:
+    default = targets.get(default_branch(store))
+    if default is None:
         return []
     known: dict[str, Version] = {}
 
@@ -1286,10 +1288,10 @@ def plan_retention(
         return known[version_id]
 
     kept = set(targets.values())
-    behind_main = _ancestors(read, main)
+    behind_default = _ancestors(read, default)
     for name, target in targets.items():
-        if target != main:
-            kept.update(_bases(behind_main, _ancestors(read, target)))
+        if target != default:
+            kept.update(_bases(behind_default, _ancestors(read, target)))
         if name.startswith(layout.BRANCH_PREFIX):
             kept.update(_first_parents(read, target, keep))
     cutoff = _utc(now or dt.datetime.now(dt.timezone.utc)) - grace
@@ -1449,6 +1451,14 @@ def delete_branch(store: Store, name: str) -> None:
         raise RepoError(f"HEAD names {ref}, so it is kept")
     refs.delete(store, ref)
     update_refs_index(store)
+
+
+def default_branch(store: Store) -> str:
+    """The branch HEAD names (``refs/heads/<name>``). Refused when HEAD names a tag or a request."""
+    name = refs.resolve(store, layout.HEAD)[0]
+    if not name.startswith(layout.BRANCH_PREFIX):
+        raise RepoError(f"HEAD names {name}, which is not a branch")
+    return name
 
 
 def branches(store: Store) -> dict[str, str]:
