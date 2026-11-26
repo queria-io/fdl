@@ -1,6 +1,25 @@
 # CHANGELOG
 
 
+## v0.42.0 (2026-11-26)
+
+### Features
+
+- Fdl commit records the version of each dependency it bound the views against
+  ([#105](https://github.com/queria-io/fdl/pull/105),
+  [`a9d4e06`](https://github.com/queria-io/fdl/commit/a9d4e06c5d990f8fa157852c8eff6b9074fa5e5d))
+
+Each commit reads the version a dependency's HEAD holds, binds the views against it and writes its
+  ID as dependencies[name].version in tables.json. Working declarations hold only the url, so a pin
+  never carries over a clone or a merge.
+
+BREAKING CHANGE: fdl declare dependency no longer takes --version.
+
+### Breaking Changes
+
+- Fdl declare dependency no longer takes --version.
+
+
 ## v0.41.0 (2026-11-26)
 
 ### Features
