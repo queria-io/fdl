@@ -67,7 +67,7 @@ fdl commit <working.sqlite> -m "What changed" [--author alice] [--allow-empty] [
 
 コマンドはまず、作業メタデータの隣に保存した宣言（`fdl declare` を参照）をテーブルとビューに照らして確認します。コミットは親の宣言から始めます。dbt の `CREATE OR REPLACE` のように同じ名前で作り直したテーブルは宣言を引き継ぎ、削除したテーブルは宣言を失い、宣言のあとに名前を変えた列は新しい名前で宣言されます。
 
-バージョンの `tables.json`（[tables.json](/ja/spec/versions#tablesjson)）には、テーブルごとのデータファイルと列、`primary_key`・`assets`・`profile`、ビューごとの SQL とクエリが返す列、`dependencies` を書きます。ビューの列を求めるときは、dependencies をそれぞれの名前で、指定したバージョンか、無ければその `main` が指すバージョンで ATTACH します。クエリを解決できないビューは列なしで載せます。メタデータのコメント（`COMMENT ON`）はそのまま残し、読みません。
+バージョンの `tables.json`（[tables.json](/ja/spec/versions#tablesjson)）には、テーブルごとのデータファイルと列、`primary_key`・`assets`・`profile`、ビューごとの SQL とクエリが返す列、`dependencies` を書きます。ビューの列を求めるときは、dependencies をそれぞれの名前で、指定したバージョンか、無ければその既定のブランチが指すバージョンで ATTACH します。クエリを解決できないビューは列なしで載せます。メタデータのコメント（`COMMENT ON`）はそのまま残し、読みません。
 
 `assets` で宣言した列は、ファイルの sha256 を持ちます（[アセット](/ja/spec/versions#アセット)）。コマンドはその列の値を読み、push がデータセットに無いファイルを `--assets` のフォルダから `assets/<sha256>` にアップロードします。ファイルは中身で照合するので、フォルダの中のファイル名は問いません。データセットの文書（`README.md` とその画像など）は、`sha256` 列をアセット列として宣言した自分のテーブルに載せ、そのファイルを `--assets` のフォルダに置きます（`fdl assets` を参照）。
 
@@ -102,7 +102,7 @@ fdl declare dependency lake.sqlite census https://example.org/census/
 - `primary-key` は、テーブルの行を識別する列を設定します。[セル単位のマージ](/ja/spec/writing#主キーでのセルのマージ)に使います。列を省くと主キーを外します
 - `assets` は、ファイルの sha256 を持つテーブルの `varchar` 列を設定します。列を省くと外します
 - `profile false` は、ビルドの中間テーブルなどに push が profile を書かないようにします。`profile true` でそれを外します
-- `dependency` は、ビューの SQL が読む別のデータセットを、SQL が使う名前で設定します。`--version` を省くと、ビューはその `main` が指すバージョンを読みます。`<url>` を省くと外します
+- `dependency` は、ビューの SQL が読む別のデータセットを、SQL が使う名前で設定します。`--version` を省くと、ビューはその既定のブランチが指すバージョンを読みます。`<url>` を省くと外します
 - `list` は 1 行に 1 つの宣言を表示します。`--json` を付けるとすべてを 1 つのオブジェクトで表示します
 
 テーブルとビューに照らして通らない変更は断ります。無いテーブルや列、ビューへの主キーやアセット列、`varchar` でないアセット列、コミットが断る名前や `url` の dependencies です。

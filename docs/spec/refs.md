@@ -33,16 +33,16 @@ The name after `refs/heads/`, `refs/tags/` or `refs/requests/` is up to 128 char
 - A refused writer checks out again and builds on what is there now, or merges what is there now into its work (see [Merging](/spec/writing#merging))
 - A host may keep writers from writing refs and move them itself after its own checks
 
+A store without conditional writes must not be pushed to: the last writer would silently replace someone else's version. It may still be read from.
+
 ## The default branch
 
 The default branch is the branch `HEAD` names. It holds the version readers see when they name no ref, and it is the branch a writer builds on when it names none. A new dataset's `HEAD` names `refs/heads/main`.
 
 - `HEAD` is moved by writing it again, on condition: `If-Match: <the ETag read>`
-- `HEAD` names only a branch that holds a version
+- `HEAD` is moved only to a branch that holds a version
 - The branch `HEAD` names is not deleted
 - A host may keep writers from writing `HEAD` and move it itself
-
-A store without conditional writes must not be pushed to: the last writer would silently replace someone else's version. It may still be read from.
 
 ## refs.json
 

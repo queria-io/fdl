@@ -3,7 +3,7 @@ title: Expire cases
 description: Test cases for choosing the versions to take out of retention, which every implementation runs and agrees on.
 ---
 
-[`cases/expire.json`](https://github.com/queria-io/fdl/blob/main/cases/expire.json) holds datasets and, for each, the versions a process that takes versions out of retention by `keep` and `since` ([Data files](/spec/data-files#choosing-the-versions-to-take-out)) takes out. An implementation of that choice runs every case and takes out exactly those. `head` is the branch `HEAD` names; without it, `HEAD` names `refs/heads/main`.
+[`cases/expire.json`](https://github.com/queria-io/fdl/blob/main/cases/expire.json) holds datasets and, for each, the versions a process that takes versions out of retention by `keep` and `since` ([Data files](/spec/data-files#choosing-the-versions-to-take-out)) takes out. An implementation of that choice runs every case and takes out exactly those.
 
 ```json
 {
@@ -37,6 +37,7 @@ description: Test cases for choosing the versions to take out of retention, whic
 | `versions` | The versions in the dataset |
 | `expired` | The versions already past retention: they have `expired.json` |
 | `refs` | The refs, each with the version it points at |
+| `head` | The branch `HEAD` names. Left out, `HEAD` names `refs/heads/main` |
 | `take_out` | The versions taken out |
 
 A change to which versions are taken out comes with a case here, in the same change as this specification.

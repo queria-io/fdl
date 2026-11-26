@@ -768,7 +768,7 @@ def declare_dependency(
     working: Path = Working,
     name: str = typer.Argument(help="The name the views' SQL reads the other dataset under"),
     url: str | None = typer.Argument(None, help="The URL of its root, ending in /. Without it, the dependency is removed"),
-    version: str | None = typer.Option(None, "--version", help="The version to read. Without it, the one main holds"),
+    version: str | None = typer.Option(None, "--version", help="The version to read. Without it, the one its default branch holds"),
 ) -> None:
     """Declare another dataset the views read (a dependency)."""
     if version and not url:

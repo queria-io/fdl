@@ -411,13 +411,13 @@ def push(
     local: Path,
     version: Version,
     *,
-    ref: str = layout.DEFAULT_BRANCH,
+    ref: str | None = None,
     move_ref: bool = True,
     local_data: Path | None = None,
     assets: Iterable[str] = (),
     local_objects: Mapping[str, Path] | None = None,
 ) -> None:
-    """Upload a committed version, then move ``ref`` to it.
+    """Upload a committed version, then move ``ref`` (default: the default branch) to it.
 
     In the order the format asks for: the data files must already be there,
     then the metadata, then `version.json`, and the ref last. A push stopped
@@ -436,6 +436,7 @@ def push(
     still lacks one is refused.
     """
     config = read_config(store)
+    ref = ref or default_branch(store)
     current_ref = refs.read(store, layout.check_ref(ref))
     if current_ref is not None and current_ref.target == version.id:
         # This push again, after a run whose answer was lost. That run may
@@ -1453,8 +1454,11 @@ def delete_branch(store: Store, name: str) -> None:
 
 
 def default_branch(store: Store) -> str:
-    """The branch HEAD names (``refs/heads/<name>``)."""
-    return refs.resolve(store, layout.HEAD)[0]
+    """The branch HEAD names (``refs/heads/<name>``). Refused when HEAD names a tag or a request."""
+    name = refs.resolve(store, layout.HEAD)[0]
+    if not name.startswith(layout.BRANCH_PREFIX):
+        raise RepoError(f"HEAD names {name}, which is not a branch")
+    return name
 
 
 def branches(store: Store) -> dict[str, str]:

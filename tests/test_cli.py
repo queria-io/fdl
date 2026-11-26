@@ -769,3 +769,18 @@ def test_a_clone_that_names_no_branch_builds_on_the_branch_head_names(tmp_path: 
     run("clone", remote, tmp_path / "second.sqlite")
     assert _read_state(tmp_path / "second.sqlite")["ref"] == "refs/heads/stable"
     assert runner.invoke(app, ["branch", str(remote), "stable", "-d"]).exit_code == 1
+
+
+def test_a_clone_refuses_a_head_that_names_a_tag(tmp_path: Path) -> None:
+    remote, working = tmp_path / "remote", tmp_path / "work" / "lake.sqlite"
+    store = LocalStore(remote)
+    run("init", remote)
+    run("clone", remote, working)
+    write(working, store, "CREATE TABLE lake.main.towns AS SELECT 1 AS id")
+    commit(working, "-m", "first", "--author", "tester")
+    run("tag", remote, "first")
+    # A push from this clone would move the tag, which is never moved.
+    (remote / "HEAD").write_text("ref: refs/tags/first\n")
+
+    result = runner.invoke(app, ["clone", str(remote), str(tmp_path / "second.sqlite")])
+    assert result.exit_code != 0 and "not a branch" in result.output
