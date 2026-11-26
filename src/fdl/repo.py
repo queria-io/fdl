@@ -162,7 +162,9 @@ def commit(
     """
     setup = list(setup)
     reading = working_data or catalog.working_data_path(working)
-    described = declared_.describe(working, facts or declared_.Facts(), data_path=reading, setup=setup)
+    described = declared_.describe(
+        working, facts or declared_.Facts(), data_path=reading, setup=setup, inherited=inherited
+    )
     Path(out_dir).mkdir(parents=True, exist_ok=True)
     frozen = Path(out_dir) / f".freezing-{new_id()}.duckdb"
     try:

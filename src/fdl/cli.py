@@ -725,7 +725,7 @@ def declare_list(
     for name in sorted(facts.unprofiled):
         typer.echo(f"{name} profile false")
     for name, entry in sorted(facts.dependencies.items()):
-        typer.echo(f"dependency {name} {entry['url']}" + (f" {entry['version']}" if entry.get("version") else ""))
+        typer.echo(f"dependency {name} {entry['url']}")
 
 
 @declare_app.command("primary-key")

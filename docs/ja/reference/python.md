@@ -152,7 +152,7 @@ declared.changed(old, new, names) -> list[str]
 declared.dependencies_changed(old, new) -> list[str]
 ```
 
-`Facts` はバージョンの宣言を持ちます。`primary_keys` と `assets` は `schema.table` ごと、`dependencies` は名前ごと（`{"url": ..., "version": ...}`）、`unprofiled` は `profile` が `false` のテーブルとビューです。`of(name)` は 1 つのテーブルかビューの宣言を `tables.json` と同じ形で返し、`to_json` と `from_json` はファイルに保存するためのものです。`from_index` は `tables.json` から宣言を読みます。`check` は、作業メタデータのテーブルとビュー（`found_in(working, data_path=...)`）に照らして、[決まり](/ja/spec/versions#宣言)に通らないものを返します。`merged` は 3 方向でマージし、衝突も返します。`changed` と `dependencies_changed` は diff に並べる名前を返します。
+`Facts` はバージョンの宣言を持ちます。`primary_keys` と `assets` は `schema.table` ごと、`dependencies` は名前ごと（`{"url": ..., "version": ...}`。`version` はコミットがビューを結び付けたバージョン）、`unprofiled` は `profile` が `false` のテーブルとビューです。`declared()` は作業メタデータが持つ形で返します。dependencies はそれぞれ `url` だけを持ちます。`of(name)` は 1 つのテーブルかビューの宣言を `tables.json` と同じ形で返し、`to_json` と `from_json` はファイルに保存するためのものです。`from_index` は `tables.json` から宣言を読みます。`check` は、作業メタデータのテーブルとビュー（`found_in(working, data_path=...)`）に照らして、[決まり](/ja/spec/versions#宣言)に通らないものを返します。`merged` は 3 方向でマージし、衝突も返します。`changed` と `dependencies_changed` は diff に並べる名前を返します。
 
 ## fdl.diff
 

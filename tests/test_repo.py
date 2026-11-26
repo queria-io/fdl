@@ -886,6 +886,18 @@ def test_declarations_the_tables_refuse_are_not_committed(tmp_path: Path, remote
     assert not (tmp_path / "local").exists() or not any((tmp_path / "local").iterdir())
 
 
+def test_a_dependency_that_cannot_be_read_keeps_the_parents_version(tmp_path: Path, remote) -> None:
+    build(tmp_path / "work.sqlite", remote, "CREATE TABLE lake.main.towns AS SELECT 1 AS id")
+    pinned = new_id()
+    inherited = declared.Facts(dependencies={"a": {"url": "https://example.invalid/a/", "version": pinned}})
+    facts = inherited.declared()
+    described = declared.describe(tmp_path / "work.sqlite", facts, data_path=catalog.working_data_path(tmp_path / "work.sqlite"), inherited=inherited)
+    assert described.facts.dependencies == {"a": {"url": "https://example.invalid/a/", "version": pinned}}
+    moved = declared.Facts(dependencies={"a": {"url": "https://example.invalid/b/"}})
+    described = declared.describe(tmp_path / "work.sqlite", moved, data_path=catalog.working_data_path(tmp_path / "work.sqlite"), inherited=inherited)
+    assert described.facts.dependencies == {"a": {"url": "https://example.invalid/b/"}}
+
+
 def test_a_change_of_dependencies_is_in_the_diff(tmp_path: Path, remote) -> None:
     build(tmp_path / "work.sqlite", remote, "CREATE TABLE lake.main.towns AS SELECT 1 AS id")
     old = declared.Facts(dependencies={"a": {"url": "https://example.org/a/"}, "b": {"url": "https://example.org/b/"}})
