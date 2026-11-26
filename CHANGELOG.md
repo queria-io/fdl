@@ -1,6 +1,22 @@
 # CHANGELOG
 
 
+## v0.41.0 (2026-11-26)
+
+### Features
+
+- Follow HEAD as the default branch ([#104](https://github.com/queria-io/fdl/pull/104),
+  [`908a234`](https://github.com/queria-io/fdl/commit/908a23427495209271bece9611b9b69bb77812dc))
+
+* feat: follow HEAD as the default branch
+
+The default branch is the branch HEAD names. fdl clone builds on it when no branch is given, fdl
+  profile profiles it, fdl expire keeps the merge bases with it, and a view's dependency without a
+  version reads it. The spec says how a host moves HEAD.
+
+* fix: refuse a HEAD that names no branch, and let push default to the default branch
+
+
 ## v0.40.0 (2026-11-26)
 
 ### Features
