@@ -14,9 +14,9 @@ HEAD                 ref: refs/heads/main\n
 
 | Path | Moves | Use |
 | --- | --- | --- |
-| `HEAD` | rarely | The default branch. A reader that names no ref follows `HEAD` |
-| `refs/heads/main` | yes | The version readers normally see |
-| `refs/heads/<name>` | yes | Shared work in progress |
+| `HEAD` | rarely | Names the default branch. A reader that names no ref follows `HEAD` |
+| `refs/heads/main` | yes | The default branch of a new dataset |
+| `refs/heads/<name>` | yes | Shared work in progress, or the default branch when `HEAD` names it |
 | `refs/tags/<name>` | no | A version to pin, for example `2025-final`. May be deleted |
 | `refs/requests/<number>` | as the host decides | Pending approvals and the like |
 
@@ -34,6 +34,15 @@ The name after `refs/heads/`, `refs/tags/` or `refs/requests/` is up to 128 char
 - A host may keep writers from writing refs and move them itself after its own checks
 
 A store without conditional writes must not be pushed to: the last writer would silently replace someone else's version. It may still be read from.
+
+## The default branch
+
+The default branch is the branch `HEAD` names. It holds the version readers see when they name no ref, and it is the branch a writer builds on when it names none. A new dataset's `HEAD` names `refs/heads/main`.
+
+- `HEAD` is moved by writing it again, on condition: `If-Match: <the ETag read>`
+- `HEAD` is moved only to a branch that holds a version
+- The branch `HEAD` names is not deleted
+- A host may keep writers from writing `HEAD` and move it itself
 
 ## refs.json
 

@@ -34,7 +34,7 @@ ATTACH 'ducklake:https://example.org/lake/versions/019a2f10-…/metadata.db' AS 
 
 ## Views that read other datasets
 
-A view's SQL may read tables of other datasets, under the names `dependencies` of [tables.json](/spec/versions#tablesjson) gives. Before it reads such a view, a reader attaches each entry under its name, by the steps above: the version `version` names, or the version `HEAD` holds when it has none. A writer writes `version` at each commit, so a reader reads the data the view was committed with.
+A view's SQL may read tables of other datasets, under the names `dependencies` of [tables.json](/spec/versions#tablesjson) gives. Before it reads such a view, a reader attaches each entry under its name, by the steps above: the version `version` names, or the version `HEAD` names when it has none. A writer writes `version` at each commit, so a reader reads the data the view was committed with.
 
 ```sql
 ATTACH 'ducklake:https://example.org/census/versions/019a2f10-…/metadata.db' AS census (

@@ -34,6 +34,8 @@ def test_retention_case(tmp_path: Path, case: dict) -> None:
         path = root / name
         path.parent.mkdir(parents=True, exist_ok=True)
         path.write_text(target + "\n")
+    # HEAD names the default branch: main unless the case says otherwise.
+    (root / layout.HEAD).write_text(f"{layout.SYMBOLIC}{case.get('head', layout.DEFAULT_BRANCH)}\n")
 
     taken = repo.plan_retention(
         LocalStore(root),

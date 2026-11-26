@@ -10,10 +10,10 @@ description: データセットのファイル、そのパス、fdl.json の中�
 ```
 <root>/
   fdl.json                         データセットの設定
-  HEAD                             既定の ref: "ref: refs/heads/main"
+  HEAD                             既定のブランチ: "ref: refs/heads/main"
   refs.json                        すべての ref と指すバージョン。一覧を取れない読み手のため
   refs/
-    heads/<name>                   ブランチ。動く。読み手が既定で見るのは main
+    heads/<name>                   ブランチ。動く。読み手が既定で見るのは HEAD が指すもの
     tags/<name>                    タグ。一度作ったら動かさない
     requests/<number>              ホストが使う（承認待ちなど、任意）
   versions/<version ID>/

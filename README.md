@@ -79,15 +79,15 @@ Credentials and the endpoint come from boto3's usual places (`AWS_*` environment
 | Command | What it does |
 | --- | --- |
 | `fdl init <remote>` | Start a dataset (`fdl.json` and `HEAD`) |
-| `fdl clone <remote> <working>` | Make a working metadata file from the version `main` holds |
+| `fdl clone <remote> <working>` | Make a working metadata file from the version the default branch (`main` unless `HEAD` names another) holds |
 | `fdl declare <kind> <working> …` | Declare a primary key, asset columns, a profile or another dataset the views read |
 | `fdl commit <working> -m … --author …` | Freeze the working metadata into a version |
-| `fdl push <working>` | Upload the committed version and move `main` to it |
-| `fdl log <remote>` | List versions from `main` back to the first |
+| `fdl push <working>` | Upload the committed version and move the cloned branch to it |
+| `fdl log <remote>` | List versions from the default branch back to the first |
 | `fdl status <working>` | What the working metadata changed since the clone |
 | `fdl diff <remote> [version]` | What a version changed since its parent: tables, rows, columns, data files, declarations |
 | `fdl show <remote> [version]` | A version's record, its tables and its changes |
-| `fdl url <remote> [--attach]` | Print the metadata URL of the version `main` holds, or the whole `ATTACH` statement |
+| `fdl url <remote> [--attach]` | Print the metadata URL of the version the default branch holds, or the whole `ATTACH` statement |
 | `fdl tag <remote> [name] [version]` | List tags, tag a version, or delete a tag (`-d`) |
 | `fdl branch <remote> [name] [version]` | List branches, start a branch at a version, or delete a branch (`-d`) |
 | `fdl merge <ref> <working> --author …` | Merge another branch into the working metadata's branch, cells matched by primary key |
@@ -96,7 +96,7 @@ Credentials and the endpoint come from boto3's usual places (`AWS_*` environment
 | `fdl withdraw <remote> <version>…` | Remove versions that hold data that must not be published |
 | `fdl assets <folder>` | List files for an asset column (path, sha256, bytes, media type) |
 
-A push that is not built on what `main` holds now is refused: clone again and redo the work, or work on a branch and merge it.
+A push that is not built on what its branch holds now is refused: clone again and redo the work, or work on a branch and merge it.
 
 ## Python
 

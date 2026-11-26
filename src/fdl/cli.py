@@ -123,16 +123,19 @@ def clone(
     working: Path | None = typer.Argument(
         None, help="The working metadata (.sqlite). Default: <the dataset's last path segment>.sqlite here"
     ),
-    branch: str = typer.Option(layout.DEFAULT_BRANCH.removeprefix("refs/heads/"), "--branch", "-b", help="The branch to build on: a name such as main, or refs/heads/<name>"),
+    branch: str | None = typer.Option(None, "--branch", "-b", help="The branch to build on: a name such as main, or refs/heads/<name>. Default: the default branch"),
     storage: str | None = typer.Option(
         None,
         help="The dataset's root in its object storage (s3://…), to write new data files there directly instead of uploading them on commit",
     ),
 ) -> None:
     """Make a working metadata file from the version a branch holds."""
-    ref = branch if branch.startswith("refs/") else f"refs/heads/{branch}"
     working = working or _default_working(remote)
     store = _store(remote)
+    try:
+        ref = (branch if branch.startswith("refs/") else f"refs/heads/{branch}") if branch else repo.default_branch(store)
+    except ERRORS as exc:
+        raise _fail(exc) from exc
     # A dataset over HTTP takes no writes from DuckDB: new data files go to
     # a folder beside the working metadata until the commit uploads them, or
     # straight to the dataset's storage when the writer has keys to it.
@@ -1024,7 +1027,7 @@ def tag(
 @app.command()
 def profile(
     remote: str = Remote,
-    ref: str = typer.Option(layout.DEFAULT_BRANCH, help="The branch or tag whose version to profile"),
+    ref: str = typer.Option(layout.HEAD, help="The branch or tag whose version to profile. Default: the default branch"),
 ) -> None:
     """Profile the tables of a pushed version that have no profile.
 
@@ -1097,7 +1100,7 @@ def expire(
     """Take older versions out of retention: mark them and delete their metadata.
 
     Kept are the newest on each branch, the versions refs point at and their
-    merge bases with main. Data files are left in place; `fdl gc` deletes them.
+    merge bases with the default branch. Data files are left in place; `fdl gc` deletes them.
     """
     store = _store(remote)
     try:
