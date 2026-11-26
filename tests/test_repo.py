@@ -888,14 +888,17 @@ def test_declarations_the_tables_refuse_are_not_committed(tmp_path: Path, remote
 
 def test_a_dependency_that_cannot_be_read_keeps_the_parents_version(tmp_path: Path, remote) -> None:
     build(tmp_path / "work.sqlite", remote, "CREATE TABLE lake.main.towns AS SELECT 1 AS id")
-    pinned = new_id()
-    inherited = declared.Facts(dependencies={"a": {"url": "https://example.invalid/a/", "version": pinned}})
-    facts = inherited.declared()
-    described = declared.describe(tmp_path / "work.sqlite", facts, data_path=catalog.working_data_path(tmp_path / "work.sqlite"), inherited=inherited)
-    assert described.facts.dependencies == {"a": {"url": "https://example.invalid/a/", "version": pinned}}
+    first = commit(tmp_path, remote)
+    repo.push(remote, tmp_path / "local" / first.id, first)
+    # As if the parent recorded a version of a dependency that cannot be read now
+    url = "https://example.invalid/a/"
+    inherited = declared.Facts(dependencies={"a": {"url": url, "version": new_id()}})
+    with pytest.raises(repo.NothingToCommit):
+        commit(tmp_path, remote, parent=first, allow_empty=False, facts=inherited.declared(), inherited=inherited)
+    # Another url is another dataset: the parent's version is not kept for it
     moved = declared.Facts(dependencies={"a": {"url": "https://example.invalid/b/"}})
-    described = declared.describe(tmp_path / "work.sqlite", moved, data_path=catalog.working_data_path(tmp_path / "work.sqlite"), inherited=inherited)
-    assert described.facts.dependencies == {"a": {"url": "https://example.invalid/b/"}}
+    second = commit(tmp_path, remote, parent=first, allow_empty=False, facts=moved, inherited=inherited)
+    assert second.diff["dependencies"] == ["a"]
 
 
 def test_a_change_of_dependencies_is_in_the_diff(tmp_path: Path, remote) -> None:
