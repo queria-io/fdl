@@ -68,7 +68,7 @@ SELECT * FROM '../towns.csv';
 行を識別する列を FDL に伝えます。マージは主キーで行を照合し、読み手は主キーで行を引けます。
 
 ```bash
-fdl declare primary-key lake.sqlite main.towns code
+fdl table lake.sqlite main.towns --primary-key code
 ```
 
 宣言はコミットまで作業メタデータと一緒に保存され、コミットがテーブルと照らし合わせて確認します（[宣言](/ja/spec/versions#宣言)）。宣言は省略できます。宣言の無いバージョンはテーブルだけを持ちます。

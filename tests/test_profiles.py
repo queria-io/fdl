@@ -344,8 +344,8 @@ def test_a_table_or_view_with_profile_false_gets_no_profile(dataset, monkeypatch
     write(working, store, "CREATE TABLE lake.main.raw_towns AS SELECT 1 AS id")
     write(working, store, "CREATE VIEW lake.main.stg_towns AS SELECT id FROM lake.main.raw_towns")
     write(working, store, "CREATE TABLE lake.main.towns AS SELECT 1 AS id")
-    run("declare", "profile", working, "main.raw_towns", "false")
-    run("declare", "profile", working, "main.stg_towns", "false")
+    run("table", working, "main.raw_towns", "--no-profile")
+    run("table", working, "main.stg_towns", "--no-profile")
     built = _spy_builds(monkeypatch)
     commit(working, "-m", "m", "--author", "t")
     assert built == ["towns"]

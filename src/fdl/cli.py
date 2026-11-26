@@ -152,7 +152,7 @@ def clone(
             data = repo.storage_data_path(storage, config)
         else:
             data = repo.data_url(store) if local is None else local.resolve().as_posix() + "/"
-        # What the version declares; a commit takes it over, with what fdl declare changes.
+        # What the version declares; a commit takes it over, with what fdl table and fdl dependency change.
         facts = repo.declarations(store, version).declared() if version else declaring.Facts()
     except ERRORS as exc:
         raise _fail(exc) from exc
@@ -208,7 +208,7 @@ def commit(
 ) -> None:
     """Freeze the working metadata into a version, kept beside it until you push it.
 
-    The declarations (fdl declare) are checked against the tables and views
+    The declarations (fdl table, fdl dependency) are checked against the tables and views
     first. Nothing is made when the tables, their rows, the views and the
     declarations are what the last pushed version holds. Committing again before pushing replaces the version not
     pushed yet.
@@ -521,7 +521,7 @@ def merge(
         if catalog.last_snapshot(working) != ours.ducklake.snapshot_id:
             raise repo.RepoError(f"the working metadata has changes not committed: commit and push them, or clone again")
         if _declared(state) != repo.declarations(store, ours).declared():
-            raise repo.RepoError("the declarations have changes not committed (fdl declare): commit and push them, or clone again")
+            raise repo.RepoError("the declarations have changes not committed (fdl table, fdl dependency): commit and push them, or clone again")
         bases = repo.merge_bases(store, ours, theirs)
         if not bases:
             raise repo.RepoError(f"{ours.id} and {theirs.id} have no version in common")
@@ -674,17 +674,6 @@ def _read_setup(store) -> list[str]:
     return [f"CREATE SECRET fdl_remote (TYPE http, BEARER_TOKEN '{secret}', SCOPE '{scope}')"]
 
 
-declare_app = typer.Typer(no_args_is_help=True)
-app.add_typer(
-    declare_app,
-    name="declare",
-    help="Set what the next commit declares of the tables and views: primary keys, asset columns, "
-    "profiles and the other datasets the views read. A commit starts from its parent's declarations.",
-)
-
-Table = typer.Argument(help="The table or view, as schema.name")
-
-
 def _change_declarations(working: Path, change) -> None:
     """Apply ``change`` to the declarations kept beside the working metadata, refusing
     what the tables and views refuse that they did not refuse before."""
@@ -708,71 +697,101 @@ def _with(found: dict, name: str, value) -> dict:
     return {**{k: v for k, v in found.items() if k != name}, **({name: value} if value else {})}
 
 
-@declare_app.command("list")
-def declare_list(
+Table = typer.Argument(None, help="The table or view, as schema.name. Without it, all of them are listed")
+
+
+def _columns(value: str | None) -> list[str] | None:
+    """Comma-separated column names; an empty value names none."""
+    return None if value is None else [c.strip() for c in value.split(",") if c.strip()]
+
+
+@app.command()
+def table(
+    working: Path = Working,
+    name: str | None = Table,
+    primary_key: str | None = typer.Option(
+        None, "--primary-key", help="The columns that identify a row, comma-separated. Empty removes the primary key"
+    ),
+    asset_columns: str | None = typer.Option(
+        None, "--assets", help="The VARCHAR columns that hold a file's sha256, comma-separated. Empty removes them"
+    ),
+    profiled: bool | None = typer.Option(None, "--profile/--no-profile", help="Whether a push profiles it"),
+    as_json: bool = typer.Option(False, "--json", help="Print the declarations as JSON"),
+) -> None:
+    """Show or set what the next commit declares of a table or view: its primary key, its asset
+    columns and whether a push profiles it. A commit starts from its parent's declarations."""
+    keys, kept = _columns(primary_key), _columns(asset_columns)
+    if name is not None and (keys is not None or kept is not None or profiled is not None):
+
+        def change(f: declaring.Facts) -> declaring.Facts:
+            return dataclasses.replace(
+                f,
+                primary_keys=f.primary_keys if keys is None else _with(f.primary_keys, name, keys),
+                assets=f.assets if kept is None else _with(f.assets, name, kept),
+                unprofiled=f.unprofiled
+                if profiled is None
+                else (f.unprofiled - {name} if profiled else f.unprofiled | {name}),
+            )
+
+        _change_declarations(working, change)
+        return
+    if keys is not None or kept is not None or profiled is not None:
+        raise _fail(declaring.DeclarationError(["name the table or view to declare"]))
+    facts = _declared(_read_state(working))
+    if name is not None:
+        facts = facts.only({name})
+    if as_json:
+        held = facts.to_json()
+        typer.echo(json.dumps({k: held[k] for k in ("primary_keys", "assets", "unprofiled") if k in held}, ensure_ascii=False, indent=2))
+        return
+    for key, columns in sorted(facts.primary_keys.items()):
+        typer.echo(f"{key} primary_key {','.join(columns)}")
+    for key, columns in sorted(facts.assets.items()):
+        typer.echo(f"{key} assets {','.join(columns)}")
+    for key in sorted(facts.unprofiled):
+        typer.echo(f"{key} profile false")
+
+
+dependency_app = typer.Typer(no_args_is_help=True)
+app.add_typer(
+    dependency_app,
+    name="dependency",
+    help="Manage the other datasets the views read (dependencies). Each commit reads the version "
+    "their default branch holds then, and records it in the version.",
+)
+DependencyName = typer.Argument(help="The name the views' SQL reads the other dataset under")
+
+
+@dependency_app.command("add")
+def dependency_add(
+    working: Path = Working,
+    name: str = DependencyName,
+    url: str = typer.Argument(help="The URL of its root, ending in /"),
+) -> None:
+    """Add another dataset the views read, or change its URL."""
+    _change_declarations(working, lambda f: dataclasses.replace(f, dependencies=_with(f.dependencies, name, {"url": url})))
+
+
+@dependency_app.command("remove")
+def dependency_remove(working: Path = Working, name: str = DependencyName) -> None:
+    """Remove a dataset the views read."""
+    if name not in _declared(_read_state(working)).dependencies:
+        raise _fail(declaring.DeclarationError([f"there is no dependency {name}"]))
+    _change_declarations(working, lambda f: dataclasses.replace(f, dependencies=_with(f.dependencies, name, None)))
+
+
+@dependency_app.command("list")
+def dependency_list(
     working: Path = Working,
     as_json: bool = typer.Option(False, "--json", help="Print them as JSON"),
 ) -> None:
-    """What the next commit declares, one declaration a line."""
-    facts = _declared(_read_state(working))
+    """The datasets the views read, one a line: name and URL."""
+    dependencies = _declared(_read_state(working)).dependencies
     if as_json:
-        typer.echo(json.dumps(facts.to_json(), ensure_ascii=False, indent=2))
+        typer.echo(json.dumps(dependencies, ensure_ascii=False, indent=2))
         return
-    for name, columns in sorted(facts.primary_keys.items()):
-        typer.echo(f"{name} primary_key {' '.join(columns)}")
-    for name, columns in sorted(facts.assets.items()):
-        typer.echo(f"{name} assets {' '.join(columns)}")
-    for name in sorted(facts.unprofiled):
-        typer.echo(f"{name} profile false")
-    for name, entry in sorted(facts.dependencies.items()):
-        typer.echo(f"dependency {name} {entry['url']}")
-
-
-@declare_app.command("primary-key")
-def declare_primary_key(
-    working: Path = Working,
-    name: str = Table,
-    columns: list[str] = typer.Argument(None, help="The columns that identify a row. None removes the primary key"),
-) -> None:
-    """Declare the columns that identify a row of a table, used to merge it cell by cell."""
-    _change_declarations(
-        working, lambda f: dataclasses.replace(f, primary_keys=_with(f.primary_keys, name, list(columns or [])))
-    )
-
-
-@declare_app.command("assets")
-def declare_assets(
-    working: Path = Working,
-    name: str = Table,
-    columns: list[str] = typer.Argument(None, help="The VARCHAR columns that hold a file's sha256. None removes them"),
-) -> None:
-    """Declare the columns of a table that point at files by sha256 (see fdl assets)."""
-    _change_declarations(working, lambda f: dataclasses.replace(f, assets=_with(f.assets, name, list(columns or []))))
-
-
-@declare_app.command("profile")
-def declare_profile(
-    working: Path = Working,
-    name: str = Table,
-    profiled: bool = typer.Argument(..., help="false: make no profile for it"),
-) -> None:
-    """Declare whether a push profiles a table or view."""
-    _change_declarations(
-        working,
-        lambda f: dataclasses.replace(f, unprofiled=f.unprofiled - {name} if profiled else f.unprofiled | {name}),
-    )
-
-
-@declare_app.command("dependency")
-def declare_dependency(
-    working: Path = Working,
-    name: str = typer.Argument(help="The name the views' SQL reads the other dataset under"),
-    url: str | None = typer.Argument(None, help="The URL of its root, ending in /. Without it, the dependency is removed"),
-) -> None:
-    """Declare another dataset the views read (a dependency). Each commit reads the version
-    its default branch holds then, and records it in the version."""
-    entry = {"url": url} if url else None
-    _change_declarations(working, lambda f: dataclasses.replace(f, dependencies=_with(f.dependencies, name, entry)))
+    for name, entry in sorted(dependencies.items()):
+        typer.echo(f"{name} {entry['url']}")
 
 
 @app.command()
@@ -780,7 +799,7 @@ def assets(folder: Path = typer.Argument(..., help="The folder of files the rows
     """List the files below a folder as CSV: path, sha256, bytes, media_type.
 
     Read it into a table (DuckDB's read_csv, say) and declare its sha256 column
-    an asset column with `fdl declare assets`. `fdl commit --assets <folder>`
+    an asset column with `fdl table --assets`. `fdl commit --assets <folder>`
     then uploads the files the dataset lacks.
     """
     import csv

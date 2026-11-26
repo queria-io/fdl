@@ -35,11 +35,11 @@ def sql(working: Path, store: LocalStore, statement: str) -> list[tuple]:
 
 def keyed(working: Path, table: str, *columns: str) -> None:
     """Declare the primary key of ``main.<table>``: ``id``, or none with ``()``."""
-    run("declare", "primary-key", working, f"main.{table}", *(columns if columns != ((),) else ()))
+    run("table", working, f"main.{table}", "--primary-key", ",".join(columns if columns != ((),) else ()))
 
 
 def unkeyed(working: Path, table: str) -> None:
-    run("declare", "primary-key", working, f"main.{table}")
+    run("table", working, f"main.{table}", "--primary-key", "")
 
 
 def save(working: Path, message: str) -> None:
@@ -218,10 +218,10 @@ def test_declarations_each_side_changed_are_merged(branches, tmp_path: Path) -> 
     store, main, feature = branches
     other = (tmp_path / "remote").resolve().as_uri() + "/"
     sql(feature, store, "INSERT INTO lake.main.towns VALUES (5, 'e')")
-    run("declare", "profile", feature, "main.towns", "false")
+    run("table", feature, "main.towns", "--no-profile")
     save(feature, "feature")
     sql(main, store, "INSERT INTO lake.main.towns VALUES (4, 'd')")
-    run("declare", "dependency", main, "other", other)
+    run("dependency", "add", main, "other", other)
     save(main, "main")
 
     run("merge", "refs/heads/feature", main, "--author", "tester")
@@ -232,11 +232,32 @@ def test_declarations_each_side_changed_are_merged(branches, tmp_path: Path) -> 
     assert "version" in index["dependencies"]["other"]
 
 
+def test_table_and_dependency_show_and_change_the_declarations(branches, tmp_path: Path) -> None:
+    _, main, _ = branches
+    other = (tmp_path / "remote").resolve().as_uri() + "/"
+    run("table", main, "main.towns", "--primary-key", "id,name", "--no-profile")
+    assert run("table", main, "main.towns") == "main.towns primary_key id,name\nmain.towns profile false\n"
+    assert json.loads(run("table", main, "--json")) == {
+        "primary_keys": {"main.towns": ["id", "name"]},
+        "assets": {},
+        "unprofiled": ["main.towns"],
+    }
+    run("table", main, "main.towns", "--primary-key", "", "--profile")
+    assert run("table", main) == ""
+    run("dependency", "add", main, "other", other)
+    assert run("dependency", "list", main) == f"other {other}\n"
+    assert json.loads(run("dependency", "list", main, "--json")) == {"other": {"url": other}}
+    run("dependency", "remove", main, "other")
+    assert run("dependency", "list", main) == ""
+    assert "there is no dependency other" in run("dependency", "remove", main, "other", code=1)
+    assert "name the table or view" in run("table", main, "--no-profile", code=1)
+
+
 def test_a_declaration_both_sides_changed_differently_is_a_conflict(branches) -> None:
     store, main, feature = branches
-    run("declare", "primary-key", feature, "main.towns", "name")
+    run("table", feature, "main.towns", "--primary-key", "name")
     save(feature, "feature")
-    run("declare", "primary-key", main, "main.towns", "id", "name")
+    run("table", main, "main.towns", "--primary-key", "id,name")
     save(main, "main")
 
     out = run("merge", "refs/heads/feature", main, "--author", "tester", code=1)
@@ -247,18 +268,18 @@ def test_a_merge_with_declarations_not_committed_is_refused(branches) -> None:
     store, main, feature = branches
     sql(feature, store, "INSERT INTO lake.main.towns VALUES (5, 'e')")
     save(feature, "feature")
-    run("declare", "profile", main, "main.towns", "false")
+    run("table", main, "main.towns", "--no-profile")
 
     out = run("merge", "refs/heads/feature", main, "--author", "tester", code=1)
     assert "the declarations have changes not committed" in out
-    assert "main.towns profile false" in run("declare", "list", main)
+    assert "main.towns profile false" in run("table", main)
 
 
 def test_a_table_made_again_does_not_get_the_declarations_of_the_dropped_one(branches) -> None:
     store, main, _ = branches
     sql(main, store, "DROP TABLE lake.main.towns")
     save(main, "dropped")
-    assert "primary_key" not in run("declare", "list", main)
+    assert "primary_key" not in run("table", main)
     sql(main, store, "CREATE TABLE lake.main.towns (code VARCHAR)")
     save(main, "made again")
     assert "primary_key" not in tables_json(store)["tables"]["main.towns"]
@@ -268,7 +289,7 @@ def test_a_merge_whose_declarations_the_tables_refuse_is_a_conflict(branches) ->
     store, main, feature = branches
     sql(feature, store, "ALTER TABLE lake.main.towns DROP COLUMN name")
     save(feature, "feature")
-    run("declare", "primary-key", main, "main.towns", "id", "name")
+    run("table", main, "main.towns", "--primary-key", "id,name")
     save(main, "main")
     before = repo.head(store, "refs/heads/main")
 

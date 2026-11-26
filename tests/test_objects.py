@@ -45,7 +45,7 @@ def write(working: Path, store: LocalStore, sql: str) -> None:
 
 
 def declare_assets(working: Path, table: str, column: str) -> None:
-    run("declare", "assets", working, f"main.{table}", column)
+    run("table", working, f"main.{table}", "--assets", column)
 
 
 @pytest.fixture
@@ -73,7 +73,7 @@ def test_a_table_of_documents_points_at_assets(tmp_path: Path, dataset) -> None:
         f"CREATE SCHEMA lake.docs; CREATE TABLE lake.docs.files AS "
         f"SELECT path, sha256, bytes::BIGINT AS bytes, media_type FROM read_csv('{tmp_path / 'docs.csv'}', all_varchar = true)",
     )
-    run("declare", "assets", working, "docs.files", "sha256")
+    run("table", working, "docs.files", "--assets", "sha256")
 
     commit(working, "-m", "first", "--author", "t", "--assets", folder)
 
@@ -126,7 +126,7 @@ def test_an_asset_column_holds_only_sha256(tmp_path: Path, dataset) -> None:
 def test_an_asset_column_is_varchar(tmp_path: Path, dataset) -> None:
     store, working = dataset
     write(working, store, "CREATE TABLE lake.main.reports AS SELECT 1 AS n")
-    assert "has to be VARCHAR" in fails("declare", "assets", working, "main.reports", "n")
+    assert "has to be VARCHAR" in fails("table", working, "main.reports", "--assets", "n")
 
 
 def test_assets_of_a_folder_that_is_missing_are_refused(tmp_path: Path) -> None:
@@ -170,7 +170,7 @@ def test_withdrawal_deletes_the_assets_only_the_withdrawn_versions_reach(tmp_pat
         "WHERE path = 'README.md'",
     )
     declare_assets(working, "reports", "sha256")
-    run("declare", "assets", working, "docs.files", "sha256")
+    run("table", working, "docs.files", "--assets", "sha256")
     commit(working, "-m", "leak", "--author", "t", "--assets", folder)
     leaked = repo.head(store, "refs/heads/main")
     write(working, store, "DELETE FROM lake.main.reports WHERE path = 'leak.pdf'")

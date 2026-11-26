@@ -90,7 +90,7 @@ def test_the_round_trip_over_http(served, tmp_path: Path) -> None:
     working = tmp_path / "work" / "lake.sqlite"
     run("clone", url, working)
     write(working, "CREATE TABLE lake.main.towns AS SELECT 1 AS id")
-    run("declare", "primary-key", working, "main.towns", "id")
+    run("table", working, "main.towns", "--primary-key", "id")
     commit(working, "-m", "first", "--author", "tester")
 
     # A second working catalog reads the published file where it is, and

@@ -49,7 +49,7 @@ Rows have to go to Parquet, not into the metadata (`DATA_INLINING_ROW_LIMIT 0`):
 Declare which columns identify a row, so that a merge can match rows by them:
 
 ```bash
-fdl declare primary-key work/lake.sqlite main.towns town_code
+fdl table work/lake.sqlite main.towns --primary-key town_code
 ```
 
 Then make a version and move `main` to it:
@@ -80,7 +80,8 @@ Credentials and the endpoint come from boto3's usual places (`AWS_*` environment
 | --- | --- |
 | `fdl init <remote>` | Start a dataset (`fdl.json` and `HEAD`) |
 | `fdl clone <remote> <working>` | Make a working metadata file from the version the default branch (`main` unless `HEAD` names another) holds |
-| `fdl declare <kind> <working> …` | Declare a primary key, asset columns, a profile or another dataset the views read |
+| `fdl table <working> [<schema.name>] …` | Show or set a table's primary key, asset columns and profile |
+| `fdl dependency add\|remove\|list <working> …` | Manage the other datasets the views read |
 | `fdl commit <working> -m … --author …` | Freeze the working metadata into a version |
 | `fdl push <working>` | Upload the committed version and move the cloned branch to it |
 | `fdl log <remote>` | List versions from the default branch back to the first |

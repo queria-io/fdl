@@ -3,7 +3,7 @@ primary keys, asset columns, which get no profile, and the other datasets its
 views read (see the specification's `tables.json`).
 
 A version's `tables.json` holds them, and a commit takes them from its parent:
-`fdl clone` keeps them beside the working metadata, `fdl declare` changes them,
+`fdl clone` keeps them beside the working metadata, `fdl table` and `fdl dependency` change them,
 and `fdl commit` checks them against the tables and views and writes them into
 the new version's `tables.json`.
 """
