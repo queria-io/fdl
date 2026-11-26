@@ -335,7 +335,7 @@ def found_in(working, *, data_path: str, setup=()) -> Objects:
         con.close()
 
 
-def describe(working, facts: Facts, *, data_path: str, setup=()) -> Described:
+def describe(working, facts: Facts, *, data_path: str, setup=(), inherited: Facts | None = None) -> Described:
     """Check ``facts`` against the working metadata's tables and views, and bind its views.
 
     Declarations of tables and views no longer there are left out: a table dropped
@@ -353,8 +353,14 @@ def describe(working, facts: Facts, *, data_path: str, setup=()) -> Described:
             raise DeclarationError(problems)
         views = _views(con)
         # Each dependency is bound at the version its default branch holds now, and the
-        # version records it, so its views read the same data later on
-        pinned = {name: _attach_dependency(con, name, entry) for name, entry in kept.dependencies.items()}
+        # version records it, so its views read the same data later on. One that cannot be
+        # read keeps the version the parent recorded for the same url.
+        before = (inherited or Facts()).dependencies
+        pinned = {
+            name: _attach_dependency(con, name, entry)
+            or (before[name].get("version") if before.get(name, {}).get("url") == entry["url"] else None)
+            for name, entry in kept.dependencies.items()
+        }
         kept = dataclasses.replace(
             kept,
             dependencies={

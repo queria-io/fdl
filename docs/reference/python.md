@@ -152,7 +152,7 @@ declared.changed(old, new, names) -> list[str]
 declared.dependencies_changed(old, new) -> list[str]
 ```
 
-`Facts` holds the declarations of a version: `primary_keys` and `assets` by `schema.table`, `dependencies` by name (`{"url": ..., "version": ...}`), and `unprofiled`, the tables and views whose `profile` is `false`. `of(name)` gives what it declares of one table or view as `tables.json` writes it, and `to_json` and `from_json` keep it in a file. `from_index` reads them from a `tables.json`. `check` returns what the [rules](/spec/versions#declarations) refuse, given `found_in(working, data_path=...)`, the tables and views of a working metadata. `merged` merges three ways and returns the conflicts. `changed` and `dependencies_changed` give the names a diff lists.
+`Facts` holds the declarations of a version: `primary_keys` and `assets` by `schema.table`, `dependencies` by name (`{"url": ..., "version": ...}`, where `version` is the version the commit bound the views against), and `unprofiled`, the tables and views whose `profile` is `false`. `declared()` gives them as a working metadata keeps them: each dependency with its `url` only. `of(name)` gives what it declares of one table or view as `tables.json` writes it, and `to_json` and `from_json` keep it in a file. `from_index` reads them from a `tables.json`. `check` returns what the [rules](/spec/versions#declarations) refuse, given `found_in(working, data_path=...)`, the tables and views of a working metadata. `merged` merges three ways and returns the conflicts. `changed` and `dependencies_changed` give the names a diff lists.
 
 ## fdl.diff
 

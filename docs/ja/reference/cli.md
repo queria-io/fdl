@@ -159,7 +159,7 @@ ref が指すバージョンから最初のバージョンまで、最初の親�
 fdl status <working.sqlite> [--json]
 ```
 
-作業メタデータが clone してから何を変えたかを、`fdl diff` と同じ区分で表示します。元のバージョンと同じ内容なら `Nothing to commit` と表示します。`~ declarations <name>` はテーブルかビューの宣言が元のバージョンと違うこと、`~ dependency <name>` は dependencies を追加・削除・変更したことを示します。コミットしてまだ push していないバージョンがあれば、先にそれを表示し、変更はそのバージョンから数えます。`--json` では `pending` にその ID を入れます。fast-forward の `fdl merge` のあとは、`fdl push` でブランチが動くことを表示します。
+作業メタデータが clone してから何を変えたかを、`fdl diff` と同じ区分で表示します。元のバージョンと同じ内容なら `Nothing to commit` と表示します。`~ declarations <name>` はテーブルかビューの宣言が元のバージョンと違うこと、`~ dependency <name>` は dependencies を追加・削除・変更したことを示します。依存先の既定のブランチが動いたことは表示しません。`fdl status` はほかのデータセットを読まず、新しいバージョンは `fdl commit` が記録します。コミットしてまだ push していないバージョンがあれば、先にそれを表示し、変更はそのバージョンから数えます。`--json` では `pending` にその ID を入れます。fast-forward の `fdl merge` のあとは、`fdl push` でブランチが動くことを表示します。
 
 `--json` には、作業メタデータの clone 元と書き込み先も入ります。`remote`、`ref`（push 先のブランチ）、`base`（clone したバージョン、または最後に push したバージョンの ID。ブランチにバージョンが無かったときは `null`）、`data_path`（新しいデータファイルの置き場。HTTP ではローカルのフォルダ、`--storage` ではデータセットのストレージ、それ以外はデータセットのデータの URL）です。スクリプトはこれらを `<working>.fdl/` の中のファイルからではなく、ここから読みます。
 
