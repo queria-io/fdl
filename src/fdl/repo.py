@@ -139,7 +139,7 @@ def commit(
     """Freeze the working metadata into a version under ``out_dir/<ID>/``.
 
     ``facts`` are its declarations (primary keys, asset columns, profiles and
-    dependencies), as `fdl clone` and `fdl declare` keep them beside the working
+    dependencies), as `fdl clone`, `fdl table` and `fdl dependency` keep them beside the working
     metadata: they are checked against its tables and views first, and raise
     `declared.DeclarationError`. A table or view no longer there takes its
     declarations with it.

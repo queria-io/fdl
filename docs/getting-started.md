@@ -68,7 +68,7 @@ SELECT * FROM '../towns.csv';
 Tell FDL which columns identify a row. A merge matches rows by the primary key, and readers can look rows up by it:
 
 ```bash
-fdl declare primary-key lake.sqlite main.towns code
+fdl table lake.sqlite main.towns --primary-key code
 ```
 
 Declarations stay with the working metadata until the commit, which checks them against the tables (see [Declarations](/spec/versions#declarations)). They are optional: a version without them holds the tables alone.

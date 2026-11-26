@@ -43,7 +43,7 @@ HTTP のデータセットでは、新しいデータファイルは `<working.s
 
 `--storage` を付けると、作業メタデータはデータセットのストレージで直接データファイルを読み書きします。`--storage` にはそのストレージでのデータセットの根を渡します。新しいファイルはその `data_dir` の下に直接書かれるので、push でアップロードするものはありません。鍵は `AWS_*` の環境変数（R2 などの S3 互換ストレージは `AWS_ENDPOINT_URL`）か、自分で作った DuckDB の secret から取ります。作業メタデータに書くビルドにも同じ鍵が要ります。
 
-`<working.sqlite>.fdl/` には、バージョンの[宣言](/ja/spec/versions#宣言)（主キー・アセット列・profile・dependencies）も保存します。`fdl declare` がそれを変え、次のコミットが書きます。作業メタデータとこのフォルダの外には何も書きません。
+`<working.sqlite>.fdl/` には、バージョンの[宣言](/ja/spec/versions#宣言)（主キー・アセット列・profile・dependencies）も保存します。`fdl table` と `fdl dependency` がそれを変え、次のコミットが書きます。作業メタデータとこのフォルダの外には何も書きません。
 
 バージョンの保持期間が過ぎているとき、メタデータの sha256 が `version.json` の記録と違うとき、メタデータがデータフォルダの外のデータファイルを指しているときは断られます。
 
@@ -65,7 +65,7 @@ fdl commit <working.sqlite> -m "What changed" [--author alice] [--allow-empty] [
 
 作業メタデータを、クローンした（または最後に push した）バージョンを親とする新しいバージョンに固め、`fdl push` で送るまで `<working.sqlite>.fdl/pending/` に置きます。データセットは何も変わりません。新しいバージョン ID と `seq` を表示します。push する前にもう一度コミットすると、まだ push していないバージョンを置き換えます。
 
-コマンドはまず、作業メタデータの隣に保存した宣言（`fdl declare` を参照）をテーブルとビューに照らして確認します。コミットは親の宣言から始めます。dbt の `CREATE OR REPLACE` のように同じ名前で作り直したテーブルは宣言を引き継ぎ、削除したテーブルは宣言を失い、宣言のあとに名前を変えた列は新しい名前で宣言されます。
+コマンドはまず、作業メタデータの隣に保存した宣言（`fdl table` と `fdl dependency` を参照）をテーブルとビューに照らして確認します。コミットは親の宣言から始めます。dbt の `CREATE OR REPLACE` のように同じ名前で作り直したテーブルは宣言を引き継ぎ、削除したテーブルは宣言を失い、宣言のあとに名前を変えた列は新しい名前で宣言されます。
 
 バージョンの `tables.json`（[tables.json](/ja/spec/versions#tablesjson)）には、テーブルごとのデータファイルと列、`primary_key`・`assets`・`profile`、ビューごとの SQL とクエリが返す列、`dependencies` を書きます。ビューの列を求めるときは、dependencies をそれぞれの名前で、その既定のブランチが指すバージョンで ATTACH し、そのバージョンの ID を `version` に書きます。クエリを解決できないビューは列なしで載せます。メタデータのコメント（`COMMENT ON`）はそのまま残し、読みません。
 
@@ -80,32 +80,44 @@ fdl commit <working.sqlite> -m "What changed" [--author alice] [--allow-empty] [
 - アセットの列が sha256 でない値を持つとき
 - データファイルが、データディレクトリの外を指す絶対パスで記録されているとき
 
-## fdl declare
+## fdl table
 
 ```bash
-fdl declare list <working.sqlite> [--json]
-fdl declare primary-key <working.sqlite> <schema.table> [<column>...]
-fdl declare assets <working.sqlite> <schema.table> [<column>...]
-fdl declare profile <working.sqlite> <schema.name> (true|false)
-fdl declare dependency <working.sqlite> <name> [<url>]
+fdl table <working.sqlite> [<schema.name>] [--primary-key <column>]... [--no-primary-key] [--assets <column>]... [--no-assets] [--profile | --no-profile] [--json]
 ```
 
-次のコミットがテーブルとビューについて[宣言](/ja/spec/versions#宣言)する内容を変えます。宣言は `<working.sqlite>.fdl/` に保存し、作業メタデータをクローンしたバージョンの宣言から始まります。コミットがそれを `tables.json` に書きます。
+次のコミットがテーブルやビューについて[宣言](/ja/spec/versions#宣言)する内容を表示し、変更します。宣言は `<working.sqlite>.fdl/` に保存し、作業メタデータをクローンしたバージョンの宣言から始まります。コミットがそれを `tables.json` に書きます。
 
 ```bash
-fdl declare primary-key lake.sqlite main.population code year
-fdl declare assets lake.sqlite main.reports pdf_sha256
-fdl declare profile lake.sqlite main.stg_population false
-fdl declare dependency lake.sqlite census https://example.org/census/
+fdl table lake.sqlite main.population --primary-key code --primary-key year
+fdl table lake.sqlite main.reports --assets pdf_sha256
+fdl table lake.sqlite main.stg_population --no-profile
 ```
 
-- `primary-key` は、テーブルの行を識別する列を設定します。[セル単位のマージ](/ja/spec/writing#主キーでのセルのマージ)に使います。列を省くと主キーを外します
-- `assets` は、ファイルの sha256 を持つテーブルの `varchar` 列を設定します。列を省くと外します
-- `profile false` は、ビルドの中間テーブルなどに push が profile を書かないようにします。`profile true` でそれを外します
-- `dependency` は、ビューの SQL が読む別のデータセットを、SQL が使う名前で設定します。コミットのたびに、その既定のブランチが指すバージョンを読み、tables.json に記録します。`<url>` を省くと外します
-- `list` は 1 行に 1 つの宣言を表示します。`--json` を付けるとすべてを 1 つのオブジェクトで表示します
+- `--primary-key` は、テーブルの行を識別する列を、1 つのオプションに 1 列ずつ設定します。[セル単位のマージ](/ja/spec/writing#主キーでのセルのマージ)に使います。`--no-primary-key` で主キーを外します
+- `--assets` は、ファイルの sha256 を持つテーブルの `varchar` 列を、1 つのオプションに 1 列ずつ設定します。`--no-assets` で外します
+- `--no-profile` は、ビルドの中間テーブルなどに push が profile を書かないようにします。`--profile` でそれを外します
+- これらのオプションが無いときは、そのテーブルかビューの宣言を 1 行に 1 つ表示します。`<schema.name>` を省くと、すべてのテーブルとビューの宣言を表示します。作業メタデータに無い名前は断ります。`--json` を付けると、`primary_keys`・`assets`・`unprofiled` を持つ 1 つのオブジェクトで表示します
 
-テーブルとビューに照らして通らない変更は断ります。無いテーブルや列、ビューへの主キーやアセット列、`varchar` でないアセット列、コミットが断る名前や `url` の dependencies です。
+テーブルとビューに照らして通らない変更は断ります。無いテーブルや列、ビューへの主キーやアセット列、`varchar` でないアセット列です。
+
+## fdl dependency
+
+```bash
+fdl dependency add <working.sqlite> <name> <url>
+fdl dependency remove <working.sqlite> <name>
+fdl dependency list <working.sqlite> [--json]
+```
+
+ビューの SQL が読む別のデータセット（[tables.json](/ja/spec/versions#tablesjson) の `dependencies`）を、SQL が使う名前で管理します。コミットのたびに、依存先の既定のブランチが指すバージョンを読み、ビューをそれに結び付けて tables.json に記録します。
+
+```bash
+fdl dependency add lake.sqlite census https://example.org/census/
+```
+
+- `add` は依存先を追加します。既にあれば URL を変えます。コミットが断る名前や `url` は断ります
+- `remove` は依存先を外します
+- `list` はそれぞれの名前と URL を 1 行に 1 つ表示します。`--json` を付けると 1 つのオブジェクトで表示します
 
 ## fdl push
 
@@ -142,7 +154,7 @@ SELECT path, sha256, bytes::BIGINT AS bytes, media_type FROM read_csv('docs.csv'
 ```
 
 ```bash
-fdl declare assets lake.sqlite docs.files sha256
+fdl table lake.sqlite docs.files --assets sha256
 ```
 
 ## fdl log
