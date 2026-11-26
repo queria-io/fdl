@@ -153,7 +153,7 @@ def clone(
         else:
             data = repo.data_url(store) if local is None else local.resolve().as_posix() + "/"
         # What the version declares; a commit takes it over, with what fdl declare changes.
-        facts = repo.declarations(store, version) if version else declaring.Facts()
+        facts = repo.declarations(store, version).declared() if version else declaring.Facts()
     except ERRORS as exc:
         raise _fail(exc) from exc
     state = {
@@ -471,7 +471,7 @@ def revert(
             frozen.write_bytes(store.get(layout.version_metadata(target)))
             repo.check_catalog(frozen, target)
             # What the earlier version declared comes back with its tables.
-            facts = repo.declarations(store, target)
+            facts = repo.declarations(store, target).declared()
             catalog.restore(
                 working, frozen, data_path=reading, dataset_data=repo.data_url(store), setup=setup
             )
@@ -520,7 +520,7 @@ def merge(
             raise repo.RepoError(f"{state['ref']} holds no version yet, so there is nothing to merge into")
         if catalog.last_snapshot(working) != ours.ducklake.snapshot_id:
             raise repo.RepoError(f"the working metadata has changes not committed: commit and push them, or clone again")
-        if _declared(state) != repo.declarations(store, ours):
+        if _declared(state) != repo.declarations(store, ours).declared():
             raise repo.RepoError("the declarations have changes not committed (fdl declare): commit and push them, or clone again")
         bases = repo.merge_bases(store, ours, theirs)
         if not bases:
@@ -561,7 +561,7 @@ def _fast_forward(store, working: Path, state: dict, theirs) -> None:
     """Rebuild the working metadata from ``theirs``, for push to move the branch there."""
     local = Path(state["data"]) if state.get("data") else None
     repo.clone(store, working, local_data=local, version=theirs, storage=state.get("storage"))
-    facts = repo.declarations(store, theirs)
+    facts = repo.declarations(store, theirs).declared()
     _write_state(working, {**state, "base": theirs.id, "forward": True, "declared": facts.to_json()})
     typer.echo(f"Fast-forward to {theirs.id} (version {theirs.seq}). Move {state['ref']} there with:")
     typer.echo(f"  fdl push {working}")
@@ -576,9 +576,9 @@ def _merge(store, working: Path, state: dict, ours, theirs, base, *, message: st
             frozen[name].write_bytes(store.get(layout.version_metadata(version)))
             repo.check_catalog(frozen[name], version)
         said = {
-            "base": repo.declarations(store, base),
-            "ours": repo.declarations(store, ours),
-            "theirs": repo.declarations(store, theirs),
+            "base": repo.declarations(store, base).declared(),
+            "ours": repo.declarations(store, ours).declared(),
+            "theirs": repo.declarations(store, theirs).declared(),
         }
         held = {"base": repo.tables_of(store, base), "ours": repo.tables_of(store, ours), "theirs": repo.tables_of(store, theirs)}
         # What one side changed of the declarations since the base comes over.
@@ -768,12 +768,10 @@ def declare_dependency(
     working: Path = Working,
     name: str = typer.Argument(help="The name the views' SQL reads the other dataset under"),
     url: str | None = typer.Argument(None, help="The URL of its root, ending in /. Without it, the dependency is removed"),
-    version: str | None = typer.Option(None, "--version", help="The version to read. Without it, the one its default branch holds"),
 ) -> None:
-    """Declare another dataset the views read (a dependency)."""
-    if version and not url:
-        raise _fail(declaring.DeclarationError(["--version needs the url"]))
-    entry = {"url": url, **({"version": version} if version else {})} if url else None
+    """Declare another dataset the views read (a dependency). Each commit reads the version
+    its default branch holds then, and records it in the version."""
+    entry = {"url": url} if url else None
     _change_declarations(working, lambda f: dataclasses.replace(f, dependencies=_with(f.dependencies, name, entry)))
 
 
@@ -949,9 +947,9 @@ def status(
         )
         result = diffs.working(working, pending or base)
         if pending:
-            committed = declaring.from_index(json.loads((_pending_dir(working) / pending_id / layout.TABLES).read_text()))
+            committed = declaring.from_index(json.loads((_pending_dir(working) / pending_id / layout.TABLES).read_text())).declared()
         else:
-            committed = repo.declarations(store, base) if base else declaring.Facts()
+            committed = repo.declarations(store, base).declared() if base else declaring.Facts()
         now = _declared(state)
         named = {*committed.primary_keys, *committed.assets, *committed.unprofiled, *now.primary_keys, *now.assets, *now.unprofiled}
         result["declarations"] = declaring.changed(committed, now, named)

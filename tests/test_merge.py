@@ -228,7 +228,8 @@ def test_declarations_each_side_changed_are_merged(branches, tmp_path: Path) -> 
     run("push", main)
     index = tables_json(store)
     assert (index["tables"]["main.towns"]["primary_key"], index["tables"]["main.towns"]["profile"]) == (["id"], False)
-    assert index["dependencies"] == {"other": {"url": other}}
+    assert index["dependencies"]["other"]["url"] == other
+    assert "version" in index["dependencies"]["other"]
 
 
 def test_a_declaration_both_sides_changed_differently_is_a_conflict(branches) -> None:
