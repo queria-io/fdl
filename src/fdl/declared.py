@@ -10,6 +10,7 @@ the new version's `tables.json`.
 
 from __future__ import annotations
 
+import dataclasses
 import re
 from dataclasses import dataclass, field
 from typing import Any
@@ -32,7 +33,8 @@ class Facts:
 
     primary_keys: dict[str, list[str]] = field(default_factory=dict)
     assets: dict[str, list[str]] = field(default_factory=dict)
-    #: Each dataset the views read: ``{"url": ..., "version": ...}``, ``version`` optional.
+    #: Each dataset the views read: ``{"url": ...}``. A version's `tables.json` adds
+    #: ``version``, the version the commit bound the views against; declarations never hold it.
     dependencies: dict[str, dict[str, str]] = field(default_factory=dict)
     unprofiled: frozenset[str] = frozenset()
 
@@ -57,6 +59,16 @@ class Facts:
             unprofiled=frozenset(self.unprofiled & names),
         )
 
+    def declared(self) -> Facts:
+        """These as a working metadata keeps them: each dependency without the version
+        a commit bound it at, so the next commit reads what its default branch holds then."""
+        return Facts(
+            primary_keys=self.primary_keys,
+            assets=self.assets,
+            dependencies={k: {"url": v["url"]} for k, v in self.dependencies.items()},
+            unprofiled=self.unprofiled,
+        )
+
     def of(self, name: str) -> dict[str, Any]:
         """What these declare of one table or view, as `tables.json` writes it."""
         return {
@@ -79,7 +91,8 @@ class Facts:
         return cls(
             primary_keys={k: list(v) for k, v in value.get("primary_keys", {}).items()},
             assets={k: list(v) for k, v in value.get("assets", {}).items()},
-            dependencies={k: dict(v) for k, v in value.get("dependencies", {}).items()},
+            # A working metadata keeps no version of a dependency (see `declared`)
+            dependencies={k: {"url": v["url"]} for k, v in value.get("dependencies", {}).items()},
             unprofiled=frozenset(value.get("unprofiled", [])),
         )
 
@@ -236,16 +249,12 @@ def check(facts: Facts, found: Objects) -> list[str]:
     for name in sorted(facts.unprofiled):
         if name not in found.tables and name not in found.views:
             problems.append(f"{name}: no such table or view")
-    from .version import is_id
-
     for name, entry in sorted(facts.dependencies.items()):
         if not re.fullmatch(r"[a-z_][a-z0-9_]*", name) or name in _RESERVED:
             problems.append(f"the dependency {name!r}: a name is lower-case letters, digits and _, and not memory, system or temp")
         url = entry.get("url") or ""
         if "://" not in url or not url.endswith("/"):
             problems.append(f"the dependency {name}: url has to be an absolute URL ending in /, not {url!r}")
-        if "version" in entry and not is_id(entry["version"]):
-            problems.append(f"the dependency {name}: {entry['version']!r} is not a version ID")
     return problems
 
 
@@ -343,8 +352,16 @@ def describe(working, facts: Facts, *, data_path: str, setup=()) -> Described:
         if problems:
             raise DeclarationError(problems)
         views = _views(con)
-        for name, entry in kept.dependencies.items():
-            _attach_dependency(con, name, entry)
+        # Each dependency is bound at the version its default branch holds now, and the
+        # version records it, so its views read the same data later on
+        pinned = {name: _attach_dependency(con, name, entry) for name, entry in kept.dependencies.items()}
+        kept = dataclasses.replace(
+            kept,
+            dependencies={
+                name: {"url": entry["url"], **({"version": pinned[name]} if pinned[name] else {})}
+                for name, entry in kept.dependencies.items()
+            },
+        )
         con.execute("USE lake")
         for key, view in views.items():
             schema, name = key.split(".", 1)
@@ -373,22 +390,20 @@ def _views(con) -> dict[str, dict[str, Any]]:
     return {f"{schema}.{name}": {"sql": sql.replace("{DUCKLAKE_CATALOG}.", "")} for schema, name, sql in found}
 
 
-def _attach_dependency(con, name: str, entry: dict[str, str]) -> bool:
-    """Attach the version of another dataset its entry names (else what its main holds)
-    under ``name``. False when it cannot be read."""
+def _attach_dependency(con, name: str, entry: dict[str, str]) -> str | None:
+    """Attach what the default branch of another dataset holds under ``name``, and
+    return that version's ID. ``None`` when it cannot be read."""
     from . import layout, repo
     from .stores import open_store
 
     try:
         store = open_store(entry["url"])
-        version = (
-            repo.read_version(store, entry["version"]) if entry.get("version") else repo.readable(store, "refs/heads/main")
-        )
+        version = repo.readable(store)
         where = store.url.rstrip("/") + "/" + layout.version_metadata(version)
         con.execute(
             f"ATTACH 'ducklake:{where.replace(chr(39), chr(39) * 2)}' AS {_q(name)} "
             f"(DATA_PATH {_lit(repo.data_url(store))}, OVERRIDE_DATA_PATH true, READ_ONLY)"
         )
-        return True
+        return version.id
     except Exception:  # noqa: BLE001 - a view that cannot be bound gets no columns
-        return False
+        return None

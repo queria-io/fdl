@@ -840,7 +840,7 @@ def test_a_version_writes_its_declarations_and_views(tmp_path: Path, remote) -> 
         primary_keys={"main.reports": ["id"]},
         assets={"main.reports": ["pdf"]},
         unprofiled=frozenset({"main.latest"}),
-        dependencies={"census": {"url": census.root.as_uri() + "/", "version": made.id}},
+        dependencies={"census": {"url": census.root.as_uri() + "/"}},
     )
     first = commit(tmp_path, remote, facts=facts)
     index = json.loads((tmp_path / "local" / first.id / layout.TABLES).read_text())
@@ -855,9 +855,10 @@ def test_a_version_writes_its_declarations_and_views(tmp_path: Path, remote) -> 
     assert index["views"]["main.towns"]["columns"] == [{"name": "town", "type": "VARCHAR"}]
     # A view that reads what no dependency holds is listed without its columns.
     assert "columns" not in index["views"]["main.lost"] and "gone" in index["views"]["main.lost"]["sql"]
-    assert index["dependencies"] == facts.dependencies
+    # The commit records the version of census it bound the views against.
+    assert index["dependencies"] == {"census": {"url": census.root.as_uri() + "/", "version": made.id}}
     repo.push(remote, tmp_path / "local" / first.id, first)
-    assert repo.declarations(remote, first) == facts
+    assert repo.declarations(remote, first).declared() == facts
 
 
 @pytest.mark.parametrize(
@@ -871,7 +872,6 @@ def test_a_version_writes_its_declarations_and_views(tmp_path: Path, remote) -> 
         (declared.Facts(dependencies={"c": {"url": "relative/"}}), "url has to be an absolute URL ending in /"),
         (declared.Facts(dependencies={"Census": {"url": "https://example.org/c/"}}), "a name is lower-case letters"),
         (declared.Facts(dependencies={"temp": {"url": "https://example.org/c/"}}), "not memory, system or temp"),
-        (declared.Facts(dependencies={"c": {"url": "https://example.org/c/", "version": "v1"}}), "is not a version ID"),
     ],
 )
 def test_declarations_the_tables_refuse_are_not_committed(tmp_path: Path, remote, facts, refused: str) -> None:
@@ -891,11 +891,11 @@ def test_a_change_of_dependencies_is_in_the_diff(tmp_path: Path, remote) -> None
     old = declared.Facts(dependencies={"a": {"url": "https://example.org/a/"}, "b": {"url": "https://example.org/b/"}})
     first = commit(tmp_path, remote, facts=old)
     repo.push(remote, tmp_path / "local" / first.id, first)
-    new = declared.Facts(dependencies={"a": {"url": "https://example.org/a/", "version": new_id()}, "c": {"url": "https://example.org/c/"}})
+    new = declared.Facts(dependencies={"a": {"url": "https://example.org/a/"}, "c": {"url": "https://example.org/c/"}})
     second = commit(tmp_path, remote, parent=first, allow_empty=False, facts=new, inherited=old)
     repo.push(remote, tmp_path / "local" / second.id, second)
-    assert second.diff["dependencies"] == ["a", "b", "c"]
-    assert diff.versions(remote, first, second)["dependencies"] == ["a", "b", "c"]
+    assert second.diff["dependencies"] == ["b", "c"]
+    assert diff.versions(remote, first, second)["dependencies"] == ["b", "c"]
     assert "~ dependency b" in diff.lines(second.diff)
 
 

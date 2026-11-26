@@ -67,7 +67,7 @@ Freezes the working metadata into a new version whose parent is the version it w
 
 The command checks the declarations kept beside the working metadata (see `fdl declare`) against its tables and views first. A commit starts from its parent's declarations: a table made again under the same name, as dbt's `CREATE OR REPLACE` does, keeps them, a table dropped loses them, and a column renamed since it was declared is declared under its new name.
 
-It writes the version's `tables.json` (see [tables.json](/spec/versions#tablesjson)): each table's data files and columns with its `primary_key`, `assets` and `profile`, each view's SQL and the columns its query returns, and `dependencies`. To find a view's columns, it attaches each dependency under its name, at the version it names or else the one its `main` holds; a view whose query it cannot bind is listed without columns. Comments in the metadata (`COMMENT ON`) are kept as they are and not read.
+It writes the version's `tables.json` (see [tables.json](/spec/versions#tablesjson)): each table's data files and columns with its `primary_key`, `assets` and `profile`, each view's SQL and the columns its query returns, and `dependencies`. To find a view's columns, it attaches each dependency under its name, at the version its `HEAD` holds, and writes that version's ID as the dependency's `version`; a view whose query it cannot bind is listed without columns. Comments in the metadata (`COMMENT ON`) are kept as they are and not read.
 
 The columns declared in `assets` hold the sha256 of files (see [Assets](/spec/versions#assets)). The command reads the values those columns hold, and the push uploads the files the dataset lacks from the `--assets` folder to `assets/<sha256>`, by their content: file names in the folder do not matter. Keep the dataset's documents (a `README.md`, its images) in a table of your own whose `sha256` column is declared an asset column, and their files in the `--assets` folder (see `fdl assets`).
 
@@ -86,7 +86,7 @@ fdl declare list <working.sqlite> [--json]
 fdl declare primary-key <working.sqlite> <schema.table> [<column>...]
 fdl declare assets <working.sqlite> <schema.table> [<column>...]
 fdl declare profile <working.sqlite> <schema.name> (true|false)
-fdl declare dependency <working.sqlite> <name> [<url>] [--version <ID>]
+fdl declare dependency <working.sqlite> <name> [<url>]
 ```
 
 Changes what the next commit [declares](/spec/versions#declarations) of the tables and views. The declarations are kept in `<working.sqlite>.fdl/`, starting from those of the version the working metadata was cloned from, and the commit writes them into `tables.json`.
@@ -101,7 +101,7 @@ fdl declare dependency lake.sqlite census https://example.org/census/
 - `primary-key` sets the columns that identify a row of a table, used to [merge it cell by cell](/spec/writing#cells-merged-by-primary-key). Without columns, it removes the primary key
 - `assets` sets the `varchar` columns of a table that hold the sha256 of files. Without columns, it removes them
 - `profile false` makes the push write no profile for a table or view, such as an intermediate table of a build; `profile true` removes that
-- `dependency` names another dataset the views' SQL reads, under the name the SQL uses. Without `--version`, the views read the version its `main` holds. Without `<url>`, it removes the dependency
+- `dependency` names another dataset the views' SQL reads, under the name the SQL uses. Each commit reads the version its `HEAD` holds and records it in tables.json. Without `<url>`, it removes the dependency
 - `list` prints one declaration a line, and `--json` all of them as one object
 
 A change is refused when the tables and views refuse it: a table or column that is not there, a primary key or asset columns on a view, an asset column that is not `varchar`, or a dependency whose name or `url` the commit would refuse.
