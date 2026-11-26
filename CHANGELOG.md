@@ -1,6 +1,14 @@
 # CHANGELOG
 
 
+## v0.40.0 (2026-11-26)
+
+### Features
+
+- Push shows the warnings a host answers with ([#103](https://github.com/queria-io/fdl/pull/103),
+  [`71db3d3`](https://github.com/queria-io/fdl/commit/71db3d3e6f2656c097d8f115b40c69cc23ac976d))
+
+
 ## v0.39.2 (2026-11-25)
 
 ### Bug Fixes
