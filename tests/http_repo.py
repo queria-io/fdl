@@ -18,10 +18,12 @@ TOKEN = "secret"
 SIGNATURE = "signed"
 
 
-def serve(store: LocalStore, *, batch: bool = False, sign_up_to: int | None = None) -> ThreadingHTTPServer:
+def serve(
+    store: LocalStore, *, batch: bool = False, sign_up_to: int | None = None, warnings: list[str] | None = None
+) -> ThreadingHTTPServer:
     """``batch`` answers ``POST ?batch`` with URLs under ``/storage/``, as a
     host handing out signed URLs would; files over ``sign_up_to`` bytes get a
-    413 there."""
+    413 there. ``warnings`` come back in the answer to each move of a ref."""
     uploads: dict[str, dict[int, bytes]] = {}
     requests: list[tuple[str, str]] = []
 
@@ -62,7 +64,8 @@ def serve(store: LocalStore, *, batch: bool = False, sign_up_to: int | None = No
             except StoreError as exc:
                 self._send(exc.status or 500, str(exc).encode())
                 return
-            self._send(200, headers={"ETag": etag})
+            body = json.dumps({"warnings": warnings}).encode() if warnings and key.startswith("refs/") else b""
+            self._send(200, body, headers={"ETag": etag})
 
         def do_GET(self) -> None:
             key, query = self._parts()

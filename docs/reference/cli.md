@@ -112,7 +112,7 @@ A change is refused when the tables and views refuse it: a table or column that 
 fdl push <working.sqlite> [--no-profile]
 ```
 
-Uploads the version `fdl commit` made and moves the branch to it on condition (see [Order of writes](/spec/writing#order-of-writes)). It prints the branch, the version ID and its `seq`. After a fast-forward `fdl merge`, it moves the branch to the version merged, uploading nothing. With nothing committed, it prints `Nothing to push`.
+Uploads the version `fdl commit` made and moves the branch to it on condition (see [Order of writes](/spec/writing#order-of-writes)). It prints the branch, the version ID and its `seq`. After a fast-forward `fdl merge`, it moves the branch to the version merged, uploading nothing. With nothing committed, it prints `Nothing to push`. A host over HTTP may answer with warnings that do not stop the push; it prints each as `warning: …` (see [Pushing over HTTP](/spec/http)).
 
 Before uploading, it writes a profile of each table and view (see [profiles/](/spec/versions#profiles)) and uploads the profiles before `version.json`, so they are there when the branch moves. It reads only the tables whose data files or columns changed since the parent; the others keep the parent's profile. A view is profiled again, by running its query, when its query or a table or view it reads changed. A table or view declared with `profile` `false` gets none. A table it cannot read gets none, with a warning. When the working metadata changed after the commit, it profiles nothing and warns. `--no-profile` skips profiling; `fdl profile` adds the profiles later.
 

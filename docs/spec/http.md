@@ -22,6 +22,7 @@ A host can take pushes over HTTP, so a writer needs no keys to its storage. The 
 - A host decides which keys it takes. It may refuse writes to `HEAD`, `fdl.json` and anything outside the layout (but must answer `HEAD` requests, which a writer needs for a ref's ETag), and take `versions/` and data files only with `If-None-Match: *`
 - A host that moves refs itself after its checks keeps `refs.json` too, and may refuse a writer's write to it with 403. A writer treats that as done
 - Moving a ref is where a host checks a push: the version is there, it is a fast-forward, the metadata and `tables.json` match `version.json`, and every data file and delete file `tables.json` names is in the dataset. A host that opens the metadata may also check that `tables.json` lists every data file and delete file the metadata names. It may check the assets the rows hold too, and rules of its own ([When a push is refused](/spec/writing#when-a-push-is-refused)). A refusal is 409 with the reason in the body
+- A host may answer a write it takes with `{"warnings": ["…"]}`: what it found without refusing the push (a column it leaves out of its search, say). A writer shows each one to the person pushing
 - A host that cannot take a request right now (its storage is busy with the same object, or a rate limit) answers 429, with `Retry-After` in seconds when it knows the wait. A 429 request was not carried out, so a writer waits and sends it again
 - There is no `DELETE`. Retention and deletion are the host's
 

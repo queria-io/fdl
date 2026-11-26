@@ -414,6 +414,13 @@ def push(
     if state.get("data"):
         _drop_uploaded(store, working, Path(state["data"]), version)
     typer.echo(f"{state['ref']} -> {version.id} (version {version.seq})")
+    _show_warnings(store)
+
+
+def _show_warnings(store) -> None:
+    """What the host said about the push without refusing it."""
+    for warning in getattr(store, "warnings", []):
+        typer.echo(f"warning: {warning}", err=True)
 
 
 def _push_forward(working: Path, state: dict) -> None:
@@ -426,6 +433,7 @@ def _push_forward(working: Path, state: dict) -> None:
         raise _fail(exc) from exc
     _write_state(working, {key: value for key, value in state.items() if key != "forward"})
     typer.echo(f"{state['ref']} -> {version.id} (version {version.seq})")
+    _show_warnings(store)
 
 
 @app.command()

@@ -507,3 +507,28 @@ def test_a_host_that_stops_answering_fails_instead_of_waiting(monkeypatch) -> No
             HttpStore(f"http://127.0.0.1:{listener.getsockname()[1]}/").get("fdl.json")
     finally:
         listener.close()
+
+
+def test_push_shows_what_the_host_warns_about(tmp_path: Path, monkeypatch) -> None:
+    local = LocalStore(tmp_path / "served")
+    repo.init(local)
+    server = serve(local, warnings=["main.towns.name has too many values"])
+    monkeypatch.setenv("FDL_TOKEN", TOKEN)
+    try:
+        url = f"http://127.0.0.1:{server.server_address[1]}/"
+        working = tmp_path / "work" / "lake.sqlite"
+        run("clone", url, working)
+        write(working, "CREATE TABLE lake.main.towns AS SELECT 1 AS id")
+        run("commit", working, "-m", "first", "--author", "tester")
+        result = runner.invoke(app, ["push", str(working)])
+        assert result.exit_code == 0, result.output
+        assert "warning: main.towns.name has too many values" in result.stderr
+    finally:
+        server.shutdown()
+
+
+def test_a_write_without_warnings_has_none(served) -> None:
+    _, url, _ = served
+    store = HttpStore(url)
+    store.put("a", b"1", if_none_match="*")
+    assert store.warnings == []
