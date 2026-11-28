@@ -12,6 +12,7 @@ import json
 import shutil
 import tempfile
 import warnings
+from concurrent.futures import ThreadPoolExecutor
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Callable, Iterable, Iterator, Mapping
@@ -451,9 +452,9 @@ def push(
     _refuse_unless_fast_forward(store, current_ref, version)
 
     frozen = Path(local) / layout.METADATA
-    if local_data is not None:
-        _upload_data_files(store, config, frozen, Path(local_data))
-    missing = _missing_data_files(store, config, frozen)
+    unknown = _unknown_data_files(store, config, frozen, current_ref)
+    uploaded = _upload_data_files(store, config, unknown, Path(local_data)) if local_data is not None else set()
+    missing = _missing_data_files(store, [key for key in unknown if key not in uploaded])
     if missing:
         raise RepoError(
             f"{len(missing)} data file(s) the metadata names are not in the "
@@ -596,22 +597,26 @@ def write_profiles(
     unchanged_views = _unchanged_views(
         views_now, views_before, set(files_now), changed_tables, dependencies=set(dependencies), pinned=pinned
     )
+    def unchanged(table: dict) -> bool:
+        key = f"{table['schema']}.{table['name']}"
+        if table.get("kind") == "view":
+            return key in unchanged_views
+        return _same_files(files_before.get(key), files_now.get(key, {}))
+
+    def previous_of(table: dict) -> bytes | None:
+        if parent is None or not unchanged(table):
+            return None
+        try:
+            return store.get(layout.version_dir(parent.id) + profiles.path(table["schema"], table["name"]))
+        except Exception as exc:  # noqa: BLE001
+            if not is_missing(exc):
+                raise
+            return None
+
     kept: dict[str, bytes] = {}
     pending = []
-    for table in wanted:
-        key = f"{table['schema']}.{table['name']}"
+    for table, previous in zip(wanted, _at_once(previous_of, wanted)):
         relative = profiles.path(table["schema"], table["name"])
-        previous = None
-        if table.get("kind") == "view":
-            unchanged = key in unchanged_views
-        else:
-            unchanged = _same_files(files_before.get(key), files_now.get(key, {}))
-        if parent is not None and unchanged:
-            try:
-                previous = store.get(layout.version_dir(parent.id) + relative)
-            except Exception as exc:  # noqa: BLE001
-                if not is_missing(exc):
-                    raise
         if previous is not None and profiles.reusable(previous, table):
             kept[relative] = previous
         else:
@@ -780,9 +785,8 @@ def upload(store: Store, local: Path, version: Version) -> None:
         _put_once(store, layout.version_dir(version.id) + layout.TABLES, local / layout.TABLES)
     profiled = local / layout.PROFILES_DIR
     if profiled.is_dir():
-        for written in sorted(profiled.rglob("*.json")):
-            relative = written.relative_to(local).as_posix()
-            _put_once(store, layout.version_dir(version.id) + relative, written)
+        written = sorted(profiled.rglob("*.json"))
+        _at_once(lambda path: _put_once(store, layout.version_dir(version.id) + path.relative_to(local).as_posix(), path), written)
     _put_once(store, layout.version_record(version.id), local / layout.VERSION_RECORD)
 
 
@@ -1481,33 +1485,56 @@ def branches(store: Store) -> dict[str, str]:
     return {name[len(prefix) :]: target for name, target in refs.listed(store).items() if name.startswith(prefix)}
 
 
-def _missing_data_files(store: Store, config: Config, frozen: Path) -> list[str]:
-    present = set(store.list(config.data_dir))
-    return [
-        key
-        for key in (config.data_dir + name for name in catalog.data_files(frozen))
-        if key not in present
-    ]
+def _unknown_data_files(store: Store, config: Config, frozen: Path, current_ref: refs.Ref | None) -> list[str]:
+    """The data files the metadata names that the version ``current_ref`` holds does not.
+
+    A ref's version is live, so the data files it names are in the dataset: only
+    the others are looked for, however many files the dataset keeps.
+    """
+    held: set[str] = set()
+    if current_ref is not None:
+        current = read_version(store, current_ref.target)
+        if current.tables is not None:
+            held = _named_files(json.loads(store.get(layout.version_dir(current.id) + layout.TABLES)))
+    return [config.data_dir + name for name in catalog.data_files(frozen) if name not in held]
 
 
-def _upload_data_files(store: Store, config: Config, frozen: Path, local_data: Path) -> None:
-    files = [
-        (key, local_data / key[len(config.data_dir) :])
-        for key in _missing_data_files(store, config, frozen)
-    ]
+def _missing_data_files(store: Store, keys: list[str]) -> list[str]:
+    """Those of ``keys`` the dataset does not hold."""
+    return [key for key, found in zip(keys, _at_once(store.head, keys)) if found is None]
+
+
+def _upload_data_files(store: Store, config: Config, keys: list[str], local_data: Path) -> set[str]:
+    """Put those of ``keys`` that are in ``local_data``; gives the keys put."""
+    files = [(key, local_data / key[len(config.data_dir) :]) for key in keys]
     files = [(key, path) for key, path in files if path.is_file()]
     # A host that hands out upload URLs takes them straight to storage.
     put_files = getattr(store, "put_files", None)
     if put_files is not None:
         put_files(files, content_type="application/octet-stream")
-        return
-    for key, path in files:
+        return {key for key, _ in files}
+
+    def put(item: tuple[str, Path]) -> None:
+        key, path = item
         try:
             store.put_file(key, path, content_type="application/octet-stream", if_none_match="*")
         except Exception as exc:  # noqa: BLE001 - stores raise their own types
             # Data files are never rewritten: one already there is this one.
             if not is_conflict(exc):
                 raise
+
+    _at_once(put, files)
+    return {key for key, _ in files}
+
+
+#: Requests to the dataset running at once, where each waits on the network alone.
+REQUESTS_AT_ONCE = 8
+
+
+def _at_once(call: Callable, items: Iterable) -> list:
+    """``call`` on each of ``items``, several at a time, in their order."""
+    with ThreadPoolExecutor(REQUESTS_AT_ONCE) as pool:
+        return list(pool.map(call, items))
 
 
 def _needed_objects(assets: Iterable[str]) -> dict[str, str]:
