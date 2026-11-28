@@ -203,6 +203,28 @@ def test_push_refuses_a_catalog_whose_data_files_are_gone(tmp_path: Path, remote
     assert remote.head(layout.version_record(first.id)) is None
 
 
+def test_push_looks_only_for_the_data_files_the_ref_lacks(tmp_path: Path, remote, monkeypatch) -> None:
+    build(tmp_path / "work.sqlite", remote, "CREATE TABLE lake.main.towns AS SELECT 1 AS id")
+    first = commit(tmp_path, remote)
+    repo.push(remote, tmp_path / "local" / first.id, first)
+    build(tmp_path / "work.sqlite", remote, "CREATE TABLE lake.main.roads AS SELECT 1 AS id")
+    second = commit(tmp_path, remote, parent=first)
+    looked: list[str] = []
+    head = remote.head
+    monkeypatch.setattr(remote, "head", lambda key: looked.append(key) or head(key))
+    data_dir = repo.read_config(remote).data_dir
+    listed = remote.list
+    monkeypatch.setattr(
+        remote, "list", lambda prefix="": pytest.fail(f"listed {prefix}") if prefix.startswith(data_dir) else listed(prefix)
+    )
+
+    repo.push(remote, tmp_path / "local" / second.id, second)
+
+    # Not the data files of main.towns, which the version main holds names.
+    assert [key.split("/")[2] for key in looked if key.startswith(data_dir)] == ["roads"]
+    assert repo.head(remote) == second
+
+
 def test_push_refuses_a_tables_json_that_does_not_match(tmp_path: Path, remote) -> None:
     build(tmp_path / "work.sqlite", remote, "CREATE TABLE lake.main.towns AS SELECT 1 AS id")
     first = commit(tmp_path, remote)
