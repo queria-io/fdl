@@ -400,6 +400,39 @@ def test_a_merge_base_is_the_newest_common_ancestor(tmp_path: Path) -> None:
     assert {v.id for v in repo.merge_bases(store, x, y)} == {a1.id, b1.id}
 
 
+def test_a_fast_forward_reads_only_the_versions_between(tmp_path: Path, monkeypatch) -> None:
+    store = LocalStore(tmp_path / "remote")
+    repo.init(store)
+
+    from fdl.version import DuckLake, Metadata, new_id, utc_now
+
+    def put(*parents: repo.Version) -> repo.Version:
+        made = repo.Version(
+            id=new_id(),
+            seq=parents[0].seq + 1 if parents else 1,
+            parents=tuple(parent.id for parent in parents),
+            created_at=utc_now(),
+            author={"name": "tester"},
+            message="",
+            metadata=Metadata(storage="v1.5.0", bytes=0, sha256="0" * 64),
+            ducklake=DuckLake(format="1.0", snapshot_id=1, snapshots=(1, 1)),
+        )
+        store.put(f"versions/{made.id}/version.json", made.to_json())
+        return made
+
+    main = put()
+    for _ in range(20):
+        main = put(main)
+    apply = put(put(main))
+    read: list[str] = []
+    real = repo.read_version
+    monkeypatch.setattr(repo, "read_version", lambda s, version_id: read.append(version_id) or real(s, version_id))
+    assert [v.id for v in repo.merge_bases(store, main, apply)] == [main.id]
+    assert [v.id for v in repo.merge_bases(store, apply, main)] == [main.id]
+    # The two versions after main, read once for each call: not the 20 behind it.
+    assert len(read) == 4
+
+
 def test_conflicts_in_two_tables_merged_by_rows_are_both_listed(branches) -> None:
     store, main, feature = branches
     sql(main, store, "CREATE TABLE lake.main.s AS SELECT * FROM (VALUES (1, 'a'), (2, 'b')) t(id, name)")

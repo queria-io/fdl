@@ -820,13 +820,7 @@ def in_history(store: Store, ancestor_id: str, descendant: Version) -> bool:
     another metadata file. ``seq`` falls by one at each step, so the walk stops
     once it is below the ancestor's.
     """
-    target = read_version(store, ancestor_id)
-    current: Version | None = descendant
-    while current is not None and current.seq >= target.seq:
-        if current.id == ancestor_id:
-            return True
-        current = read_version(store, current.parents[0]) if current.parents else None
-    return False
+    return _behind_by_first_parent(store, read_version(store, ancestor_id), descendant)
 
 
 def ancestors(store: Store, version: Version) -> dict[str, Version]:
@@ -843,9 +837,27 @@ def ancestors(store: Store, version: Version) -> dict[str, Version]:
 
 
 def merge_bases(store: Store, ours: Version, theirs: Version) -> list[Version]:
-    """The common ancestors of ``ours`` and ``theirs`` that no other common ancestor descends from."""
+    """The common ancestors of ``ours`` and ``theirs`` that no other common ancestor descends from.
+
+    When one is behind the other by first parent (a fast-forward, or nothing to
+    merge), it is the only base, found by reading the versions between the two
+    alone: the whole history is read only for two versions that diverged.
+    """
+    for older, newer in ((ours, theirs), (theirs, ours)):
+        if _behind_by_first_parent(store, older, newer):
+            return [older]
     mine = ancestors(store, ours)
     return sorted((mine[version_id] for version_id in _bases(mine, ancestors(store, theirs))), key=lambda v: v.id)
+
+
+def _behind_by_first_parent(store: Store, older: Version, newer: Version) -> bool:
+    """Whether ``older`` is ``newer`` or behind it by first parent (`in_history` without reading ``older`` again)."""
+    current: Version | None = newer
+    while current is not None and current.seq >= older.seq:
+        if current.id == older.id:
+            return True
+        current = read_version(store, current.parents[0]) if current.parents else None
+    return False
 
 
 def _bases(mine: Mapping[str, Version], other: Mapping[str, Version]) -> set[str]:
